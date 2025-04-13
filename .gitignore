@@ -1,0 +1,10 @@
+.git
+.vscode
+__pycache__
+models
+runs
+data
+
+yolov3.ipynb
+coco_train.txt
+coco_val.txt
