@@ -43,6 +43,7 @@ class YOLOv3LOSS():
                 # no object loss
                 loss += self.BCEloss(one_pred[..., 4][noobj_mask], one_targ[..., 4][noobj_mask])
 
+                # object loss
                 x = one_pred[..., 0][obj_mask]
                 y = one_pred[..., 1][obj_mask]
                 w = one_pred[..., 2][obj_mask]
