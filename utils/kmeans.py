@@ -1,7 +1,7 @@
 import numpy as np
 from tqdm import tqdm
 
-from utils.tools import *
+from tools import *
 
 boxes = []
 
@@ -29,7 +29,7 @@ def kmeans(boxes: list, k=9):
         distances = np.array(distances)
         current_clusters = np.argmin(distances, axis=1)
         tqdm.write(f"距离当前为{np.mean(distances)}")
-        if np.mean(distances)<0.83:
+        if (last_clusters == current_clusters).all():
             tqdm.write("聚类得到的anchors如下")
             areas = clusters[:,0] * clusters[:,1]
             sorted_indices = np.argsort(areas)
@@ -39,6 +39,7 @@ def kmeans(boxes: list, k=9):
             break
         for cluster in range(k):
             clusters[cluster] = np.median(boxes[current_clusters == cluster], axis=0)
+        last_clusters = current_clusters
 
 def iou(box, clusters):
     x = np.minimum(clusters[:, 0], box[0])

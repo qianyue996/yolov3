@@ -8,23 +8,23 @@ import sys
 from tqdm import tqdm
 
 from config.yolov3 import CONF
-from nets.yolo import YOLOv3
+# from nets.yolo import YOLOv3
+from nets.yolo_copy import YOLOv3
 from utils.dataloader import YOLODataset
 from nets.yolo_loss import YOLOv3LOSS
 
 class Trainer():
     def __init__(self):
         super().__init__()
-        self.device=CONF.device
-        self.anchors = CONF.anchors
-        self.batch_size = CONF.batchsize
-        self.epochs=CONF.epochs
-        self.IMG_SIZE=CONF.imgsize
+        self.device       = CONF.device
+        self.anchors      = CONF.anchors
+        self.batch_size   = CONF.batchsize
+        self.epochs       = CONF.epochs
+        self.IMG_SIZE     = CONF.imgsize
         self.weight_decay = CONF.weight_decay
+        self.lr           = CONF.learning_rate
 
-        self.lr=0.01
         self.start_epoch=0
-
         self.losses=[]
         self.checkpoint=None
         self.loss_count = 0
@@ -35,12 +35,11 @@ class Trainer():
         self.dataloader=DataLoader(ds,batch_size=self.batch_size,shuffle=True)
         # 模型初始化
         self.model=YOLOv3().to(self.device)
-        self.model.apply(self.model.initialParam) # 迁移学习
         self.model.getWeight(self.model)
 
         # train utils
         self.optimizer=optim.Adam([param for param in self.model.parameters() if param.requires_grad],lr=self.lr, weight_decay=self.weight_decay)
-        self.loss_fn = YOLOv3LOSS(self.IMG_SIZE, self.anchors)
+        self.loss_fn = YOLOv3LOSS()
 
         # 尝试从上次训练结束点开始
         # try:

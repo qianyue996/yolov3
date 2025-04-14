@@ -25,6 +25,11 @@ train_output_path       = "coco_train.txt"
 val_output_path         = "coco_val.txt"
 
 if __name__ == "__main__":
+    try:
+        os.mkdir('data/coco2014')
+    except Exception as e:
+        pass
+
     name_box_id = defaultdict(list)
     id_name     = dict()
     f           = open(train_annotation_path, encoding='utf-8')
