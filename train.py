@@ -25,7 +25,6 @@ class Trainer():
         self.lr           = CONF.learning_rate
 
         self.losses=[]
-        self.checkpoint=None
         self.start_epoch=0
         self.global_step = 0
 
@@ -42,16 +41,17 @@ class Trainer():
         self.loss_fn = YOLOv3LOSS()
 
         # 尝试从上次训练结束点开始
+        checkpoint = None
         try:
-            self.checkpoint=torch.load('checkpoint.pth', map_location=self.device)
+            checkpoint=torch.load('checkpoint.pth', map_location=self.device)
         except Exception as e:
             pass
-        if self.checkpoint:
+        if checkpoint:
             try:
-                self.model.load_state_dict(self.checkpoint['model'])
-                self.optimizer.load_state_dict(self.checkpoint['optimizer'])
-                self.start_epoch = self.checkpoint['epoch'] + 1
-                self.global_step = self.checkpoint['global_step']
+                self.model.load_state_dict(checkpoint['model'])
+                self.optimizer.load_state_dict(checkpoint['optimizer'])
+                self.start_epoch = checkpoint['epoch'] + 1
+                self.global_step = checkpoint['global_step']
             except Exception as e:
                 pass
 
