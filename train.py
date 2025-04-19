@@ -58,7 +58,7 @@ class Trainer():
 
     def train(self):
         for epoch in range(self.start_epoch,self.epochs):
-            all_loss=0
+            epoch_loss=0
             with tqdm(self.dataloader, disable=False) as bar:
                 for batch,item in enumerate(bar):
                     batch_x,batch_y=item
@@ -71,9 +71,8 @@ class Trainer():
                     self.optimizer.zero_grad()
                     loss.backward()
                     self.optimizer.step()
-                    all_loss+=loss.item()
-                    self.loss_count += 1
-                    _loss = all_loss/self.loss_count
+                    epoch_loss+=loss.item()
+                    _loss = epoch_loss/(batch + 1)
                     bar.set_postfix({'epoch':epoch,
                                      'avg_loss:':_loss})
                     self.writer.add_scalar('loss',_loss)
