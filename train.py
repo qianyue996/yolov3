@@ -74,7 +74,7 @@ class Trainer():
                     epoch_loss+=loss.item()
                     _loss = epoch_loss/(batch + 1)
                     bar.set_postfix({'epoch':epoch,
-                                     'avg_loss:':_loss})
+                                     'avg_loss:':f'{_loss:.4f}'})
                     
                     self.writer.add_scalar('loss',_loss, self.loss_count)
                     self.loss_count += 1
