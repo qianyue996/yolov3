@@ -73,11 +73,11 @@ class Trainer():
                     self.optimizer.step()
                     all_loss+=loss.item()
                     self.loss_count += 1
+                    _loss = all_loss/self.loss_count
                     bar.set_postfix({'epoch':epoch,
-                                     'avg_loss:':all_loss/self.loss_count})
-            avg_loss=all_loss/self.loss_count
-            self.writer.add_scalar('epoch_loss',avg_loss,epoch)
-            self.losses.append(avg_loss)
+                                     'avg_loss:':_loss})
+                    self.writer.add_scalar('loss',_loss)
+            self.losses.append(_loss)
             self.save_best_model(epoch=epoch)
 
     def save_best_model(self,epoch):
