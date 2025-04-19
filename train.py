@@ -24,10 +24,10 @@ class Trainer():
         self.weight_decay = CONF.weight_decay
         self.lr           = CONF.learning_rate
 
-        self.start_epoch=0
         self.losses=[]
         self.checkpoint=None
-        self.loss_count = 0
+        self.start_epoch=0
+        self.global_step = 0
 
     def setup(self):
         # 加载数据集
@@ -50,6 +50,7 @@ class Trainer():
             self.model.load_state_dict(self.checkpoint['model'])
             self.optimizer.load_state_dict(self.checkpoint['optimizer'])
             self.start_epoch = self.checkpoint['epoch'] + 1
+            self.global_step = self.checkpoint['global_step']
 
         # tensorboard
         self.writer=SummaryWriter(f'runs/{time.strftime("%Y-%m-%d-%H-%M-%S",time.localtime())}')
@@ -65,9 +66,8 @@ class Trainer():
                     batch_x,batch_y=batch_x.to(self.device),[i.to(self.device) for i in batch_y]
                     batch_output=self.model(batch_x)
 
-                    loss = self.loss_fn(predict=batch_output,target=batch_y)
+                    loss = self.loss_fn(predict=batch_output,target=batch_y) / len(batch_x)
 
-                    loss=loss/len(batch_x)
                     self.optimizer.zero_grad()
                     loss.backward()
                     self.optimizer.step()
@@ -76,8 +76,8 @@ class Trainer():
                     bar.set_postfix({'epoch':epoch,
                                      'avg_loss:':f'{_loss:.4f}'})
                     
-                    self.writer.add_scalar('loss',_loss, self.loss_count)
-                    self.loss_count += 1
+                    self.writer.add_scalar('loss',_loss, self.global_step)
+                    self.global_step += 1
             self.losses.append(_loss)
             self.save_best_model(epoch=epoch)
 
@@ -86,7 +86,8 @@ class Trainer():
             checkpoint={
                 'model':self.model.state_dict(),
                 'optimizer':self.optimizer.state_dict(),
-                'epoch':epoch
+                'epoch':epoch,
+                'global_step':self.global_step
             }
             torch.save(checkpoint,'.checkpoint.pth')
             os.replace('.checkpoint.pth','checkpoint.pth')

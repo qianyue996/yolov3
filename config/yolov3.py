@@ -8,7 +8,7 @@ class MyConf():
         vocPath = "F:/c/deepLearn/learn/pytorch/myYOLO/data/VOCdevkit/VOC2007"
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
         batchsize = 2
-        learning_rate = 1e-2
+        learning_rate = 1e-4
         weight_decay = 1e-3
         num_workers = 0
         epochs = 300
