@@ -47,10 +47,13 @@ class Trainer():
         except Exception as e:
             pass
         if self.checkpoint:
-            self.model.load_state_dict(self.checkpoint['model'])
-            self.optimizer.load_state_dict(self.checkpoint['optimizer'])
-            self.start_epoch = self.checkpoint['epoch'] + 1
-            self.global_step = self.checkpoint['global_step']
+            try:
+                self.model.load_state_dict(self.checkpoint['model'])
+                self.optimizer.load_state_dict(self.checkpoint['optimizer'])
+                self.start_epoch = self.checkpoint['epoch'] + 1
+                self.global_step = self.checkpoint['global_step']
+            except Exception as e:
+                pass
 
         # tensorboard
         self.writer=SummaryWriter(f'runs/{time.strftime("%Y-%m-%d-%H-%M-%S",time.localtime())}')
