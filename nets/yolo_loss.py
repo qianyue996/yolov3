@@ -59,9 +59,9 @@ class YOLOv3LOSS():
             w_loss = torch.nan_to_num(self.MSEloss(w, t_w), nan=0.0)
             h_loss = torch.nan_to_num(self.MSEloss(h, t_h), nan=0.0)
 
-            loss_loc = (x_loss + y_loss + w_loss + h_loss) * 0.1
+            loss_loc = (x_loss + y_loss + w_loss + h_loss) * 5
             loss_conf = torch.nan_to_num(self.BCEloss(c, t_c), nan=0.0) * 1
-            loss_cls = torch.nan_to_num(self.BCEloss(_cls, t_cls), nan=0.0) * 0.1
+            loss_cls = torch.nan_to_num(self.BCEloss(_cls, t_cls), nan=0.0) * 1
 
             loss += loss_loc + loss_conf + loss_cls
         return loss
