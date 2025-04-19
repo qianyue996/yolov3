@@ -35,7 +35,7 @@ class Trainer():
         self.dataloader=DataLoader(ds,batch_size=self.batch_size,shuffle=True)
         # 模型初始化
         self.model=YOLOv3().to(self.device)
-        # self.model.getWeight(self.model)
+        self.model.getWeight(self.model)
 
         # train utils
         self.optimizer=optim.Adam([param for param in self.model.parameters() if param.requires_grad],lr=self.lr, weight_decay=self.weight_decay)
@@ -43,7 +43,7 @@ class Trainer():
 
         # 尝试从上次训练结束点开始
         try:
-            self.checkpoint=torch.load('checkpoint.pth')
+            self.checkpoint=torch.load('checkpoint.pth', map_location=self.device)
         except Exception as e:
             pass
         if self.checkpoint:

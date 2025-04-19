@@ -28,8 +28,8 @@ class YOLOv3LOSS():
             targ = target[i]
 
             pred[..., 0] = torch.sigmoid(pred[..., 0])
-            pred[..., 1] = torch.sigmoid(pred[..., 0])
-            pred[..., 4] = torch.sigmoid(pred[..., 0])
+            pred[..., 1] = torch.sigmoid(pred[..., 1])
+            pred[..., 4] = torch.sigmoid(pred[..., 4])
             pred[..., 5:] = torch.sigmoid(pred[..., 5:])
 
             anchors = self.anchors[i]
@@ -54,17 +54,17 @@ class YOLOv3LOSS():
             t_c = targ[..., 4][obj_mask]
             t_cls = targ[..., 5:][obj_mask]
 
-            x_loss = self.BCEloss(x, t_x)
-            y_loss = self.BCEloss(y, t_y)
-            w_loss = self.MSEloss(w, t_w)
-            h_loss = self.MSEloss(h, t_h)
+            x_loss = torch.nan_to_num(self.BCEloss(x, t_x), nan=0.0)
+            y_loss = torch.nan_to_num(self.BCEloss(y, t_y), nan=0.0)
+            w_loss = torch.nan_to_num(self.MSEloss(w, t_w), nan=0.0)
+            h_loss = torch.nan_to_num(self.MSEloss(h, t_h), nan=0.0)
 
             loss_loc = (x_loss + y_loss + w_loss + h_loss) * 0.1
-            loss_cof = self.BCEloss(c, t_c) * 1
-            loss_cls = self.BCEloss(_cls, t_cls) * 0.1
+            loss_conf = torch.nan_to_num(self.BCEloss(c, t_c), nan=0.0) * 1
+            loss_cls = torch.nan_to_num(self.BCEloss(_cls, t_cls), nan=0.0) * 0.1
 
-            loss += loss_loc + loss_cof + loss_cls
-        return torch.nan_to_num(loss, nan=0.0, posinf=1e6, neginf=-1e6)
+            loss += loss_loc + loss_conf + loss_cls
+        return loss
 
     def build_target(self, target, anchors, thre=0.4):
         anchors = torch.tensor(anchors, device=self.device) / self.IMG_SIZE
