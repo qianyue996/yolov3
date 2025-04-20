@@ -12,7 +12,7 @@ class YOLOv3LOSS():
         self.IMG_SIZE = CONF.imgsize
         self.anchors  = CONF.anchors
         self.anchor_num = CONF.per_feat_anc_num
-        self.classes_num = CONF.classNumber
+        self.classes_num = 80
 
         self.BCEloss = nn.BCELoss()
         self.MSEloss = nn.MSELoss()
@@ -72,7 +72,7 @@ class YOLOv3LOSS():
 
     def build_target(self, i, targets, anchors, S, thre=0.4):
         B = len(targets)
-        target = torch.zeros(B, 3, S, S, 5 + 80)
+        target = torch.zeros(B, 3, S, S, 5 + 80, device=self.device)
 
         for b in range(B):
             batch_target = torch.zeros_like(targets[b])
@@ -82,7 +82,7 @@ class YOLOv3LOSS():
 
             gt_box = batch_target[:, 2:4]
 
-            _anchors = torch.tensor(anchors, dtype=torch.float32)
+            _anchors = torch.tensor(anchors, dtype=torch.float32, device=self.device)
 
             best_iou, best_na = torch.max(self.compute_iou(gt_box, _anchors), dim=1)
 

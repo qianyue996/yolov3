@@ -54,11 +54,11 @@ def process(img, input):
 
         # reshape everything to 1D
         boxes = boxes.reshape(-1, 4)
-        scores = scores.reshape(-1, CONF.classNumber)
+        scores = scores.reshape(-1, 80)
 
         # 选出所有分数大于阈值的 box + 类别
         score_thresh = 0.3
-        for cls_id in range(CONF.classNumber):
+        for cls_id in range(80):
             cls_scores = scores[:, cls_id]
             keep = cls_scores > score_thresh
             if keep.sum() == 0:

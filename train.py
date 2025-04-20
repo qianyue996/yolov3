@@ -31,7 +31,9 @@ class Trainer():
     def setup(self):
         # 加载数据集
         ds=YOLODataset()
-        self.dataloader=DataLoader(ds, batch_size=self.batch_size, shuffle=True, collate_fn=yolo_collate_fn)
+        self.dataloader=DataLoader(ds, batch_size=self.batch_size,
+                                   shuffle=True,
+                                   collate_fn=yolo_collate_fn)
         # 模型初始化
         self.model=YOLOv3().to(self.device)
         self.model.getWeight(self.model)
@@ -42,10 +44,10 @@ class Trainer():
 
         # 尝试从上次训练结束点开始
         checkpoint = None
-        # try:
-        #     checkpoint=torch.load('checkpoint.pth', map_location=self.device)
-        # except Exception as e:
-        #     pass
+        try:
+            checkpoint=torch.load('checkpoint.pth', map_location=self.device)
+        except Exception as e:
+            pass
         if checkpoint:
             try:
                 self.model.load_state_dict(checkpoint['model'])
