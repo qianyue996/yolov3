@@ -1,15 +1,7 @@
-import json
-import os
-from collections import defaultdict
-from tqdm import tqdm
 import cv2 as cv
-from torch.utils.data.dataset import Dataset
-from torch.utils.data.dataloader import DataLoader
 import numpy as np
-import pandas as pd
 import torch
 import torchvision
-
 
 from config.yolov3 import CONF
 from nets.yolo_copy import YOLOv3
@@ -24,7 +16,8 @@ model.eval()
 def draw(img, boxes, scores, labels):
     for i in range(len(boxes)):
         x1, y1, x2, y2 = boxes[i]
-        cv.rectangle(img, (int(x1), int(y1)), (int(x2), int(y2)), (0, 0, 255), 2)
+        cv.rectangle(img, (int(x1), int(y1)), (int(x2), int(y2)), (0, 0, 255), thickness=2)
+        cv.putText(img, f'scores: {scores[i]:.2f} {labels[i]}', (int(x1)+5, int(y1)+5), cv.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), thickness=2)
 
 def process(img, input):
     with torch.no_grad():
@@ -35,34 +28,30 @@ def process(img, input):
     for i in range(len(output)):
         S = CONF.feature_map[i]
 
+        stride = CONF.net_scaled[i]
+
         prediction = output[i].squeeze().view(3, 85, S, S).permute(0, 2, 3, 1)
         anchors = torch.tensor(CONF.anchors[i], device=CONF.device)
 
         prediction[..., 4] = torch.sigmoid(prediction[..., 4])
         mask = prediction[..., 4] > 0.5
 
-        x = prediction[mask][:, 0].sigmoid() * CONF.feature_map[i] * CONF.net_scaled[i]
-        y = prediction[mask][:, 1].sigmoid() * CONF.feature_map[i] * CONF.net_scaled[i]
-        w = torch.exp(prediction[mask][:, 2] * anchors[:, 0].view(-1, 1))
-        h = torch.exp(prediction[mask][:, 3] * anchors[:, 1].view(-1, 1))
+        grid_x, grid_y = torch.meshgrid(torch.arange(S), torch.arange(S), indexing='ij')
+        grid_x = grid_x.to(CONF.device).unsqueeze(0).expand(3, -1, -1)
+        grid_y = grid_y.to(CONF.device).unsqueeze(0).expand(3, -1, -1)
+        prediction[..., 0] = (prediction[..., 0].sigmoid() + grid_x) * stride
+        prediction[..., 1] = (prediction[..., 1].sigmoid() + grid_y) * stride
+
+        x = prediction[mask][:, 0].view(-1, 1).expand(-1, 3).reshape(-1)
+        y = prediction[mask][:, 1].view(-1, 1).expand(-1, 3).reshape(-1)
+        w = (torch.exp(prediction[mask][:, 2]).unsqueeze(-1) * anchors[:, 0].view(1, -1) * 416.0).reshape(-1)
+        h = (torch.exp(prediction[mask][:, 3]).unsqueeze(-1) * anchors[:, 1].view(1, -1) * 416.0).reshape(-1)
         c = prediction[mask][:, 4]
         _cls = prediction[mask][:, 5:].sigmoid()
 
-        scores = c.unsqueeze(-1) * _cls
+        scores = (c.unsqueeze(-1) * _cls).view(-1, 1).expand(-1, 3).reshape(-1, 80)
 
-        boxes = 
-
-        box_x1y1 = bx_by - bw_bh / 2
-        box_x2y2 = bx_by + bw_bh / 2
-        boxes = torch.cat([box_x1y1, box_x2y2], dim=-1)  # [3, S, S, 4]
-
-        obj_conf = torch.sigmoid(pred[..., 4])
-        cls_conf = torch.sigmoid(pred[..., 5:])
-        scores = obj_conf.unsqueeze(-1) * cls_conf  # [3, S, S, num_classes]
-
-        # reshape everything to 1D
-        boxes = boxes.reshape(-1, 4)
-        scores = scores.reshape(-1, 80)
+        boxes = torch.stack((x - w / 2, y - h / 2, x + w / 2, y + h / 2), dim=-1)
 
         # 选出所有分数大于阈值的 box + 类别
         score_thresh = 0.3
@@ -101,11 +90,21 @@ def transport(img, to_tensor=True):
     return img
 
 if __name__ == '__main__':
-    test_img = r"D:\Python\yolo3-pytorch\img\street.jpg"
-    img = cv.imread(test_img)
-    input = transport(img, to_tensor=True) # to tensor
-    process(img, input) # predict
-    cv.namedWindow('Camera', cv.WINDOW_NORMAL)
-    cv.imshow('Camera', img)
-    cv.waitKey(0)
+    # test_img = r"D:\Python\yolo3-pytorch\img\street.jpg"
+    # img = cv.imread(test_img)
+
+    cap = cv.VideoCapture(0)
+    while True:
+        ret, img = cap.read()
+        if not ret:
+                print("无法获取帧！")
+                break
+        input = transport(img, to_tensor=True) # to tensor
+        process(img, input) # predict
+        cv.namedWindow('Camera', cv.WINDOW_NORMAL)
+        cv.imshow('Camera', img)
+        if cv.waitKey(1) == ord('q'):
+            break
+    # 释放资源
+    cap.release()
     cv.destroyAllWindows()

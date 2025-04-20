@@ -74,11 +74,11 @@ class YOLOv3LOSS():
         B = len(targets)
         target = torch.zeros(B, 3, S, S, 5 + 80, device=self.device)
 
-        for b in range(B):
-            batch_target = torch.zeros_like(targets[b])
-            batch_target[:, 0:2] = targets[b][:, 0:2] * S
-            batch_target[:, 2:4] = targets[b][:, 2:4]
-            batch_target[:, 4] = targets[b][:, 4]
+        for bs in range(B):
+            batch_target = targets[bs].clone()
+            batch_target[:, 0:2] = targets[bs][:, 0:2] * S
+            batch_target[:, 2:4] = targets[bs][:, 2:4]
+            batch_target[:, 4] = targets[bs][:, 4]
 
             gt_box = batch_target[:, 2:4] * self.IMG_SIZE
 
@@ -98,12 +98,12 @@ class YOLOv3LOSS():
 
                 c = batch_target[index, 4].long()
 
-                target[b, k, x, y, 0] = batch_target[index, 0] - x.float()
-                target[b, k, x, y, 1] = batch_target[index, 1] - y.float()
-                target[b, k, x, y, 2] = torch.log(batch_target[index, 2] / _anchors[i][0])
-                target[b, k, x, y, 3] = torch.log(batch_target[index, 3] / _anchors[k][1])
-                target[b, k, x, y, 4] = 1
-                target[b, k, x, y, 5 + c] = 1
+                target[bs, k, x, y, 0] = batch_target[index, 0] - x.float()
+                target[bs, k, x, y, 1] = batch_target[index, 1] - y.float()
+                target[bs, k, x, y, 2] = torch.log(batch_target[index, 2] / _anchors[k][0])
+                target[bs, k, x, y, 3] = torch.log(batch_target[index, 3] / _anchors[k][1])
+                target[bs, k, x, y, 4] = 1
+                target[bs, k, x, y, 5 + c] = 1
 
         return target
     def compute_iou(self, gt_box, anchors):

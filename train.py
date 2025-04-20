@@ -67,11 +67,13 @@ class Trainer():
             epoch_loss=0
             with tqdm(self.dataloader, disable=False) as bar:
                 for batch,item in enumerate(bar):
-                    batch_x,batch_y=item
-                    batch_x,batch_y=batch_x.to(self.device),[i.to(self.device) for i in batch_y]
-                    batch_output=self.model(batch_x)
+                    batch_x, batch_y = item
+                    batch_x = batch_x.to(self.device)
+                    batch_y = [i.to(self.device) for i in batch_y]
+                    
+                    batch_output = self.model(batch_x)
 
-                    loss = self.loss_fn(predict=batch_output,targets=batch_y)
+                    loss = self.loss_fn(predict=batch_output, targets=batch_y)
 
                     self.optimizer.zero_grad()
                     loss.backward()

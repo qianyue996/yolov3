@@ -5,7 +5,7 @@ class MyConf():
         net_scaled = [32, 16, 8]
         feature_map = [13, 26, 52]
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        batchsize = 2
+        batchsize = 16
         learning_rate = 1e-3
         weight_decay = 1e-3
         num_workers = 0

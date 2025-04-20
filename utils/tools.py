@@ -2,26 +2,6 @@ import numpy as np
 import cv2 as cv
 import torch
 
-def iou(gt, anchors):
-    """
-    gt: (N, 2) — 每个目标框的 [w, h]
-    anchors: (M, 2) — 所有 anchor 的 [w, h]
-    
-    return: (N, M) — 第 i 行第 j 列是第 i 个 gt 和第 j 个 anchor 的 IOU
-    """
-
-    gt = gt.unsqueeze(1)         # (N, 1, 2)
-    anchors = anchors.unsqueeze(0)  # (1, M, 2)
-
-    # 计算交集面积
-    inter = torch.min(gt, anchors).prod(2)  # (N, M)
-
-    # 计算并集面积
-    union = (gt.prod(2) + anchors.prod(2) - inter)  # (N, M)
-
-    # 返回 IOU
-    return inter / union  # shape: (N, M)
-
 def xywh2xyx2(box: list):
     try:
         x,y,w,h = box
