@@ -22,11 +22,6 @@ def iou(gt, anchors):
     # 返回 IOU
     return inter / union  # shape: (N, M)
 
-
-
-
-    pass
-
 def xywh2xyx2(box: list):
     try:
         x,y,w,h = box

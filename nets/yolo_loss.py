@@ -25,7 +25,7 @@ class YOLOv3LOSS():
 
             prediction = predict[i].view(-1, 3, 5 + 80, S, S).permute(0, 1, 3, 4, 2)
 
-            anchors = [(a_w / 416.0 * S, a_h / 416.0 * S) for a_w, a_h in self.anchors[i]]
+            anchors = self.anchors[i]
 
             target = self.build_target(i, targets, anchors, S)
 
@@ -77,10 +77,10 @@ class YOLOv3LOSS():
         for b in range(B):
             batch_target = torch.zeros_like(targets[b])
             batch_target[:, 0:2] = targets[b][:, 0:2] * S
-            batch_target[:, 2:4] = targets[b][:, 2:4] * S
+            batch_target[:, 2:4] = targets[b][:, 2:4]
             batch_target[:, 4] = targets[b][:, 4]
 
-            gt_box = batch_target[:, 2:4]
+            gt_box = batch_target[:, 2:4] * self.IMG_SIZE
 
             _anchors = torch.tensor(anchors, dtype=torch.float32, device=self.device)
 
@@ -100,8 +100,8 @@ class YOLOv3LOSS():
 
                 target[b, k, x, y, 0] = batch_target[index, 0] - x.float()
                 target[b, k, x, y, 1] = batch_target[index, 1] - y.float()
-                target[b, k, x, y, 2] = math.log(batch_target[index, 2] / anchors[k][0])
-                target[b, k, x, y, 3] = math.log(batch_target[index, 3] / anchors[k][1])
+                target[b, k, x, y, 2] = torch.log(batch_target[index, 2] / _anchors[i][0])
+                target[b, k, x, y, 3] = torch.log(batch_target[index, 3] / _anchors[k][1])
                 target[b, k, x, y, 4] = 1
                 target[b, k, x, y, 5 + c] = 1
 

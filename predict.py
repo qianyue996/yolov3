@@ -33,17 +33,25 @@ def process(img, input):
     all_boxes, all_scores, all_labels = [], [], []
 
     for i in range(len(output)):
-        pred = output[i].squeeze()  # (1, 3 * 85, S, S)
         S = CONF.feature_map[i]
-        pred = pred.view(3, 85, S, S).permute(0, 2, 3, 1)  # [3, S, S, 85]
 
-        grid_y, grid_x = torch.meshgrid(torch.arange(S), torch.arange(S), indexing='ij')
-        grid = torch.stack((grid_x, grid_y), dim=-1).float().to(CONF.device)  # [S, S, 2]
-        grid = grid.unsqueeze(0)  # [1, S, S, 2]
+        prediction = output[i].squeeze().view(3, 85, S, S).permute(0, 2, 3, 1)
+        anchors = torch.tensor(CONF.anchors[i], device=CONF.device)
 
-        # xywh to xyxy
-        bx_by = (torch.sigmoid(pred[..., 0:2]) + grid) * CONF.imgsize / S
-        bw_bh = (pred[..., 2:4] * CONF.imgsize)  # anchor decode
+        prediction[..., 4] = torch.sigmoid(prediction[..., 4])
+        mask = prediction[..., 4] > 0.5
+
+        x = prediction[mask][:, 0].sigmoid() * CONF.feature_map[i] * CONF.net_scaled[i]
+        y = prediction[mask][:, 1].sigmoid() * CONF.feature_map[i] * CONF.net_scaled[i]
+        w = torch.exp(prediction[mask][:, 2] * anchors[:, 0].view(-1, 1))
+        h = torch.exp(prediction[mask][:, 3] * anchors[:, 1].view(-1, 1))
+        c = prediction[mask][:, 4]
+        _cls = prediction[mask][:, 5:].sigmoid()
+
+        scores = c.unsqueeze(-1) * _cls
+
+        boxes = 
+
         box_x1y1 = bx_by - bw_bh / 2
         box_x2y2 = bx_by + bw_bh / 2
         boxes = torch.cat([box_x1y1, box_x2y2], dim=-1)  # [3, S, S, 4]
