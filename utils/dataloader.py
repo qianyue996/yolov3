@@ -6,6 +6,8 @@ import cv2 as cv
 import torchvision.transforms as transforms
 from torch.utils.data.dataset import Dataset
 import numpy as np
+
+from config.yolov3 import CONF
 from utils.tools import *
 
 class YOLODataset(Dataset):
@@ -13,7 +15,7 @@ class YOLODataset(Dataset):
         super(YOLODataset, self).__init__()
         #------------------------------#
         train_path = r'coco_train.txt'
-        self.IMG_SIZE = 416
+        self.IMG_SIZE = CONF.imgsize
         self.smb = [13,26,52]
         self.train = train
         self.targets = []
@@ -34,25 +36,25 @@ class YOLODataset(Dataset):
 
     def __getitem__(self, index):
         image, labels = cv.imread(self.targets[index][0]), self.targets[index][1]
-        image,boxes,ids = self.augment_data(image,labels)
+        boxes,ids = [label[:4] for label in labels], [label[4] for label in labels]
+        # image,boxes,ids = self.augment_data(image,labels)
+        image, boxes = self.augment_data(image,labels)
+        # self.chakan(image,boxes)
 
         image = np.transpose(np.array(image / 255.0, dtype=np.float32), (2, 0, 1))
 
-        y = [(torch.zeros((3,self.smb[0],self.smb[0],5+80))),
-             torch.zeros((3,self.smb[1],self.smb[1],5+80)),
-             torch.zeros((3,self.smb[2],self.smb[2],5+80))]
-        #
-        for i in range(len(y)):
-            for j in range(len(boxes)):
-                box = xyxy2xywh(boxes[j])
-                grid_x,grid_y = int(box[0]/(self.IMG_SIZE/self.smb[i])),int(box[1]/(self.IMG_SIZE/self.smb[i]))
-                cx = box[0]%(self.IMG_SIZE/self.smb[i])/(self.IMG_SIZE/self.smb[i])
-                cy = box[1]%(self.IMG_SIZE/self.smb[i])/(self.IMG_SIZE/self.smb[i])
-                w,h = box[2]/self.IMG_SIZE,box[3]/self.IMG_SIZE
+        target = []
+        for i in range(len(boxes)):
+            x1, y1, x2, y2 = np.array(boxes[i]) / self.IMG_SIZE
+            id = ids[i]
+            x = (x2 + x1) / 2
+            y = (y2 + y1) / 2
+            w = x2 - x1
+            h = y2 - y1
+            target.append([x,y,w,h,id])
+        target = np.array(target, dtype=np.float32)
 
-                y[i][:,grid_x,grid_y,:5] = torch.as_tensor((cx,cy,w,h,1),dtype=torch.float32)
-                y[i][:,grid_x,grid_y,5:][:,ids[j]] = 1
-        return image,y
+        return image,target
     def augment_data(self, image,labels,hue=.1, sat=.7, val=.4):
         #------------------------------#
         # 随机数据增强
@@ -104,7 +106,7 @@ class YOLODataset(Dataset):
         lut_val = np.clip(x * r[2], 0, 255).astype(dtype)
         image_data = cv.merge((cv.LUT(hue, lut_hue), cv.LUT(sat, lut_sat), cv.LUT(val, lut_val)))
         image_data = cv.cvtColor(image_data, cv.COLOR_HSV2RGB)
-        image = image_data.copy()
+        # image = image_data.copy()
         #------------------------------#
         # 处理bbox位置大小
         #------------------------------#
@@ -121,4 +123,23 @@ class YOLODataset(Dataset):
                 new_bbox.append([self.IMG_SIZE-x1,y1,self.IMG_SIZE-x2,y2])
             boxes = new_bbox
         
-        return image,boxes,ids
+        # return image,boxes,ids
+        return image, boxes
+    
+    def chakan(self, image, boxes):
+        for i in range(len(boxes)):
+            x1,y1,x2,y2 = boxes[i]
+            cv.rectangle(image, (x1,y1), (x2,y2), (0, 0, 255), thickness=2)
+        cv.imshow('5', image)
+        cv.waitKey(0)
+        cv.destroyAllWindows()
+    
+def yolo_collate_fn(batch):
+    images = []
+    bboxes = []
+    for img, box in batch:
+        images.append(img)
+        bboxes.append(box)
+    images = torch.from_numpy(np.array(images)).type(torch.FloatTensor)
+    bboxes = [torch.from_numpy(ann).type(torch.FloatTensor) for ann in bboxes]
+    return images, bboxes

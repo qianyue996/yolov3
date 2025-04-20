@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
-import numpy as np
-from utils.tools import iou
+import math
+
 from config.yolov3 import CONF
 
 class YOLOv3LOSS():
@@ -17,68 +17,104 @@ class YOLOv3LOSS():
         self.BCEloss = nn.BCELoss()
         self.MSEloss = nn.MSELoss()
         pass
-    def __call__(self, predict, target):
+    def __call__(self, predict, targets):
         loss = torch.zeros(1, device=self.device)
 
         for i in range(3):
-            pred = predict[i].view(-1, self.anchor_num,
-                                   5 + self.classes_num,
-                                   self.feature_map[i],
-                                   self.feature_map[i]).permute(0, 1, 3, 4, 2)
-            targ = target[i]
+            S = self.feature_map[i]
 
-            pred[..., 0] = torch.sigmoid(pred[..., 0])
-            pred[..., 1] = torch.sigmoid(pred[..., 1])
-            pred[..., 4] = torch.sigmoid(pred[..., 4])
-            pred[..., 5:] = torch.sigmoid(pred[..., 5:])
+            prediction = predict[i].view(-1, 3, 5 + 80, S, S).permute(0, 1, 3, 4, 2)
 
-            anchors = self.anchors[i]
+            anchors = [(a_w / 416.0 * S, a_h / 416.0 * S) for a_w, a_h in self.anchors[i]]
 
-            noobj_mask, obj_mask = self.build_target(targ, anchors)
+            target = self.build_target(i, targets, anchors, S)
 
-            # no object loss
-            loss += self.BCEloss(pred[..., 4][noobj_mask], targ[..., 4][noobj_mask])
+            obj_mask = target[..., 4] == 1
 
-            # object loss
-            x = pred[..., 0][obj_mask]
-            y = pred[..., 1][obj_mask]
-            w = pred[..., 2][obj_mask]
-            h = pred[..., 3][obj_mask]
-            c = pred[..., 4][obj_mask]
-            _cls = pred[..., 5:][obj_mask]
+            n = obj_mask.sum()
+            if n != 0:
+                x = torch.sigmoid(prediction[..., 0][obj_mask])
+                t_x = target[..., 0][obj_mask]
 
-            t_x = targ[..., 0][obj_mask]
-            t_y = targ[..., 1][obj_mask]
-            t_w = targ[..., 2][obj_mask]
-            t_h = targ[..., 3][obj_mask]
-            t_c = targ[..., 4][obj_mask]
-            t_cls = targ[..., 5:][obj_mask]
+                y = torch.sigmoid(prediction[..., 1][obj_mask])
+                t_y = target[..., 1][obj_mask]
 
-            x_loss = torch.nan_to_num(self.BCEloss(x, t_x), nan=0.0)
-            y_loss = torch.nan_to_num(self.BCEloss(y, t_y), nan=0.0)
-            w_loss = torch.nan_to_num(self.MSEloss(w, t_w), nan=0.0)
-            h_loss = torch.nan_to_num(self.MSEloss(h, t_h), nan=0.0)
+                w = prediction[..., 2][obj_mask]
+                t_w = target[..., 2][obj_mask]
 
-            loss_loc = (x_loss + y_loss + w_loss + h_loss) * 5
-            loss_conf = torch.nan_to_num(self.BCEloss(c, t_c), nan=0.0) * 1
-            loss_cls = torch.nan_to_num(self.BCEloss(_cls, t_cls), nan=0.0) * 1
+                h = prediction[..., 3][obj_mask]
+                t_h = target[..., 3][obj_mask]
 
-            loss += loss_loc + loss_conf + loss_cls
+                c = torch.sigmoid(prediction[..., 4][obj_mask])
+                t_c = target[..., 4][obj_mask]
+
+                _cls = torch.sigmoid(prediction[..., 5:][obj_mask])
+                t_cls = target[..., 5:][obj_mask]
+
+                # noobj target
+                noobj_mask = ~obj_mask
+                no_conf = torch.sigmoid(prediction[..., 4][noobj_mask])
+                no_t_conf = torch.zeros_like(no_conf)
+                loss += self.BCEloss(no_conf, no_t_conf)
+
+                loss_x = self.BCEloss(x, t_x)
+                loss_y = self.BCEloss(y, t_y)
+                loss_w = self.MSEloss(w, t_w)
+                loss_h = self.MSEloss(h, t_h)
+                loss_loc = (loss_x + loss_y + loss_w + loss_h) * 1
+
+                loss_cls = self.BCEloss(_cls, t_cls) * 2
+                loss_conf = self.BCEloss(c, t_c)
+                
+                loss += loss_loc + loss_cls + loss_conf
+
         return loss
 
-    def build_target(self, target, anchors, thre=0.4):
-        anchors = torch.tensor(anchors, device=self.device) / self.IMG_SIZE
-        gt_wh = torch.minimum(target[..., 2:4], anchors.view(3, 1, 1, 2))
+    def build_target(self, i, targets, anchors, S, thre=0.4):
+        B = len(targets)
+        target = torch.zeros(B, 3, S, S, 5 + 80)
 
-        iou_i = gt_wh[..., 0] * gt_wh[..., 1]
-        iou_u = (torch.prod(target[..., 2:4], dim=-1) + (torch.prod(anchors, dim=-1)).view(3, 1, 1)) - iou_i
-        iou = iou_i / iou_u
+        for b in range(B):
+            batch_target = torch.zeros_like(targets[b])
+            batch_target[:, 0:2] = targets[b][:, 0:2] * S
+            batch_target[:, 2:4] = targets[b][:, 2:4] * S
+            batch_target[:, 4] = targets[b][:, 4]
 
-        best_iou, best_anchor_idx = torch.max(iou, dim=1)
-        mask = torch.zeros_like(iou, device=target.device)  # (B, A, H, W)
-        mask.scatter_(1, best_anchor_idx.unsqueeze(1), best_iou.unsqueeze(1))
+            gt_box = batch_target[:, 2:4]
 
-        obj_mask = mask > thre
-        noobj_mask = ~obj_mask
+            _anchors = torch.tensor(anchors, dtype=torch.float32)
 
-        return noobj_mask, obj_mask
+            best_iou, best_na = torch.max(self.compute_iou(gt_box, _anchors), dim=1)
+
+            for index, n_a in enumerate(best_na):
+                if best_iou[index] < thre:
+                    continue
+
+                k = n_a
+
+                x = batch_target[index, 0].long()
+
+                y = batch_target[index, 1].long()
+
+                c = batch_target[index, 4].long()
+
+                target[b, k, x, y, 0] = batch_target[index, 0] - x.float()
+                target[b, k, x, y, 1] = batch_target[index, 1] - y.float()
+                target[b, k, x, y, 2] = math.log(batch_target[index, 2] / anchors[k][0])
+                target[b, k, x, y, 3] = math.log(batch_target[index, 3] / anchors[k][1])
+                target[b, k, x, y, 4] = 1
+                target[b, k, x, y, 5 + c] = 1
+
+        return target
+    def compute_iou(self, gt_box, anchors):
+        gt_box = gt_box.unsqueeze(1)
+        anchors = anchors.unsqueeze(0)
+
+        min_wh = torch.min(gt_box, anchors)
+        iou_i = min_wh[..., 0] * min_wh[..., 1]
+
+        area_a = (gt_box[..., 0] * gt_box[..., 1]).expand_as(iou_i)
+        area_b =  (anchors[..., 0] * anchors[..., 1]).expand_as(iou_i)
+        iou_u = area_a + area_b - iou_i
+
+        return iou_i / iou_u
