@@ -28,19 +28,25 @@ class PreData():
         self.val_output_path         = "coco_val.txt"
 
         #-------------------------------------------------------#
-        #   类别txt文件路径
-        #-------------------------------------------------------#
-        self.coco_classes_path = r'config/coco_classes.txt'
-
-        #-------------------------------------------------------#
         #   预加载数据
         #-------------------------------------------------------#
-        
+        with open(self.train_annotation_path, 'r', encoding='utf-8')as f:
+            print('\nloading train annotation...\n')
+            self.train_data = json.load(f)
         with open(self.val_annotation_path, 'r', encoding='utf-8')as f:
+            print('\nloading val annotation...\n')
             self.val_data = json.load(f)
+        
+        #-------------------------------------------------------#
+        #   类别txt文件路径
+        #-------------------------------------------------------#
+        self.coco_classes_path = 'config/coco_classes.txt'
 
-        
-        
+        self.coco_classes = sorted(name['name'] for name in self.train_data['categories'])
+        with open(self.coco_classes_path, 'r', encoding='utf-8')as f:
+            for name in f.readlines():
+                self.coco_classes.append(name.strip('\n'))
+
     def __call__(self):
         #-------------------------------------------------------#
         #   train 定义变量
@@ -50,20 +56,13 @@ class PreData():
         #-------------------------------------------------------#
         #   正式处理数据
         #-------------------------------------------------------#
-        with open(self.train_annotation_path, 'r', encoding='utf-8')as f:
-            self.train_data = json.load(f)
-        self.precoco_classes() # 处理coco2014数据集类别列表
-        coco_classes = []
-        with open(self.coco_classes_path, 'r', encoding='utf-8')as f:
-            for name in f.readlines():
-                coco_classes.append(name.strip('\n'))
         self.id2name = {item['id']:item['name'] for item in self.train_data['categories']}
         # 正式处理数据
         for data in tqdm(self.train_data['annotations'], desc='processing... '):
             image_id = data['image_id']
             full_path = os.path.join(self.train_datasets_path,
                                      f'COCO_train2014_{image_id:012d}.jpg')
-            real_id = coco_classes.index(self.id2name[data['category_id']])
+            real_id = self.coco_classes.index(self.id2name[data['category_id']])
             name_box_id[full_path].append([data['bbox'], real_id])
 
         with open(self.train_output_path, 'w', encoding='utf-8')as f:
@@ -83,14 +82,6 @@ class PreData():
         #-------------------------------------------------------#
         name_box_id = defaultdict(list)
 
-    def precoco_classes(self):
-        #-------------------------------------------------------#
-        #   处理coco2014数据集
-        #-------------------------------------------------------#
-        coco_classes = sorted(name['name'] for name in self.train_data['categories'])
-        with open(self.coco_classes_path, 'w', encoding='utf-8')as f:
-            for i in coco_classes:
-                f.write(f'{i}\n')
 if __name__=='__main__':
     predata = PreData()
     predata()
