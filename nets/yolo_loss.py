@@ -12,12 +12,15 @@ class YOLOv3LOSS():
         self.anchor_num = CONF.per_feat_anc_num
         self.classes_num = 80
     def BCELoss(self, x, y):
+        eps = 1e-7
+        x = torch.clamp(x, eps, 1 - eps)
         return - (y * torch.log(x) + (1 - y) * torch.log(1 - x))
     
     def MSELoss(self, x, y):
         return (x - y) ** 2
     def __call__(self, predict, targets):
         loss = torch.zeros(1, device=self.device)
+        obj_lambda = []
 
         for i in range(3):
             S = self.feature_map[i]
@@ -40,11 +43,11 @@ class YOLOv3LOSS():
                 y = torch.sigmoid(prediction[..., 1][obj_mask])
                 t_y = target[..., 1][obj_mask]
 
-                w = prediction[..., 2][obj_mask]
-                t_w = target[..., 2][obj_mask]
+                w = torch.exp(prediction[..., 2][obj_mask])
+                t_w = torch.exp(target[..., 2][obj_mask])
 
-                h = prediction[..., 3][obj_mask]
-                t_h = target[..., 3][obj_mask]
+                h = torch.exp(prediction[..., 3][obj_mask])
+                t_h = torch.exp(target[..., 3][obj_mask])
 
                 c = torch.sigmoid(prediction[..., 4][obj_mask])
                 t_c = target[..., 4][obj_mask]
@@ -61,7 +64,7 @@ class YOLOv3LOSS():
                 loss_y = self.BCELoss(y, t_y).mean()
                 loss_w = self.MSELoss(w, t_w).mean()
                 loss_h = self.MSELoss(h, t_h).mean()
-                loss_loc = (loss_x + loss_y + loss_w + loss_h) * 1
+                loss_loc = (loss_x + loss_y + loss_w + loss_h) * (2 - (t_w * t_h))
 
                 loss_cls = self.BCELoss(_cls, t_cls).sum() / _cls.shape[1]
                 loss_conf = self.BCELoss(c, t_c).mean()
@@ -74,7 +77,6 @@ class YOLOv3LOSS():
         B = len(targets)
         target = torch.zeros(B, 3, S, S, 5 + 80, device=self.device)
         ignore_target = target.clone() # 忽略非最好的两个anchors
-
 
         for bs in range(B):
             batch_target = targets[bs].clone()
@@ -108,7 +110,7 @@ class YOLOv3LOSS():
                 target[bs, k, x, y, 4] = 1
                 target[bs, k, x, y, 5 + c] = 1
 
-                ignore_target[bs, :, x, y, 4] = 1
+                ignore_target[bs, :, x, y, 4] = 1 # 将对应grid cell的conf设置为1，剩下的grid cell就是背景
                 ignore_target[bs, :, x, y, 4] = 1
 
         return target, ignore_target
