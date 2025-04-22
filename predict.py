@@ -31,7 +31,6 @@ def process(img, input):
 
     for i in range(len(output)):
         S = CONF.feature_map[i]
-
         stride = CONF.net_scaled[i]
 
         prediction = output[i].squeeze().view(3, 85, S, S).permute(0, 2, 3, 1)

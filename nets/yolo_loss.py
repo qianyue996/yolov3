@@ -13,15 +13,18 @@ class YOLOv3LOSS():
         self.anchors  = CONF.anchors
         self.anchor_num = CONF.per_feat_anc_num
         self.classes_num = 80
-
-        self.BCEloss = nn.BCELoss()
-        self.MSEloss = nn.MSELoss()
-        pass
+    def BCELoss(self, x, y):
+        return - (y * torch.log(x) + (1 - y) * torch.log(1 - x))
+    
+    def MSELoss(self, x, y):
+        return (x - y) ** 2
     def __call__(self, predict, targets):
         loss = torch.zeros(1, device=self.device)
 
         for i in range(3):
+            B = predict[i].shape[0]
             S = self.feature_map[i]
+            stride = CONF.net_scaled[i]
 
             prediction = predict[i].view(-1, 3, 5 + 80, S, S).permute(0, 1, 3, 4, 2)
 
@@ -33,7 +36,7 @@ class YOLOv3LOSS():
 
             n = obj_mask.sum()
             if n != 0:
-                x = torch.sigmoid(prediction[..., 0][obj_mask])
+                x = torch.sigmoid(prediction[..., 0])[obj_mask]
                 t_x = target[..., 0][obj_mask]
 
                 y = torch.sigmoid(prediction[..., 1][obj_mask])
@@ -55,16 +58,16 @@ class YOLOv3LOSS():
                 noobj_mask = ~obj_mask
                 no_conf = torch.sigmoid(prediction[..., 4][noobj_mask])
                 no_t_conf = torch.zeros_like(no_conf)
-                loss += self.BCEloss(no_conf, no_t_conf)
+                loss += self.BCELoss(no_conf, no_t_conf).mean()
 
-                loss_x = self.BCEloss(x, t_x)
-                loss_y = self.BCEloss(y, t_y)
-                loss_w = self.MSEloss(w, t_w)
-                loss_h = self.MSEloss(h, t_h)
+                loss_x = self.BCELoss(x, t_x).mean()
+                loss_y = self.BCELoss(y, t_y).mean()
+                loss_w = self.MSELoss(w, t_w).mean()
+                loss_h = self.MSELoss(h, t_h).mean()
                 loss_loc = (loss_x + loss_y + loss_w + loss_h) * 1
 
-                loss_cls = self.BCEloss(_cls, t_cls) * 2
-                loss_conf = self.BCEloss(c, t_c)
+                loss_cls = self.BCELoss(_cls, t_cls).sum() / _cls.shape[1]
+                loss_conf = self.BCELoss(c, t_c).mean()
                 
                 loss += loss_loc + loss_cls + loss_conf
 
