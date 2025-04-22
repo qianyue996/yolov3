@@ -6,6 +6,7 @@ from torch.utils.tensorboard import SummaryWriter
 import os
 import sys
 from tqdm import tqdm
+import numpy as np
 
 from config.yolov3 import CONF
 # from nets.yolo import YOLOv3
@@ -40,7 +41,9 @@ class Trainer():
         self.model.getWeight(self.model)
 
         # train utils
-        self.optimizer=optim.Adam([param for param in self.model.parameters() if param.requires_grad],lr=self.lr, weight_decay=self.weight_decay)
+        self.optimizer=optim.Adam([param for param in self.model.parameters() if param.requires_grad],
+                                  lr=self.lr,
+                                  weight_decay=self.weight_decay)
         self.loss_fn = YOLOv3LOSS()
 
         # 尝试从上次训练结束点开始
@@ -82,8 +85,13 @@ class Trainer():
                     loss.backward()
                     self.optimizer.step()
 
-                    if batch % 50 == 0:
-                        lr = self.dynamic_lr(self.optimizer, self.lr, loss)
+                    lr = self.lr
+                    if (batch + 1) % 2 == 0:
+                        lr_pool = []
+                        for param_group in self.optimizer.param_groups:
+                            lr_pool.append(param_group['lr'])
+                        lr = np.array(lr_pool).mean()
+                        self.dynamic_lr(self.optimizer, lr, loss)
 
                     epoch_loss+=loss.item()
                     _loss = epoch_loss/(batch + 1)

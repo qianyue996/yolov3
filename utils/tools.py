@@ -36,11 +36,7 @@ class Dynamic_lr():
         self.losses = []
     def __call__(self, optimizer, lr, loss):
         self.losses.append(loss)
-
-        lr_pool = []
-        for param_group in optimizer.param_groups:
-            lr_pool.append(param_group['lr'])
-        new_lr = np.array(lr_pool).mean()
+        new_lr = lr
         try:
             if len(self.losses) == 2:
                 if self.losses[-1] > self.losses[-2]:
@@ -55,4 +51,3 @@ class Dynamic_lr():
                     self.losses = []
         except Exception as e:
             pass
-        return new_lr
