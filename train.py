@@ -57,7 +57,6 @@ class Trainer():
                 self.model.load_state_dict(checkpoint['model'])
                 self.optimizer.load_state_dict(checkpoint['optimizer'])
                 self.start_epoch = checkpoint['epoch'] + 1
-                self.global_step = checkpoint['global_step']
             except Exception as e:
                 pass
 
@@ -87,7 +86,7 @@ class Trainer():
                     epoch_loss+=loss.item()
                     _loss = epoch_loss/(batch + 1)
 
-                    if (batch + 1) % 10 == 0:
+                    if (batch + 1)  == len(self.dataloader) // 20:
                         lr_pool = []
                         for param_group in self.optimizer.param_groups:
                             lr_pool.append(param_group['lr'])
@@ -109,7 +108,6 @@ class Trainer():
                 'model':self.model.state_dict(),
                 'optimizer':self.optimizer.state_dict(),
                 'epoch':epoch,
-                'global_step':self.global_step
             }
             torch.save(checkpoint,'.checkpoint.pth')
             os.replace('.checkpoint.pth','checkpoint.pth')

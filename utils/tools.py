@@ -41,13 +41,11 @@ class Dynamic_lr():
             if len(self.losses) == 2:
                 if self.losses[-1] > self.losses[-2]:
                     new_lr = lr - lr * 0.1
-                    for param_group in optimizer.param_groups:
-                        param_group['lr'] = new_lr
-                    self.losses = []
                 else:
                     new_lr = lr + lr * 0.1
-                    for param_group in optimizer.param_groups:
-                        param_group['lr'] = new_lr
-                    self.losses = []
+                new_lr = max(min(new_lr, 1e-2), 1e-6)
+                for param_group in optimizer.param_groups:
+                    param_group['lr'] = new_lr
+                self.losses = []
         except Exception as e:
             pass
