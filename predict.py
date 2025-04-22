@@ -96,7 +96,7 @@ def transport(img, to_tensor=True):
 if __name__ == '__main__':
     is_cap = False
 
-    test_img = r"D:\Python\yolo3-pytorch\img\street.jpg"
+    test_img = r"data/test_img/street.jpg"
     img = cv.imread(test_img)
 
     cap = cv.VideoCapture(0)

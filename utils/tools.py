@@ -29,3 +29,30 @@ def cvtColor(image):
 def preprocess_input(image):
     image /= 255.0
     return image
+
+class Dynamic_lr():
+    def __init__(self):
+        super(Dynamic_lr, self).__init__()
+        self.losses = []
+    def __call__(self, optimizer, lr, loss):
+        self.losses.append(loss)
+
+        lr_pool = []
+        for param_group in optimizer.param_groups:
+            lr_pool.append(param_group['lr'])
+        new_lr = np.array(lr_pool).mean()
+        try:
+            if len(self.losses) == 2:
+                if self.losses[-1] > self.losses[-2]:
+                    new_lr = lr - lr * 0.1
+                    for param_group in optimizer.param_groups:
+                        param_group['lr'] = new_lr
+                    self.losses = []
+                else:
+                    new_lr = lr + lr * 0.1
+                    for param_group in optimizer.param_groups:
+                        param_group['lr'] = new_lr
+                    self.losses = []
+        except Exception as e:
+            pass
+        return new_lr

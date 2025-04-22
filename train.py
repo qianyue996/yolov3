@@ -11,6 +11,7 @@ from config.yolov3 import CONF
 # from nets.yolo import YOLOv3
 from nets.yolo_copy import YOLOv3
 from utils.dataloader import YOLODataset, yolo_collate_fn
+from utils.tools import Dynamic_lr
 from nets.yolo_loss import YOLOv3LOSS
 
 class Trainer():
@@ -57,6 +58,8 @@ class Trainer():
             except Exception as e:
                 pass
 
+        self.dynamic_lr = Dynamic_lr()
+
         # tensorboard
         self.writer=SummaryWriter(f'runs/{time.strftime("%Y-%m-%d-%H-%M-%S",time.localtime())}')
 
@@ -78,10 +81,15 @@ class Trainer():
                     self.optimizer.zero_grad()
                     loss.backward()
                     self.optimizer.step()
+
+                    if batch % 50 == 0:
+                        lr = self.dynamic_lr(self.optimizer, self.lr, loss)
+
                     epoch_loss+=loss.item()
                     _loss = epoch_loss/(batch + 1)
                     bar.set_postfix({'epoch':epoch,
-                                     'avg_loss:':f'{_loss:.4f}'})
+                                     'avg_loss:':f'{_loss:.4f}',
+                                     'lr':f'{lr:.6f}'})
                     
                     self.writer.add_scalar('loss',_loss, self.global_step)
                     self.global_step += 1
