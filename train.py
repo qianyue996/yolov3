@@ -84,20 +84,19 @@ class Trainer():
                     self.optimizer.zero_grad()
                     loss.backward()
                     self.optimizer.step()
+                    epoch_loss+=loss.item()
+                    _loss = epoch_loss/(batch + 1)
 
-                    lr = self.lr
-                    if (batch + 1) % 2 == 0:
+                    if (batch + 1) % 10 == 0:
                         lr_pool = []
                         for param_group in self.optimizer.param_groups:
                             lr_pool.append(param_group['lr'])
-                        lr = np.array(lr_pool).mean()
-                        self.dynamic_lr(self.optimizer, lr, loss)
+                        self.lr = np.array(lr_pool).mean()
+                        self.dynamic_lr(self.optimizer, self.lr, _loss)
 
-                    epoch_loss+=loss.item()
-                    _loss = epoch_loss/(batch + 1)
                     bar.set_postfix({'epoch':epoch,
                                      'avg_loss:':f'{_loss:.4f}',
-                                     'lr':f'{lr:.6f}'})
+                                     'lr':f'{self.lr:.6f}'})
                     
                     self.writer.add_scalar('loss',_loss, self.global_step)
                     self.global_step += 1
