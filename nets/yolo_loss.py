@@ -20,17 +20,17 @@ class YOLOv3LOSS():
         loss = torch.zeros(1, device=self.device)
 
         for i in range(3):
-            B = predict[i].shape[0]
             S = self.feature_map[i]
-            stride = CONF.net_scaled[i]
 
             prediction = predict[i].view(-1, 3, 5 + 80, S, S).permute(0, 1, 3, 4, 2)
 
             anchors = self.anchors[i]
 
-            target = self.build_target(i, targets, anchors, S)
+            target, ignore_target = self.build_target(i, targets, anchors, S)
 
             obj_mask = target[..., 4] == 1
+            ignore_mask = ignore_target[..., 4] == 1
+            noobj_mask = ~ignore_mask
 
             n = obj_mask.sum()
             if n != 0:
@@ -53,7 +53,6 @@ class YOLOv3LOSS():
                 t_cls = target[..., 5:][obj_mask]
 
                 # noobj target
-                noobj_mask = ~obj_mask
                 no_conf = torch.sigmoid(prediction[..., 4][noobj_mask])
                 no_t_conf = torch.zeros_like(no_conf)
                 loss += self.BCELoss(no_conf, no_t_conf).mean()
@@ -74,9 +73,12 @@ class YOLOv3LOSS():
     def build_target(self, i, targets, anchors, S, thre=0.4):
         B = len(targets)
         target = torch.zeros(B, 3, S, S, 5 + 80, device=self.device)
+        ignore_target = target.clone() # 忽略非最好的两个anchors
+
 
         for bs in range(B):
             batch_target = targets[bs].clone()
+
             batch_target[:, 0:2] = targets[bs][:, 0:2] * S
             batch_target[:, 2:4] = targets[bs][:, 2:4]
             batch_target[:, 4] = targets[bs][:, 4]
@@ -106,7 +108,10 @@ class YOLOv3LOSS():
                 target[bs, k, x, y, 4] = 1
                 target[bs, k, x, y, 5 + c] = 1
 
-        return target
+                ignore_target[bs, :, x, y, 4] = 1
+                ignore_target[bs, :, x, y, 4] = 1
+
+        return target, ignore_target
     def compute_iou(self, gt_box, anchors):
         gt_box = gt_box.unsqueeze(1)
         anchors = anchors.unsqueeze(0)
