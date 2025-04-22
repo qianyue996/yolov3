@@ -12,16 +12,11 @@ loss_fn = YOLOv3LOSS()
 model = YOLOv3().to(CONF.device)
 model.load_state_dict(torch.load("checkpoint.pth", map_location=CONF.device)['model'])
 model.eval()
-
-class_name = []
-with open('config\coco_classes.txt', 'r', encoding='utf-8')as f:
-    for i in f.readlines():
-        class_name.append(i.strip('\n'))
 def draw(img, boxes, scores, labels):
     for i in range(len(boxes)):
         x1, y1, x2, y2 = boxes[i]
         cv.rectangle(img, (int(x1), int(y1)), (int(x2), int(y2)), (0, 0, 255), thickness=1)
-        cv.putText(img, f'{scores[i]:.2f} {class_name[labels[i]]}', (int(x1), int(y1)+5), cv.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), thickness=1)
+        cv.putText(img, f'{scores[i]:.2f} {CONF.class_name[labels[i]]}', (int(x1), int(y1)+5), cv.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), thickness=1)
 
 def process(img, input):
     with torch.no_grad():
@@ -31,7 +26,7 @@ def process(img, input):
 
     for i in range(len(output)):
         S = CONF.feature_map[i]
-        stride = CONF.net_scaled[i]
+        stride = CONF.sample_ratio[i]
 
         prediction = output[i].squeeze().view(3, 85, S, S).permute(0, 2, 3, 1)
         anchors = torch.tensor(CONF.anchors[i], device=CONF.device)
@@ -57,7 +52,7 @@ def process(img, input):
         boxes = torch.stack((x - w / 2, y - h / 2, x + w / 2, y + h / 2), dim=-1)
 
         # 选出所有分数大于阈值的 box + 类别
-        score_thresh = 0.5
+        score_thresh = 0.4
         for cls_id in range(80):
             cls_scores = scores[:, cls_id]
             keep = cls_scores > score_thresh

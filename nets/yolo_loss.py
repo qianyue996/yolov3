@@ -9,7 +9,6 @@ class YOLOv3LOSS():
         self.feature_map = CONF.feature_map
         self.IMG_SIZE = CONF.imgsize
         self.anchors  = CONF.anchors
-        self.anchor_num = CONF.per_feat_anc_num
         self.classes_num = 80
     def BCELoss(self, x, y):
         eps = 1e-7

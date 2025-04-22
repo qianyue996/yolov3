@@ -25,10 +25,6 @@ def xyxy2xywh(box: list):
 #---------------------------------------------------------#
 def cvtColor(image):
     return cv.cvtColor(image, cv.COLOR_BGR2RGB)
-    
-def preprocess_input(image):
-    image /= 255.0
-    return image
 
 class Dynamic_lr():
     def __init__(self):
@@ -49,3 +45,10 @@ class Dynamic_lr():
                 self.losses = []
         except Exception as e:
             pass
+
+def nms(boxes, scores, iou_threshold):
+    if len(boxes) != len(scores):
+        print('boxes and scores length is not equal!')
+        return
+    
+    

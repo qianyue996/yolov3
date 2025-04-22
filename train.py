@@ -57,6 +57,7 @@ class Trainer():
                 self.model.load_state_dict(checkpoint['model'])
                 self.optimizer.load_state_dict(checkpoint['optimizer'])
                 self.start_epoch = checkpoint['epoch'] + 1
+                self.lr = checkpoint['lr']
             except Exception as e:
                 pass
 
@@ -105,9 +106,10 @@ class Trainer():
     def save_best_model(self,epoch):
         if len(self.losses)==1 or self.losses[-1]<self.losses[-2]: # 保存更优的model
             checkpoint={
-                'model':self.model.state_dict(),
-                'optimizer':self.optimizer.state_dict(),
-                'epoch':epoch,
+                'model' : self.model.state_dict(),
+                'optimizer' : self.optimizer.state_dict(),
+                'epoch' : epoch,
+                'lr' : self.lr
             }
             torch.save(checkpoint,'.checkpoint.pth')
             os.replace('.checkpoint.pth','checkpoint.pth')
