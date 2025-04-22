@@ -13,11 +13,15 @@ model = YOLOv3().to(CONF.device)
 model.load_state_dict(torch.load("checkpoint.pth", map_location=CONF.device)['model'])
 model.eval()
 
+class_name = []
+with open('config\coco_classes.txt', 'r', encoding='utf-8')as f:
+    for i in f.readlines():
+        class_name.append(i.strip('\n'))
 def draw(img, boxes, scores, labels):
     for i in range(len(boxes)):
         x1, y1, x2, y2 = boxes[i]
-        cv.rectangle(img, (int(x1), int(y1)), (int(x2), int(y2)), (0, 0, 255), thickness=2)
-        cv.putText(img, f'scores: {scores[i]:.2f} {labels[i]}', (int(x1)+5, int(y1)+5), cv.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), thickness=2)
+        cv.rectangle(img, (int(x1), int(y1)), (int(x2), int(y2)), (0, 0, 255), thickness=1)
+        cv.putText(img, f'{scores[i]:.2f} {class_name[labels[i]]}', (int(x1), int(y1)+5), cv.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), thickness=1)
 
 def process(img, input):
     with torch.no_grad():
@@ -34,7 +38,7 @@ def process(img, input):
         anchors = torch.tensor(CONF.anchors[i], device=CONF.device)
 
         prediction[..., 4] = torch.sigmoid(prediction[..., 4])
-        mask = prediction[..., 4] > 0.5
+        mask = prediction[..., 4] > 0.9
 
         grid_x, grid_y = torch.meshgrid(torch.arange(S), torch.arange(S), indexing='ij')
         grid_x = grid_x.to(CONF.device).unsqueeze(0).expand(3, -1, -1)
@@ -54,7 +58,7 @@ def process(img, input):
         boxes = torch.stack((x - w / 2, y - h / 2, x + w / 2, y + h / 2), dim=-1)
 
         # 选出所有分数大于阈值的 box + 类别
-        score_thresh = 0.3
+        score_thresh = 0.5
         for cls_id in range(80):
             cls_scores = scores[:, cls_id]
             keep = cls_scores > score_thresh
@@ -85,26 +89,37 @@ def process(img, input):
 def transport(img, to_tensor=True):
     if to_tensor:
         img = cv.resize(img, (CONF.imgsize, CONF.imgsize))
-        img = np.transpose(np.array(img / 255.0, dtype=np.float32), (2, 0, 1))
-        img = torch.tensor(img).unsqueeze(0).to(torch.float32).to(CONF.device)
-    return img
+        input = np.transpose(np.array(img / 255.0, dtype=np.float32), (2, 0, 1))
+        input = torch.tensor(input).unsqueeze(0).to(torch.float32).to(CONF.device)
+    return img, input
 
 if __name__ == '__main__':
-    # test_img = r"D:\Python\yolo3-pytorch\img\street.jpg"
-    # img = cv.imread(test_img)
+    is_cap = True
+
+    test_img = r"D:\Python\yolo3-pytorch\img\street.jpg"
+    img = cv.imread(test_img)
 
     cap = cv.VideoCapture(0)
-    while True:
-        ret, img = cap.read()
-        if not ret:
-                print("无法获取帧！")
+
+    if is_cap:
+        while True:
+            ret, img = cap.read()
+            if not ret:
+                    print("无法获取帧！")
+                    break
+            img, input = transport(img, to_tensor=True) # to tensor
+            process(img, input) # predict
+            cv.namedWindow('Camera', cv.WINDOW_NORMAL)
+            cv.imshow('Camera', img)
+            if cv.waitKey(1) == ord('q'):
                 break
-        input = transport(img, to_tensor=True) # to tensor
+        # 释放资源
+        cap.release()
+        cv.destroyAllWindows()
+    else:
+        img, input = transport(img, to_tensor=True) # to tensor
         process(img, input) # predict
         cv.namedWindow('Camera', cv.WINDOW_NORMAL)
         cv.imshow('Camera', img)
-        if cv.waitKey(1) == ord('q'):
-            break
-    # 释放资源
-    cap.release()
-    cv.destroyAllWindows()
+        cv.waitKey(0)
+        cv.destroyAllWindows()
