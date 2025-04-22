@@ -37,7 +37,7 @@ def process(img, input):
         anchors = torch.tensor(CONF.anchors[i], device=CONF.device)
 
         prediction[..., 4] = torch.sigmoid(prediction[..., 4])
-        mask = prediction[..., 4] > 0.9
+        mask = prediction[..., 4] > 0.6
 
         grid_x, grid_y = torch.meshgrid(torch.arange(S), torch.arange(S), indexing='ij')
         grid_x = grid_x.to(CONF.device).unsqueeze(0).expand(3, -1, -1)
@@ -88,12 +88,13 @@ def process(img, input):
 def transport(img, to_tensor=True):
     if to_tensor:
         img = cv.resize(img, (CONF.imgsize, CONF.imgsize))
+        input = cv.cvtColor(img, cv.COLOR_BGR2RGB)
         input = np.transpose(np.array(img / 255.0, dtype=np.float32), (2, 0, 1))
         input = torch.tensor(input).unsqueeze(0).to(torch.float32).to(CONF.device)
     return img, input
 
 if __name__ == '__main__':
-    is_cap = True
+    is_cap = False
 
     test_img = r"D:\Python\yolo3-pytorch\img\street.jpg"
     img = cv.imread(test_img)

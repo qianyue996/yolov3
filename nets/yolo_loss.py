@@ -60,14 +60,16 @@ class YOLOv3LOSS():
                 no_t_conf = torch.zeros_like(no_conf)
                 loss += self.BCELoss(no_conf, no_t_conf).mean()
 
-                loss_x = self.BCELoss(x, t_x).mean()
-                loss_y = self.BCELoss(y, t_y).mean()
-                loss_w = self.MSELoss(w, t_w).mean()
-                loss_h = self.MSELoss(h, t_h).mean()
-                loss_loc = (loss_x + loss_y + loss_w + loss_h) * (2 - (t_w * t_h))
+                each_box_lambda = 2 - (t_w * t_h)
 
-                loss_cls = self.BCELoss(_cls, t_cls).sum() / _cls.shape[1]
-                loss_conf = self.BCELoss(c, t_c).mean()
+                loss_x = self.BCELoss(x, t_x)
+                loss_y = self.BCELoss(y, t_y)
+                loss_w = self.MSELoss(w, t_w)
+                loss_h = self.MSELoss(h, t_h)
+                loss_loc = ((loss_x + loss_y + loss_w + loss_h) * each_box_lambda).mean()
+
+                loss_cls = self.BCELoss(_cls, t_cls).sum() / _cls.shape[0]
+                loss_conf = self.BCELoss(c, t_c).sum()
                 
                 loss += loss_loc + loss_cls + loss_conf
 
@@ -105,8 +107,8 @@ class YOLOv3LOSS():
 
                 target[bs, k, x, y, 0] = batch_target[index, 0] - x.float()
                 target[bs, k, x, y, 1] = batch_target[index, 1] - y.float()
-                target[bs, k, x, y, 2] = torch.log(batch_target[index, 2] / _anchors[k][0])
-                target[bs, k, x, y, 3] = torch.log(batch_target[index, 3] / _anchors[k][1])
+                target[bs, k, x, y, 2] = torch.log(batch_target[index, 2]) / _anchors[k][0]
+                target[bs, k, x, y, 3] = torch.log(batch_target[index, 3]) / _anchors[k][1]
                 target[bs, k, x, y, 4] = 1
                 target[bs, k, x, y, 5 + c] = 1
 
