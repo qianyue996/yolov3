@@ -71,6 +71,8 @@ class Trainer():
     def train(self):
         for epoch in range(self.start_epoch,self.epochs):
             epoch_loss=0
+            for param_group in self.optimizer.param_groups:
+                dynamic_lr = param_group['lr']
             dynamic_lr_point = [len(self.dataloader) // 2, len(self.dataloader) - 1]
             with tqdm(self.dataloader, disable=False) as bar:
                 for batch,item in enumerate(bar):
@@ -91,16 +93,12 @@ class Trainer():
                     epoch_loss+=loss.item()
                     _loss = epoch_loss/(batch + 1)
 
-                    if (batch + 1) in dynamic_lr_point:
-                        lr_pool = []
-                        for param_group in self.optimizer.param_groups:
-                            lr_pool.append(param_group['lr'])
-                        self.lr = np.array(lr_pool).mean()
-                        self.dynamic_lr(self.optimizer, self.lr, _loss)
-
+                    if batch in dynamic_lr_point:
+                        dynamic_lr = self.dynamic_lr(self.optimizer, dynamic_lr, _loss)
+                        
                     bar.set_postfix({'epoch':epoch,
-                                     'avg_loss:':f'{_loss:.4f}',
-                                     'lr':f'{self.lr:.6f}'})
+                                     'loss:':f'{_loss:.4f}',
+                                     'lr':f'{dynamic_lr:.6f}'})
                     
                     self.writer.add_scalar('loss',_loss, self.global_step)
                     self.global_step += 1

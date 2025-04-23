@@ -43,6 +43,7 @@ class Dynamic_lr():
                 for param_group in optimizer.param_groups:
                     param_group['lr'] = new_lr
                 self.losses = []
+            return new_lr
         except Exception as e:
             pass
 

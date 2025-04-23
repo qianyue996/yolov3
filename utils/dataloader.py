@@ -33,8 +33,9 @@ class YOLODataset(Dataset):
     def __getitem__(self, index):
         image, labels = cv.imread(self.targets[index][0]), self.targets[index][1]
         boxes, ids = [label[:4] for label in labels], [label[4] for label in labels]
+
         image, boxes = self.augment_data(image, boxes)
-        # self.chakan(image,boxes)
+        # self.chakan(image,boxes,ids)
 
         image = np.transpose(np.array(image / 255.0, dtype=np.float32), (2, 0, 1))
 
@@ -72,33 +73,30 @@ class YOLODataset(Dataset):
         #------------------------------#
         # 随机翻转
         #------------------------------#
-        # flip = self.rand()<.5
-        flip = True
+        flip = self.rand()<.5
+        # flip = True
         if flip: image = cv.flip(image,1)
         #------------------------------#
         # HSV色域变换
         #------------------------------#
-        # image_data = np.array(image, np.uint8)
-        # r = np.random.uniform(-1, 1, 3) * [hue, sat, val] + 1
+        r = np.random.uniform(-1, 1, 3) * [hue, sat, val] + 1
         #---------------------------------#
         #   将图像转到HSV上
         #---------------------------------#
-        # hue, sat, val = cv.split(cv.cvtColor(image_data, cv.COLOR_RGB2HSV))
-        # dtype = image_data.dtype
+        hue, sat, val = cv.split(cv.cvtColor(image, cv.COLOR_RGB2HSV))
+        dtype = image.dtype
         #---------------------------------#
         #   应用变换
         #---------------------------------#
-        # x = np.arange(0, 256, dtype=r.dtype)
-        # lut_hue = ((x * r[0]) % 180).astype(dtype)
-        # lut_sat = np.clip(x * r[1], 0, 255).astype(dtype)
-        # lut_val = np.clip(x * r[2], 0, 255).astype(dtype)
-        # image_data = cv.merge((cv.LUT(hue, lut_hue), cv.LUT(sat, lut_sat), cv.LUT(val, lut_val)))
-        # image_data = cv.cvtColor(image_data, cv.COLOR_HSV2RGB)
-        # image = image_data.copy()
+        _x = np.arange(0, 256, dtype=r.dtype)
+        lut_hue = ((_x * r[0]) % 180).astype(dtype)
+        lut_sat = np.clip(_x * r[1], 0, 255).astype(dtype)
+        lut_val = np.clip(_x * r[2], 0, 255).astype(dtype)
+        image = cv.merge((cv.LUT(hue, lut_hue), cv.LUT(sat, lut_sat), cv.LUT(val, lut_val)))
+        image = cv.cvtColor(image, cv.COLOR_HSV2RGB)
         #------------------------------#
         # 处理bbox位置大小
         #------------------------------#
-
         boxes = np.array(boxes)
         boxes[:, [0, 2]] = boxes[:, [0, 2]] * scale + x
         boxes[:, [1, 3]] = boxes[:, [1, 3]] * scale + y
@@ -107,11 +105,14 @@ class YOLODataset(Dataset):
 
         return image, boxes
     
-    def chakan(self, image, boxes):
+    def chakan(self, image, boxes, ids):
         cv.namedWindow('show', cv.WINDOW_NORMAL)
+        image = cv.cvtColor(image, cv.COLOR_RGB2BGR)
         for i in range(len(boxes)):
             x1,y1,x2,y2 = boxes[i]
-            cv.rectangle(image, (x1,y1), (x2,y2), (0, 0, 255), thickness=2)
+            cv.rectangle(image, (x1,y1), (x2,y2), (0, 0, 255), thickness=1)
+            cv.putText(image, f'{ids[i]} {CONF.class_name[ids[i]]}',
+                       (int(x1), int(y1)-5), cv.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), thickness=1)
         cv.imshow('show', image)
         cv.waitKey(0)
         cv.destroyAllWindows()

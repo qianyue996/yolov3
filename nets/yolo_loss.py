@@ -34,7 +34,7 @@ class YOLOv3LOSS():
             ignore_mask = ignore_target[..., 4] == 1
             noobj_mask = ~ignore_mask
 
-            n = obj_mask.sum()
+            n = obj_mask.sum().item()
             if n != 0:
                 x = torch.sigmoid(prediction[..., 0])[obj_mask]
                 t_x = target[..., 0][obj_mask]
@@ -117,7 +117,6 @@ class YOLOv3LOSS():
                 target[bs, k, x, y, 5 + c] = 1
 
                 ignore_target[bs, :, x, y, 4] = 1 # 将对应grid cell的conf设置为1，剩下的grid cell就是背景
-                ignore_target[bs, :, x, y, 4] = 1
 
         return target, ignore_target
     def compute_iou(self, gt_box, anchors):

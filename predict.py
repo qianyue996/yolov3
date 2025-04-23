@@ -16,7 +16,7 @@ def draw(img, boxes, scores, labels):
     for i in range(len(boxes)):
         x1, y1, x2, y2 = boxes[i]
         cv.rectangle(img, (int(x1), int(y1)), (int(x2), int(y2)), (0, 0, 255), thickness=1)
-        cv.putText(img, f'{scores[i]:.2f} {CONF.class_name[labels[i]]}', (int(x1), int(y1)+5), cv.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), thickness=1)
+        cv.putText(img, f'{scores[i]:.2f} {CONF.class_name[labels[i]]}', (int(x1), int(y1)-5), cv.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), thickness=1)
 
 def process(img, input):
     with torch.no_grad():
@@ -32,7 +32,7 @@ def process(img, input):
         anchors = torch.tensor(CONF.anchors[i], device=CONF.device)
 
         prediction[..., 4] = torch.sigmoid(prediction[..., 4])
-        mask = prediction[..., 4] > 0.6
+        mask = prediction[..., 4] > 0.9
 
         grid_x, grid_y = torch.meshgrid(torch.arange(S), torch.arange(S), indexing='ij')
         grid_x = grid_x.to(CONF.device).unsqueeze(0).expand(3, -1, -1)
@@ -42,8 +42,8 @@ def process(img, input):
 
         x = prediction[mask][:, 0].view(-1, 1).expand(-1, 3).reshape(-1)
         y = prediction[mask][:, 1].view(-1, 1).expand(-1, 3).reshape(-1)
-        w = (torch.exp(prediction[mask][:, 2]).unsqueeze(-1) * anchors[:, 0].view(1, -1) * 416.0).reshape(-1)
-        h = (torch.exp(prediction[mask][:, 3]).unsqueeze(-1) * anchors[:, 1].view(1, -1) * 416.0).reshape(-1)
+        w = (torch.exp(prediction[mask][:, 2]).unsqueeze(-1) * anchors[:, 0].view(1, -1)).reshape(-1)
+        h = (torch.exp(prediction[mask][:, 3]).unsqueeze(-1) * anchors[:, 1].view(1, -1)).reshape(-1)
         c = prediction[mask][:, 4]
         _cls = prediction[mask][:, 5:].sigmoid()
 
@@ -74,7 +74,7 @@ def process(img, input):
     labels = torch.cat(all_labels)
 
     # NMS 按类别分别处理（或用 batched_nms）
-    keep = torchvision.ops.nms(boxes, scores, iou_threshold=0.5)
+    keep = torchvision.ops.nms(boxes, scores, iou_threshold=0.3)
     boxes, scores, labels = boxes[keep], scores[keep], labels[keep]
 
     # draw
@@ -91,7 +91,7 @@ def transport(img, to_tensor=True):
 if __name__ == '__main__':
     is_cap = False
 
-    test_img = r"data/test_img/street.jpg"
+    test_img = r"D:\Python\datasets\coco2014\val2014\COCO_val2014_000000000073.jpg"
     img = cv.imread(test_img)
 
     cap = cv.VideoCapture(0)
