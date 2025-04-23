@@ -5,7 +5,7 @@ class MyConf():
         sample_ratio = [32, 16, 8]
         feature_map = [13, 26, 52]
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        batchsize = 8
+        batchsize = 2
         learning_rate = 1e-2
         weight_decay = 1e-3
         epochs = 100

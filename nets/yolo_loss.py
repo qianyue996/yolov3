@@ -27,13 +27,13 @@ class YOLOv3LOSS():
 
             prediction = predict[i].view(-1, 3, 5 + 80, S, S).permute(0, 1, 3, 4, 2)
 
-            anchors = torch.LongTensor(self.anchors[i], device=self.device)
+            anchors = torch.tensor(self.anchors[i], dtype=torch.float32)
 
-            target, ignore_target, i_j, b_n = self.build_target(i, targets, anchors, S)
+            target, i_j = self.build_target(i, targets, anchors, S)
 
             obj_mask = target[..., 4] == 1
-            ignore_mask = ignore_target[..., 4] == 1
-            noobj_mask = ~ignore_mask
+            noobj_mask = ~obj_mask
+            b_n = obj_mask.nonzero()[:, 1]
 
             n = obj_mask.sum().item()
             if n != 0:
@@ -96,20 +96,18 @@ class YOLOv3LOSS():
     def build_target(self, i, targets, anchors, S, thre=0.4):
         B = len(targets)
         target = torch.zeros(B, 3, S, S, 5 + 80, device=self.device)
-        ignore_target = target.clone() # 忽略非最好的两个anchors
         i_j = target.clone()
-        b_n = []
 
         for bs in range(B):
             batch_target = targets[bs].clone()
 
             batch_target[:, 0:2] = targets[bs][:, 0:2] * S
-            batch_target[:, 2:4] = targets[bs][:, 2:4]
-            batch_target[:, 4] = targets[bs][:, 4]
+            # batch_target[:, 2:4] = targets[bs][:, 2:4]
+            # batch_target[:, 4] = targets[bs][:, 4]
 
             gt_box = batch_target[:, 2:4] * self.IMG_SIZE
 
-            best_iou, best_na = torch.max(self.compute_iou(gt_box, anchors), dim=1)
+            best_iou, best_na = torch.max(self.compute_iou(gt_box, anchors.to(gt_box.device)), dim=1)
 
             for index, n_a in enumerate(best_na):
                 if best_iou[index] < thre:
@@ -125,19 +123,15 @@ class YOLOv3LOSS():
 
                 target[bs, k, x, y, 0] = batch_target[index, 0] - x.float()
                 target[bs, k, x, y, 1] = batch_target[index, 1] - y.float()
-                target[bs, k, x, y, 2] = torch.log(batch_target[index, 2]) / anchors[k][0]
-                target[bs, k, x, y, 3] = torch.log(batch_target[index, 3]) / anchors[k][1]
+                target[bs, k, x, y, 2] = torch.log(batch_target[index, 2] / anchors[k][0])
+                target[bs, k, x, y, 3] = torch.log(batch_target[index, 3] / anchors[k][1])
                 target[bs, k, x, y, 4] = 1
                 target[bs, k, x, y, 5 + c] = 1
 
                 i_j[bs, k, x, y, 0] = x.float()
                 i_j[bs, k, x, y, 1] = y.float()
 
-                b_n.append(k)
-
-                ignore_target[bs, :, x, y, 4] = 1 # 将对应grid cell的conf设置为1，剩下的grid cell就是背景
-
-        return target, ignore_target, i_j, torch.LongTensor(b_n, device=self.device)
+        return target, i_j
     def compute_iou(self, gt_box, anchors):
         gt_box = gt_box.unsqueeze(1)
         anchors = anchors.unsqueeze(0)
