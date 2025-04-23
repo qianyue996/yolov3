@@ -94,7 +94,8 @@ class Trainer():
                     _loss = epoch_loss/(batch + 1)
 
                     if batch in dynamic_lr_point:
-                        dynamic_lr = self.dynamic_lr(self.optimizer, dynamic_lr, _loss)
+                        # dynamic_lr = self.dynamic_lr(self.optimizer, dynamic_lr, _loss)
+                        pass
                         
                     bar.set_postfix({'epoch':epoch,
                                      'loss:':f'{_loss:.4f}',
