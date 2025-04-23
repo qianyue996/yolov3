@@ -17,12 +17,12 @@ class YOLOv3LOSS():
     
     def MSELoss(self, x, y):
         return (x - y) ** 2
-    def __call__(self, predict, targets):
+    def __call__(self, predict, targets, writer, global_step):
         loss = torch.zeros(1, device=self.device)
-        obj_lambda = []
 
         for i in range(3):
             S = self.feature_map[i]
+            B = predict[i].shape[0]
 
             prediction = predict[i].view(-1, 3, 5 + 80, S, S).permute(0, 1, 3, 4, 2)
 
@@ -57,20 +57,25 @@ class YOLOv3LOSS():
                 # noobj target
                 no_conf = torch.sigmoid(prediction[..., 4][noobj_mask])
                 no_t_conf = torch.zeros_like(no_conf)
-                loss += self.BCELoss(no_conf, no_t_conf).mean()
-
+                noobj_loss = self.BCELoss(no_conf, no_t_conf).mean()
+                
                 each_box_lambda = 2 - (t_w * t_h)
 
                 loss_x = self.BCELoss(x, t_x)
                 loss_y = self.BCELoss(y, t_y)
                 loss_w = self.MSELoss(w, t_w)
                 loss_h = self.MSELoss(h, t_h)
-                loss_loc = ((loss_x + loss_y + loss_w + loss_h) * each_box_lambda).mean()
 
-                loss_cls = self.BCELoss(_cls, t_cls).sum() / _cls.shape[0]
-                loss_conf = self.BCELoss(c, t_c).sum()
+                loss_loc = ((loss_x + loss_y + loss_w + loss_h) * each_box_lambda).mean()
+                loss_conf = self.BCELoss(c, t_c).mean()
+                loss_cls = self.BCELoss(_cls, t_cls).mean(dim=0).sum()
                 
-                loss += loss_loc + loss_cls + loss_conf
+                loss += noobj_loss + loss_loc + loss_conf + loss_cls
+
+                writer.add_scalar(f'noobj_feture: {S}', noobj_loss, global_step)
+                writer.add_scalar(f'xywh_feture: {S}', loss_loc, global_step)
+                writer.add_scalar(f'conf_feture: {S}', loss_conf, global_step)
+                writer.add_scalar(f'cls_feture: {S}', loss_cls, global_step)
 
         return loss
 
