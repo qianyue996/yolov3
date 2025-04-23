@@ -10,6 +10,9 @@ class YOLOv3LOSS():
         self.IMG_SIZE = CONF.imgsize
         self.anchors  = CONF.anchors
         self.classes_num = 80
+        self.lambda_1 = 0.4
+        self.lambda_2 = 1
+        self.lambda_3 = 0.4
     def BCELoss(self, x, y):
         eps = 1e-7
         x = torch.clamp(x, eps, 1 - eps)
@@ -84,7 +87,13 @@ class YOLOv3LOSS():
                 loss_conf = self.BCELoss(c, t_c).mean()
                 loss_cls = self.BCELoss(_cls, t_cls).mean(dim=0).sum()
                 
-                loss += noobj_loss + loss_loc + loss_conf + loss_cls
+                # 这里加权
+                if i == 0:  # 第一个尺度（26x26）
+                    loss += self.lambda_1 * (noobj_loss + loss_loc + loss_conf + loss_cls)
+                elif i == 1:  # 第二个尺度（52x52）
+                    loss += self.lambda_2 * (noobj_loss + loss_loc + loss_conf + loss_cls)
+                elif i == 2:  # 第三个尺度（13x13）
+                    loss += self.lambda_3 * (noobj_loss + loss_loc + loss_conf + loss_cls)
 
                 writer.add_scalar(f'noobj_feture: {S}', noobj_loss, global_step)
                 writer.add_scalar(f'xywh_feture: {S}', loss_loc, global_step)
