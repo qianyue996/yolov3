@@ -9,7 +9,8 @@ class YOLOv3LOSS():
         self.feature_map = CONF.feature_map
         self.IMG_SIZE = CONF.imgsize
         self.anchors  = CONF.anchors
-        self.classes_num = 80
+        self.classes_num = len(CONF.class_name)
+
         self.lambda_1 = 0.4
         self.lambda_2 = 1
         self.lambda_3 = 0.4
@@ -27,21 +28,32 @@ class YOLOv3LOSS():
             S = self.feature_map[i]
             B = predict[i].shape[0]
             stride = CONF.sample_ratio[i]
+            anchors = torch.tensor(self.anchors[i], dtype=torch.float32).to(self.device)
 
             prediction = predict[i].view(-1, 3, 5 + 80, S, S).permute(0, 1, 3, 4, 2)
 
-            anchors = torch.tensor(self.anchors[i], dtype=torch.float32)
+            x = torch.sigmoid(prediction[..., 0])
 
-            target, i_j = self.build_target(i, targets, anchors, S)
+            y = torch.sigmoid(prediction[..., 1])
 
-            obj_mask = target[..., 4] == 1
+            w = prediction[..., 2]
+
+            h = prediction[..., 3]
+
+            y_true = self.build_target(targets, anchors, S)
+
+            obj_mask = y_true[..., 4] == 1
             noobj_mask = ~obj_mask
-            b_n = obj_mask.nonzero()[:, 1]
+            
+            self.new_function(x, y, w, h, obj_mask, anchors)
 
             n = obj_mask.sum().item()
             if n != 0:
-                i_x = i_j[..., 0][obj_mask]
-                i_y = i_j[..., 1][obj_mask]
+                
+
+
+
+
 
                 x = (torch.sigmoid(prediction[..., 0])[obj_mask] + i_x) * stride
                 t_x = target[..., 0][obj_mask] + i_j[..., 0][obj_mask] * stride
@@ -102,21 +114,19 @@ class YOLOv3LOSS():
 
         return loss
 
-    def build_target(self, i, targets, anchors, S, thre=0.4):
+    def build_target(self, targets, anchors, S, thre=0.4):
         B = len(targets)
-        target = torch.zeros(B, 3, S, S, 5 + 80, device=self.device)
-        i_j = target.clone()
+        y_true = torch.zeros(B, 3, S, S, 5 + 80, device=self.device)
 
         for bs in range(B):
-            batch_target = targets[bs].clone()
+            batch_target = torch.zeros_like(targets[bs])
+            batch_target[:, 0:4] = targets[bs][:, 0:4] * S
+            batch_target[:, 2:4] = batch_target[:, 2:4] * self.IMG_SIZE
+            batch_target[:, 4] = targets[bs][:, 4]
 
-            batch_target[:, 0:2] = targets[bs][:, 0:2] * S
-            # batch_target[:, 2:4] = targets[bs][:, 2:4]
-            # batch_target[:, 4] = targets[bs][:, 4]
+            gt_box = batch_target[:, 2:4]
 
-            gt_box = batch_target[:, 2:4] * self.IMG_SIZE
-
-            best_iou, best_na = torch.max(self.compute_iou(gt_box, anchors.to(gt_box.device)), dim=1)
+            best_iou, best_na = torch.max(self.compute_iou(gt_box, anchors), dim=1)
 
             for index, n_a in enumerate(best_na):
                 if best_iou[index] < thre:
@@ -124,23 +134,20 @@ class YOLOv3LOSS():
 
                 k = n_a
 
-                x = torch.floor(batch_target[index, 0]).long()
+                x = batch_target[index, 0].long()
 
-                y = torch.floor(batch_target[index, 1]).long()
+                y = batch_target[index, 1].long()
 
                 c = batch_target[index, 4].long()
 
-                target[bs, k, x, y, 0] = batch_target[index, 0] - x.float()
-                target[bs, k, x, y, 1] = batch_target[index, 1] - y.float()
-                target[bs, k, x, y, 2] = torch.log(batch_target[index, 2] / anchors[k][0])
-                target[bs, k, x, y, 3] = torch.log(batch_target[index, 3] / anchors[k][1])
-                target[bs, k, x, y, 4] = 1
-                target[bs, k, x, y, 5 + c] = 1
+                y_true[bs, k, x, y, 0] = batch_target[index, 0] - x.float()
+                y_true[bs, k, x, y, 1] = batch_target[index, 1] - y.float()
+                y_true[bs, k, x, y, 2] = torch.log(batch_target[index, 2] / anchors[k][0])
+                y_true[bs, k, x, y, 3] = torch.log(batch_target[index, 3] / anchors[k][1])
+                y_true[bs, k, x, y, 4] = 1
+                y_true[bs, k, x, y, 5 + c] = 1
 
-                i_j[bs, k, x, y, 0] = x.float()
-                i_j[bs, k, x, y, 1] = y.float()
-
-        return target, i_j
+        return y_true
     def compute_iou(self, gt_box, anchors):
         gt_box = gt_box.unsqueeze(1)
         anchors = anchors.unsqueeze(0)
@@ -177,3 +184,19 @@ class YOLOv3LOSS():
 
         giou = iou - (area_c - union) / area_c.clamp(min=1e-6)
         return giou
+
+    def new_function(self, x, y, w, h, obj_mask, anchors):
+        best_a = obj_mask.nonzero()[:, 1]
+        grid_x = obj_mask.nonzero()[:, 2]
+        grid_y = obj_mask.nonzero()[:, 3]
+
+        x = (x[obj_mask] + grid_x) * self.IMG_SIZE
+        y = (y[obj_mask] + grid_y) * self.IMG_SIZE
+        w = torch.exp(w[obj_mask]) * anchors[best_a][:, 0]
+        h = torch.exp(h[obj_mask]) * anchors[best_a][:, 1]
+
+        x1 = x - w[obj_mask] / 2
+        y1 = y[obj_mask] - h[obj_mask] / 2
+        x2 = x[obj_mask] + w[obj_mask] / 2
+        y2 = y[obj_mask] + h[obj_mask] / 2
+        pass
