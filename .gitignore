@@ -9,3 +9,4 @@ checkpoint.pth
 yolov3.ipynb
 coco_train.txt
 coco_val.txt
+output.jpg

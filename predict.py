@@ -94,10 +94,10 @@ def transport(img, to_tensor=True):
 if __name__ == '__main__':
     is_cap = False
 
-    test_img = r"D:\Python\datasets\coco2014\train2014\COCO_train2014_000000000389.jpg"
+    test_img = r"img/street.jpg"
     img = cv.imread(test_img)
 
-    cap = cv.VideoCapture(0)
+    # cap = cv.VideoCapture(0)
 
     if is_cap:
         while True:
@@ -117,7 +117,8 @@ if __name__ == '__main__':
     else:
         img, input = transport(img, to_tensor=True) # to tensor
         process(img, input) # predict
-        cv.namedWindow('Camera', cv.WINDOW_NORMAL)
-        cv.imshow('Camera', img)
-        cv.waitKey(0)
-        cv.destroyAllWindows()
+        cv.imwrite('output.jpg', img)
+        # cv.namedWindow('Camera', cv.WINDOW_NORMAL)
+        # cv.imshow('Camera', img)
+        # cv.waitKey(0)
+        # cv.destroyAllWindows()

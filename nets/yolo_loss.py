@@ -27,12 +27,14 @@ class YOLOv3LOSS():
         loss = torch.zeros(1, device=self.device)
 
         for i in range(3):
-            S = self.feature_map[i]
             B = predict[i].shape[0]
-            stride = CONF.sample_ratio[i]
-            anchors = torch.tensor(self.anchors[i], dtype=torch.float32).to(self.device)
+            S = self.feature_map[i]
+            stride = self.stride[i]
+            anchors = torch.tensor(self.anchors[i], dtype=torch.float32, device=self.device)
 
             prediction = predict[i].view(-1, 3, 5 + 80, S, S).permute(0, 1, 3, 4, 2)
+
+            y_true = self.build_target(B, S, stride, targets, anchors)
 
             x = torch.sigmoid(prediction[..., 0])
 
@@ -42,7 +44,8 @@ class YOLOv3LOSS():
 
             h = prediction[..., 3]
 
-            y_true = self.build_target(B, S, stride, targets, anchors)
+            conf = torch.sigmoid(prediction[..., 4])
+            t_conf = y_true[..., 4]
 
             obj_mask = y_true[..., 4] == 1
             noobj_mask = ~obj_mask
@@ -50,20 +53,17 @@ class YOLOv3LOSS():
             n = obj_mask.sum().item()
             if n != 0:
 
-                c = torch.sigmoid(prediction[..., 4])
-                t_c = y_true[..., 4]
+                _cls = torch.sigmoid(prediction[..., 5:])
+                t_cls = y_true[..., 5:]
 
-                _cls = torch.sigmoid(prediction[..., 5:][obj_mask])
-                t_cls = y_true[..., 5:][obj_mask]
-
-                giou = self.new_function(x, y, w, h, obj_mask, anchors)
+                giou = self.new_function(x, y, w, h, obj_mask, anchors, stride)
                 loss_loc = (1 - giou).mean()
 
-                loss_cls = self.BCELoss(_cls, t_cls).mean()
+                loss_cls = self.BCELoss(_cls[obj_mask], t_cls[obj_mask]).mean()
                 
                 loss += loss_loc * self.loc_lambda + loss_cls * self.cls_lambda
             
-            loss_conf = self.BCELoss(c, t_c)[obj_mask | noobj_mask].mean()
+            loss_conf = self.BCELoss(conf, t_conf)[obj_mask | noobj_mask].mean()
 
             loss += loss_conf * self.conf_lambda[i] * self.obj_lambda
 
