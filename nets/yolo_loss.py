@@ -24,7 +24,7 @@ class YOLOv3LOSS():
     
     def MSELoss(self, x, y):
         return (x - y) ** 2
-    def __call__(self, predict, targets):
+    def __call__(self, predict, targets, writer, global_step):
         loss = torch.zeros(1, device=self.device)
 
         for i in range(3):
@@ -70,6 +70,9 @@ class YOLOv3LOSS():
 
             loss += obj_conf  * self.conf_lambda[i] * self.obj_lambda
             loss += noobj_conf * self.conf_lambda[i] * self.noobj_lambda
+
+        writer.add_scalar('obj_conf', obj_conf, global_step)
+        writer.add_scalar('noobj_conf', noobj_conf, global_step)
 
         return loss
 
