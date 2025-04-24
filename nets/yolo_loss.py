@@ -16,10 +16,9 @@ class YOLOv3LOSS():
 
         self.conf_lambda = [0.4, 1.0, 4]
         self.loc_lambda = 0.05
-        self.obj_lambda = 5
-        self.noobj_lambda = 0.5
-        self.cls_lambda = 1
-        self.eps = 1e-16
+        self.obj_lambda = 10
+        self.noobj_lambda = 0.1
+        self.cls_lambda = 5
     def BCELoss(self, x, y):
         eps = 1e-7
         x = torch.clamp(x, eps, 1 - eps)
@@ -28,10 +27,10 @@ class YOLOv3LOSS():
     def MSELoss(self, x, y):
         return (x - y) ** 2
     def __call__(self, predict, targets):
-        loss_loc = torch.zeros(1, device=self.device)
-        obj_conf = loss_loc.clone()
-        noobj_conf = loss_loc.clone()
-        loss_cls = loss_loc.clone()
+        all_loss_loc = torch.zeros(1, device=self.device)
+        all_obj_conf = all_loss_loc.clone()
+        all_noobj_conf = all_loss_loc.clone()
+        all_loss_cls = all_loss_loc.clone()
 
         for i in range(3):
             B = predict[i].shape[0]
@@ -58,30 +57,32 @@ class YOLOv3LOSS():
             obj_mask = y_true[..., 4] == 1
             noobj_mask = ~obj_mask
             
-            _cls = torch.sigmoid(prediction[..., 5:])[obj_mask]
-            t_cls = y_true[..., 5:][obj_mask]
+            if obj_mask.sum() != 0:
 
-            giou = self.new_function(x, y, w, h, obj_mask, anchors, stride, y_true)
-            loss_loc = (1 - giou).mean() * self.loc_lambda
+                _cls = torch.sigmoid(prediction[..., 5:])[obj_mask]
+                t_cls = y_true[..., 5:][obj_mask]
 
-            loss_cls = self.BCELoss(_cls, t_cls).mean() * self.cls_lambda
-            
+                giou = self.new_function(x, y, w, h, obj_mask, anchors, stride, y_true)
+                loss_loc = (1 - giou).mean() * self.loc_lambda
+                loss_cls = self.BCELoss(_cls, t_cls).mean() * self.cls_lambda
+                
+                all_loss_loc += loss_loc
+                all_loss_cls += loss_cls
+
             loss_conf = self.BCELoss(conf, t_conf)
             obj_conf = loss_conf[obj_mask].mean() * self.conf_lambda[i] * self.obj_lambda
             noobj_conf = loss_conf[noobj_mask].mean() * self.conf_lambda[i] * self.noobj_lambda
 
-            loss_loc += loss_loc
-            obj_conf += obj_conf
-            noobj_conf += noobj_conf
-            loss_cls = loss_cls
-        
-        loss = loss_loc + obj_conf + noobj_conf + loss_cls
+            all_obj_conf += torch.nan_to_num(obj_conf, nan=0)
+            all_noobj_conf += noobj_conf
+                
+        loss = all_loss_loc + all_obj_conf + all_noobj_conf + all_loss_cls
 
         return {'loss':loss,
-                'loss_loc':loss_loc,
-                'obj_conf': obj_conf,
-                'noobj_conf': noobj_conf,
-                'loss_cls': loss_cls}
+                'loss_loc':all_loss_loc,
+                'obj_conf': all_obj_conf,
+                'noobj_conf': all_noobj_conf,
+                'loss_cls': all_loss_cls}
 
     def build_target(self, i, B, S, targets, anchors):
         y_true = torch.zeros(B, 3, S, S, 5 + 80, device=self.device)
