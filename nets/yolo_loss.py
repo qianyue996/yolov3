@@ -1,6 +1,7 @@
 import torch
 
 from config.yolov3 import CONF
+from utils.tools import compute_iou, clear
 
 class YOLOv3LOSS():
     def __init__(self):
@@ -9,6 +10,7 @@ class YOLOv3LOSS():
         self.feature_map = CONF.feature_map
         self.IMG_SIZE = CONF.imgsize
         self.anchors  = CONF.anchors
+        self.anchors_mask = CONF.anchors_mask
         self.classes_num = len(CONF.class_name)
         self.stride = CONF.sample_ratio
 
@@ -17,6 +19,7 @@ class YOLOv3LOSS():
         self.obj_lambda = 5
         self.noobj_lambda = 0.5
         self.cls_lambda = 1
+        self.eps = 1e-16
     def BCELoss(self, x, y):
         eps = 1e-7
         x = torch.clamp(x, eps, 1 - eps)
@@ -24,18 +27,19 @@ class YOLOv3LOSS():
     
     def MSELoss(self, x, y):
         return (x - y) ** 2
-    def __call__(self, predict, targets, writer, global_step):
+    def __call__(self, predict, targets):
         loss = torch.zeros(1, device=self.device)
 
         for i in range(3):
             B = predict[i].shape[0]
             S = self.feature_map[i]
             stride = self.stride[i]
-            anchors = torch.tensor(self.anchors[i], dtype=torch.float32, device=self.device)
+            
+            anchors = torch.tensor(self.anchors, dtype=torch.float32, device=self.device)
 
             prediction = predict[i].view(-1, 3, 5 + 80, S, S).permute(0, 1, 3, 4, 2)
 
-            y_true = self.build_target(B, S, targets, anchors)
+            y_true = self.build_target(i, B, S, targets, anchors)
 
             x = torch.sigmoid(prediction[..., 0])
 
@@ -51,32 +55,23 @@ class YOLOv3LOSS():
             obj_mask = y_true[..., 4] == 1
             noobj_mask = ~obj_mask
             
-            n = obj_mask.sum().item()
-            if n != 0:
+            _cls = torch.sigmoid(prediction[..., 5:])[obj_mask]
+            t_cls = y_true[..., 5:][obj_mask]
 
-                _cls = torch.sigmoid(prediction[..., 5:])[obj_mask]
-                t_cls = y_true[..., 5:][obj_mask]
+            giou = self.new_function(x, y, w, h, obj_mask, anchors, stride, y_true)
+            loss_loc = (1 - giou).mean()
 
-                giou = self.new_function(x, y, w, h, obj_mask, anchors, stride, y_true)
-                loss_loc = (1 - giou).mean()
-
-                loss_cls = self.BCELoss(_cls, t_cls).mean()
-                
-                loss += loss_loc * self.loc_lambda + loss_cls * self.cls_lambda
+            loss_cls = self.BCELoss(_cls, t_cls).mean()
             
             loss_conf = self.BCELoss(conf, t_conf)
-            obj_conf = loss_conf[obj_mask].mean()
-            noobj_conf = loss_conf[noobj_mask].mean()
+            obj_conf = loss_conf[obj_mask].mean() * self.conf_lambda[i] * self.obj_lambda
+            noobj_conf = loss_conf[noobj_mask].mean() * self.conf_lambda[i] * self.noobj_lambda
 
-            loss += obj_conf  * self.conf_lambda[i] * self.obj_lambda
-            loss += noobj_conf * self.conf_lambda[i] * self.noobj_lambda
+            loss += obj_conf + noobj_conf + loss_loc * self.loc_lambda + loss_cls * self.cls_lambda
 
-        writer.add_scalar('obj_conf', obj_conf  * self.conf_lambda[i] * self.obj_lambda, global_step)
-        writer.add_scalar('noobj_conf', noobj_conf * self.conf_lambda[i] * self.noobj_lambda, global_step)
+        return {'loss':loss}
 
-        return loss
-
-    def build_target(self, B, S, targets, anchors, thre=0.1):
+    def build_target(self, i, B, S, targets, anchors):
         y_true = torch.zeros(B, 3, S, S, 5 + 80, device=self.device)
 
         for bs in range(B):
@@ -89,11 +84,11 @@ class YOLOv3LOSS():
 
             best_iou, best_na = torch.max(self.compute_iou(gt_box, anchors), dim=1)
 
-            for index, n_a in enumerate(best_na):
-                if best_iou[index] < thre:
+            for index, n_a in enumerate(best_na.tolist()):
+                if n_a not in self.anchors_mask[i]:
                     continue
 
-                k = n_a
+                k = self.anchors_mask[i].index(n_a)
 
                 x = batch_target[index, 0].long()
 

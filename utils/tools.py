@@ -1,6 +1,7 @@
 import numpy as np
 import cv2 as cv
 import torch
+import os
 
 def xywh2xyx2(box: list):
     try:
@@ -52,4 +53,16 @@ def nms(boxes, scores, iou_threshold):
         print('boxes and scores length is not equal!')
         return
     
-    
+def compute_iou(box_a, box_b):
+    '''
+    box_a = [x1, y1, x2, y2] shape: (N, 4)
+    box_b = [x1, y1, x2, y2] shape: (N, 4)
+    '''
+    min_xy = torch.min(box_a[:, :2], box_b[:, :2])
+    max_xy = torch.max(box_a[:, 2:], box_b[:, 2:])
+
+    inter = max_xy - min_xy
+    pass
+
+def clear():
+    os.system('cls' if os.name == 'nt' else 'clear')

@@ -7,16 +7,16 @@ from config.yolov3 import CONF
 from utils.tools import *
 
 class YOLODataset(Dataset):
-    def __init__(self, train: bool = True):
+    def __init__(self, labels_path = '', train=True):
         super(YOLODataset, self).__init__()
         #------------------------------#
-        train_path = r'coco_train.txt'
         self.IMG_SIZE = CONF.imgsize
-        self.smb = [13,26,52]
+
         self.train = train
+
         self.targets = []
         #------------------------------#
-        with open(train_path,'r',encoding='utf-8')as f:
+        with open(labels_path,'r',encoding='utf-8')as f:
             for target in f.readlines():
                 path = target.strip('\n').split(' ')[0]
                 labels = target.strip('\n').split(' ')[1:]
@@ -34,7 +34,8 @@ class YOLODataset(Dataset):
         image, labels = cv.imread(self.targets[index][0]), self.targets[index][1]
         boxes, ids = [label[:4] for label in labels], [label[4] for label in labels]
 
-        image, boxes = self.augment_data(image, boxes)
+        if self.train:
+            image, boxes = self.augment_data(image, boxes)
         # self.chakan(image,boxes,ids)
 
         image = np.transpose(np.array(image / 255.0, dtype=np.float32), (2, 0, 1))
