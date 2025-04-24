@@ -34,7 +34,7 @@ class YOLOv3LOSS():
 
             prediction = predict[i].view(-1, 3, 5 + 80, S, S).permute(0, 1, 3, 4, 2)
 
-            y_true = self.build_target(B, S, stride, targets, anchors)
+            y_true = self.build_target(B, S, targets, anchors)
 
             x = torch.sigmoid(prediction[..., 0])
 
@@ -53,23 +53,25 @@ class YOLOv3LOSS():
             n = obj_mask.sum().item()
             if n != 0:
 
-                _cls = torch.sigmoid(prediction[..., 5:])
-                t_cls = y_true[..., 5:]
+                _cls = torch.sigmoid(prediction[..., 5:])[obj_mask]
+                t_cls = y_true[..., 5:][obj_mask]
 
                 giou = self.new_function(x, y, w, h, obj_mask, anchors, stride)
                 loss_loc = (1 - giou).mean()
 
-                loss_cls = self.BCELoss(_cls[obj_mask], t_cls[obj_mask]).mean()
+                loss_cls = self.BCELoss(_cls, t_cls).mean()
                 
                 loss += loss_loc * self.loc_lambda + loss_cls * self.cls_lambda
             
-            loss_conf = self.BCELoss(conf, t_conf)[obj_mask | noobj_mask].mean()
+            loss_conf = self.BCELoss(conf, t_conf)
+            obj_conf = loss_conf[obj_mask].mean()
+            noobj_conf = loss_conf[noobj_mask].mean()
 
-            loss += loss_conf * self.conf_lambda[i] * self.obj_lambda
+            loss += (obj_conf + noobj_conf) * self.conf_lambda[i] * self.obj_lambda
 
         return loss
 
-    def build_target(self, B, S, stride, targets, anchors, thre=0.4):
+    def build_target(self, B, S, targets, anchors, thre=0.4):
         y_true = torch.zeros(B, 3, S, S, 5 + 80, device=self.device)
 
         for bs in range(B):

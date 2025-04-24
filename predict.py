@@ -25,8 +25,6 @@ def process(img, input):
     all_boxes, all_scores, all_labels = [], [], []
 
     for i in range(len(output)):
-        if i == 1 or i == 2:
-            continue
         S = CONF.feature_map[i]
         stride = CONF.sample_ratio[i]
 
@@ -55,7 +53,7 @@ def process(img, input):
         boxes = torch.stack([x1, y1, x2, y2], dim=1)
 
         # 选出所有分数大于阈值的 box + 类别
-        score_thresh = 0.5
+        score_thresh = 0.4
         for cls_id in range(80):
             cls_scores = scores[:, cls_id]
             keep = cls_scores > score_thresh
@@ -94,7 +92,7 @@ def transport(img, to_tensor=True):
 if __name__ == '__main__':
     is_cap = False
 
-    test_img = r"img/street.jpg"
+    test_img = r"D:\Python\datasets\coco2014\val2014\COCO_val2014_000000000241.jpg"
     img = cv.imread(test_img)
 
     # cap = cv.VideoCapture(0)
@@ -117,8 +115,8 @@ if __name__ == '__main__':
     else:
         img, input = transport(img, to_tensor=True) # to tensor
         process(img, input) # predict
-        cv.imwrite('output.jpg', img)
-        # cv.namedWindow('Camera', cv.WINDOW_NORMAL)
-        # cv.imshow('Camera', img)
-        # cv.waitKey(0)
-        # cv.destroyAllWindows()
+        # cv.imwrite('output.jpg', img)
+        cv.namedWindow('Camera', cv.WINDOW_NORMAL)
+        cv.imshow('Camera', img)
+        cv.waitKey(0)
+        cv.destroyAllWindows()

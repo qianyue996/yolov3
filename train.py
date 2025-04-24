@@ -57,7 +57,6 @@ class Trainer():
                 self.model.load_state_dict(checkpoint['model'])
                 self.optimizer.load_state_dict(checkpoint['optimizer'])
                 self.start_epoch = checkpoint['epoch'] + 1
-                self.lr = checkpoint['lr']
             except Exception as e:
                 pass
 
@@ -72,6 +71,7 @@ class Trainer():
         for epoch in range(self.start_epoch,self.epochs):
             epoch_loss=0
             for param_group in self.optimizer.param_groups:
+                param_group['lr'] = self.lr
                 dynamic_lr = param_group['lr']
             dynamic_lr_point = [len(self.dataloader) // 2, len(self.dataloader) - 1]
             with tqdm(self.dataloader, disable=False) as bar:
@@ -111,8 +111,7 @@ class Trainer():
             checkpoint={
                 'model' : self.model.state_dict(),
                 'optimizer' : self.optimizer.state_dict(),
-                'epoch' : epoch,
-                'lr' : self.lr
+                'epoch' : epoch
             }
             torch.save(checkpoint,'.checkpoint.pth')
             os.replace('.checkpoint.pth','checkpoint.pth')
