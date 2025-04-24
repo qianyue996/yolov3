@@ -82,7 +82,9 @@ class Trainer():
                     batch_output = self.model(batch_x)
 
                     loss = self.loss_fn(predict=batch_output,
-                                        targets=batch_y) / self.batch_size
+                                        targets=batch_y,
+                                        writer=self.writer,
+                                        global_step=self.global_step) / self.batch_size
 
                     self.optimizer.zero_grad()
                     loss.backward()
