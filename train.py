@@ -6,7 +6,6 @@ from torch.utils.tensorboard import SummaryWriter
 import os
 import sys
 from tqdm import tqdm
-import numpy as np
 
 from config.yolov3 import CONF
 # from nets.yolo import YOLOv3

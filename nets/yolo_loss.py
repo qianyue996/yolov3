@@ -15,6 +15,7 @@ class YOLOv3LOSS():
         self.conf_lambda = [0.4, 1.0, 4]
         self.loc_lambda = 0.05
         self.obj_lambda = 5
+        self.noobj_lambda = 0.5
         self.cls_lambda = 1
     def BCELoss(self, x, y):
         eps = 1e-7
@@ -67,7 +68,8 @@ class YOLOv3LOSS():
             obj_conf = loss_conf[obj_mask].mean()
             noobj_conf = loss_conf[noobj_mask].mean()
 
-            loss += (obj_conf + noobj_conf) * self.conf_lambda[i] * self.obj_lambda
+            loss += obj_conf  * self.conf_lambda[i] * self.obj_lambda
+            loss += noobj_conf * self.conf_lambda[i] * self.noobj_lambda
 
         return loss
 
