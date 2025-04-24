@@ -24,7 +24,7 @@ class YOLOv3LOSS():
     
     def MSELoss(self, x, y):
         return (x - y) ** 2
-    def __call__(self, predict, targets, writer, global_step):
+    def __call__(self, predict, targets):
         loss = torch.zeros(1, device=self.device)
 
         for i in range(3):
@@ -57,7 +57,7 @@ class YOLOv3LOSS():
                 _cls = torch.sigmoid(prediction[..., 5:])[obj_mask]
                 t_cls = y_true[..., 5:][obj_mask]
 
-                giou = self.new_function(x, y, w, h, obj_mask, anchors, stride)
+                giou = self.new_function(x, y, w, h, obj_mask, anchors, stride, y_true)
                 loss_loc = (1 - giou).mean()
 
                 loss_cls = self.BCELoss(_cls, t_cls).mean()
@@ -73,7 +73,7 @@ class YOLOv3LOSS():
 
         return loss
 
-    def build_target(self, B, S, targets, anchors, thre=0.4):
+    def build_target(self, B, S, targets, anchors, thre=0.1):
         y_true = torch.zeros(B, 3, S, S, 5 + 80, device=self.device)
 
         for bs in range(B):
@@ -143,7 +143,7 @@ class YOLOv3LOSS():
         giou = iou - (area_c - union) / area_c.clamp(min=1e-6)
         return giou
 
-    def new_function(self, x, y, w, h, obj_mask, anchors, stride):
+    def new_function(self, x, y, w, h, obj_mask, anchors, stride, y_true):
         best_a = obj_mask.nonzero()[:, 1]
         grid_x = obj_mask.nonzero()[:, 2]
         grid_y = obj_mask.nonzero()[:, 3]
@@ -153,15 +153,20 @@ class YOLOv3LOSS():
         w = torch.exp(w[obj_mask]) * anchors[best_a][:, 0]
         h = torch.exp(h[obj_mask]) * anchors[best_a][:, 1]
 
+        t_x = y_true[obj_mask][:, 0] * stride
+        t_y = y_true[obj_mask][:, 1] * stride
+        t_w = torch.exp(y_true[obj_mask][:, 2]) * anchors[best_a][:, 0]
+        t_h = torch.exp(y_true[obj_mask][:, 3]) * anchors[best_a][:, 1]
+
         x1 = torch.clamp(x - w / 2, min=1e-6, max=self.IMG_SIZE)
         y1 = torch.clamp(y - h / 2, min=1e-6, max=self.IMG_SIZE)
         x2 = torch.clamp(x + w / 2, min=1e-6, max=self.IMG_SIZE)
         y2 = torch.clamp(y + h / 2, min=1e-6, max=self.IMG_SIZE)
 
-        t_x1 = torch.clamp(x - anchors[best_a][:, 0] / 2, min=1e-6, max=self.IMG_SIZE)
-        t_y1 = torch.clamp(y - anchors[best_a][:, 1] / 2, min=1e-6, max=self.IMG_SIZE)
-        t_x2 = torch.clamp(x + anchors[best_a][:, 0] / 2, min=1e-6, max=self.IMG_SIZE)
-        t_y2 = torch.clamp(y + anchors[best_a][:, 1] / 2, min=1e-6, max=self.IMG_SIZE)
+        t_x1 = torch.clamp(t_x - t_w / 2, min=1e-6, max=self.IMG_SIZE)
+        t_y1 = torch.clamp(t_y - t_h / 2, min=1e-6, max=self.IMG_SIZE)
+        t_x2 = torch.clamp(t_x + t_w / 2, min=1e-6, max=self.IMG_SIZE)
+        t_y2 = torch.clamp(t_y + t_h / 2, min=1e-6, max=self.IMG_SIZE)
 
         pred_box = torch.stack([x1, y1, x2, y2], dim=-1)
         targ_box = torch.stack([t_x1, t_y1, t_x2, t_y2], dim=-1)

@@ -31,14 +31,20 @@ def process(img, input):
         prediction = output[i].squeeze().view(3, 85, S, S).permute(0, 2, 3, 1)
         anchors = torch.tensor(CONF.anchors[i], device=CONF.device)
 
-        grid_x, grid_y = torch.meshgrid(torch.arange(S), torch.arange(S), indexing='ij')
-        grid_x = grid_x.to(CONF.device).expand(3, -1, -1)
-        grid_y = grid_y.to(CONF.device).expand(3, -1, -1)
+        grid_x, grid_y = torch.meshgrid(
+            torch.arange(S, dtype=torch.float32, device=CONF.device),
+            torch.arange(S, dtype=torch.float32, device=CONF.device),
+            indexing='ij'
+        )
+        
+        grid_x = grid_x.expand(3, -1, -1)  # (3, S, S)
+        grid_y = grid_y.expand(3, -1, -1)
+
 
         x = (prediction[..., 0].sigmoid() + grid_x) * stride
         y = (prediction[..., 1].sigmoid() + grid_y) * stride
         w = torch.exp(prediction[..., 2]) * anchors[:, 0].view(-1, 1, 1)
-        h = torch.exp(prediction[..., 2]) * anchors[:, 0].view(-1, 1, 1)
+        h = torch.exp(prediction[..., 3]) * anchors[:, 0].view(-1, 1, 1)
         c = prediction[..., 4].sigmoid()
         _cls = prediction[..., 5:].sigmoid()
 
