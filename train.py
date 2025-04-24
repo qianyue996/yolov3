@@ -51,10 +51,10 @@ class Trainer():
 
         # 尝试从上次训练结束点开始
         checkpoint = None
-        # try:
-        #     checkpoint=torch.load('checkpoint.pth', map_location=self.device)
-        # except Exception as e:
-        #     pass
+        try:
+            checkpoint=torch.load('checkpoint.pth', map_location=self.device)
+        except Exception as e:
+            pass
         if checkpoint:
             try:
                 self.model.load_state_dict(checkpoint['model'])
@@ -65,7 +65,7 @@ class Trainer():
 
         self.dynamic_lr = Dynamic_lr()
 
-        self.logger = Logger(total_epochs=self.epochs, total_batches=len(self.dataloader), auto_newline=True)
+        self.logger = Logger(total_epochs=self.epochs, total_batches=len(self.dataloader))
 
         # tensorboard
         self.writer=SummaryWriter(f'runs/{time.strftime("%Y-%m-%d-%H-%M-%S",time.localtime())}')
@@ -79,37 +79,38 @@ class Trainer():
                 param_group['lr'] = self.lr
                 dynamic_lr = param_group['lr']
             dynamic_lr_point = [len(self.dataloader) // 2, len(self.dataloader) - 1]
+            with tqdm(self.dataloader, disable=False) as bar:
+                for batch,item in enumerate(bar):
+                    batch_x, batch_y = item
+                    batch_x = batch_x.to(self.device)
+                    batch_y = [i.to(self.device) for i in batch_y]
+                    
+                    batch_output = self.model(batch_x)
 
-            for batch,item in enumerate(self.dataloader):
-                batch_x, batch_y = item
-                batch_x = batch_x.to(self.device)
-                batch_y = [i.to(self.device) for i in batch_y]
-                
-                batch_output = self.model(batch_x)
+                    loss_params = self.loss_fn(predict=batch_output,
+                                                targets=batch_y)
+                    
+                    loss = loss_params['loss'] / self.batch_size
 
-                loss_params = self.loss_fn(predict=batch_output,
-                                            targets=batch_y)
-                
-                loss = loss_params['loss'] / self.batch_size
+                    self.optimizer.zero_grad()
+                    loss.backward()
+                    self.optimizer.step()
+                    epoch_loss+=loss.item()
+                    avg_loss = epoch_loss/(batch + 1)
 
-                self.optimizer.zero_grad()
-                loss.backward()
-                self.optimizer.step()
-                epoch_loss+=loss.item()
-                _loss = epoch_loss/(batch + 1)
-
-                if batch in dynamic_lr_point:
                     # dynamic_lr = self.dynamic_lr(self.optimizer, dynamic_lr, _loss)
-                    pass
-                        
-                self.logger.log(epoch=epoch,
-                                batch=batch,
-                                loss=_loss,
-                                lr=dynamic_lr)
-                
-                self.writer.add_scalar('loss',_loss, self.global_step)
-                self.global_step += 1
-            self.losses.append(_loss)
+                            
+                    bar.set_postfix({'epoch':epoch,
+                                    'loss':avg_loss,
+                                    'lr':dynamic_lr})
+                    
+                    self.writer.add_scalars('loss', {'Avg_loss':avg_loss,
+                                                     'loss_loc':loss_params['loss_loc'],
+                                                     'obj_conf':loss_params['obj_conf'],
+                                                     'noobj_conf':loss_params['noobj_conf'],
+                                                     'loss_cls':loss_params['loss_cls']}, self.global_step)
+                    self.global_step += 1
+            self.losses.append(avg_loss)
             self.save_best_model(epoch=epoch)
 
     def save_best_model(self,epoch):

@@ -28,7 +28,10 @@ class YOLOv3LOSS():
     def MSELoss(self, x, y):
         return (x - y) ** 2
     def __call__(self, predict, targets):
-        loss = torch.zeros(1, device=self.device)
+        loss_loc = torch.zeros(1, device=self.device)
+        obj_conf = loss_loc.clone()
+        noobj_conf = loss_loc.clone()
+        loss_cls = loss_loc.clone()
 
         for i in range(3):
             B = predict[i].shape[0]
@@ -59,29 +62,40 @@ class YOLOv3LOSS():
             t_cls = y_true[..., 5:][obj_mask]
 
             giou = self.new_function(x, y, w, h, obj_mask, anchors, stride, y_true)
-            loss_loc = (1 - giou).mean()
+            loss_loc = (1 - giou).mean() * self.loc_lambda
 
-            loss_cls = self.BCELoss(_cls, t_cls).mean()
+            loss_cls = self.BCELoss(_cls, t_cls).mean() * self.cls_lambda
             
             loss_conf = self.BCELoss(conf, t_conf)
             obj_conf = loss_conf[obj_mask].mean() * self.conf_lambda[i] * self.obj_lambda
             noobj_conf = loss_conf[noobj_mask].mean() * self.conf_lambda[i] * self.noobj_lambda
 
-            loss += obj_conf + noobj_conf + loss_loc * self.loc_lambda + loss_cls * self.cls_lambda
+            loss_loc += loss_loc
+            obj_conf += obj_conf
+            noobj_conf += noobj_conf
+            loss_cls = loss_cls
+        
+        loss = loss_loc + obj_conf + noobj_conf + loss_cls
 
-        return {'loss':loss}
+        return {'loss':loss,
+                'loss_loc':loss_loc,
+                'obj_conf': obj_conf,
+                'noobj_conf': noobj_conf,
+                'loss_cls': loss_cls}
 
     def build_target(self, i, B, S, targets, anchors):
         y_true = torch.zeros(B, 3, S, S, 5 + 80, device=self.device)
 
         for bs in range(B):
+            if targets[bs].shape[0] == 0:  # 处理无目标的情况
+                continue
+
             batch_target = torch.zeros_like(targets[bs])
             batch_target[:, 0:2] = targets[bs][:, 0:2] * S
             batch_target[:, 2:4] = targets[bs][:, 2:4] * self.IMG_SIZE
             batch_target[:, 4] = targets[bs][:, 4]
 
             gt_box = batch_target[:, 2:4]
-
             best_iou, best_na = torch.max(self.compute_iou(gt_box, anchors), dim=1)
 
             for index, n_a in enumerate(best_na.tolist()):
@@ -89,11 +103,8 @@ class YOLOv3LOSS():
                     continue
 
                 k = self.anchors_mask[i].index(n_a)
-
-                x = batch_target[index, 0].long()
-
-                y = batch_target[index, 1].long()
-
+                x = torch.clamp(batch_target[index, 0].long(), 0, S-1)
+                y = torch.clamp(batch_target[index, 1].long(), 0, S-1)
                 c = batch_target[index, 4].long()
 
                 y_true[bs, k, x, y, 0] = batch_target[index, 0] - x.float()
