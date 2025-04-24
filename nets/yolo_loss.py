@@ -71,8 +71,8 @@ class YOLOv3LOSS():
             loss += obj_conf  * self.conf_lambda[i] * self.obj_lambda
             loss += noobj_conf * self.conf_lambda[i] * self.noobj_lambda
 
-        writer.add_scalar('obj_conf', obj_conf, global_step)
-        writer.add_scalar('noobj_conf', noobj_conf, global_step)
+        writer.add_scalar('obj_conf', obj_conf  * self.conf_lambda[i] * self.obj_lambda, global_step)
+        writer.add_scalar('noobj_conf', noobj_conf * self.conf_lambda[i] * self.noobj_lambda, global_step)
 
         return loss
 
