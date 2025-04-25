@@ -27,28 +27,10 @@ def xyxy2xywh(box: list):
 def cvtColor(image):
     return cv.cvtColor(image, cv.COLOR_BGR2RGB)
 
-class Dynamic_lr():
-    def __init__(self):
-        super(Dynamic_lr, self).__init__()
-        self.losses = []
-    def __call__(self, optimizer, lr, loss):
-        self.losses.append(loss)
-        new_lr = lr
-        try:
-            if len(self.losses) == 2:
-                if self.losses[-1] > self.losses[-2]:
-                    new_lr = lr - lr * 0.1
-                else:
-                    new_lr = lr + lr * 0.1
-                new_lr = max(min(new_lr, 1e-2), 1e-6)
-                for param_group in optimizer.param_groups:
-                    param_group['lr'] = new_lr
-                self.losses = []
-            return new_lr
-        except Exception as e:
-            pass
-
 def buildBox(i, S, stride, pred, anchors, anchors_mask, score_thresh=0.4):
+
+    all_boxes, all_scores, all_labels = [], [], []
+
     grid_x, grid_y = torch.meshgrid(
         torch.arange(S, dtype=pred.dtype, device=pred.device),
         torch.arange(S, dtype=pred.dtype, device=pred.device),
@@ -87,24 +69,53 @@ def buildBox(i, S, stride, pred, anchors, anchors_mask, score_thresh=0.4):
             continue
         cls_boxes = boxes[keep]
         cls_scores = cls_scores[keep]
-        cls_labels = torch.full((cls_scores.shape[0],), cls_id, dtype=torch.int64, device=CONF.device)
-    pass
+        cls_labels = torch.full((cls_scores.shape[0], ), cls_id).long()
 
-def nms(pred, target, iou_threshold=0.45):
+        all_boxes.append(cls_boxes)
+        all_scores.append(cls_scores)
+        all_labels.append(cls_labels)
+
+    return all_boxes, all_scores, all_labels
+
+def nms(boxes, scores, iou_threshold=0.45):
     if len(boxes) != len(scores):
         print('boxes and scores length is not equal!')
         return
+    keep = []
+    idxs = scores.argsort(descending=True)
+
+    while idxs.numel() > 0:
+        current = idxs[0]
+        keep.append(current.item())
+
+        if idxs.numel() == 1:
+            break
+
+        ious = compute_iou(boxes[current], boxes[idxs[1:]])
+        idxs = idxs[1:][ious < iou_threshold]
+    
+    return keep
     
 def compute_iou(box_a, box_b):
     '''
-    box_a = [x1, y1, x2, y2] shape: (N, 4)
+    box_a = [x1, y1, x2, y2] shape: (4)
     box_b = [x1, y1, x2, y2] shape: (N, 4)
     '''
-    min_xy = torch.min(box_a[:, :2], box_b[:, :2])
-    max_xy = torch.max(box_a[:, 2:], box_b[:, 2:])
+    box_a_wh = box_a[2:] - box_a[:2]
+    box_b_wh = box_b[:, 2:] - box_b[:, :2]
 
-    inter = max_xy - min_xy
-    pass
+    area_a = box_a_wh.prod()
+    area_b = box_b_wh.prod(dim=1)
+
+    area_x1y1 = torch.max(box_a[:2], box_b[:, :2])
+    area_x2y2 = torch.min(box_a[2:], box_b[:, 2:])
+
+    area_w = (area_x2y2 - area_x1y1)[:, 0]
+    area_h = (area_x2y2 - area_x1y1)[:, 1]
+
+    inter = area_w * area_h
+
+    return inter / (area_a + area_b - inter)
 
 def clear():
     os.system('cls' if os.name == 'nt' else 'clear')
