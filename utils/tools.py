@@ -160,7 +160,11 @@ class DynamicLr():
         #   Loss均值计数
         #===========================================#
         self.loss_history.append(current_loss)
-        avg_loss = np.array(self.loss_history[:-self.run_step]).mean()
+        loss_arr = np.array(self.loss_history[:-self.run_step])
+        if loss_arr.size == 0:
+            avg_loss = None
+        else:
+            avg_loss = loss_arr.mean()
         #===========================================#
         #   判断step是否大于step_size，选择操作
         #===========================================#

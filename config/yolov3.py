@@ -8,7 +8,7 @@ class MyConf():
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
         batchsize = 2
         learning_rate = 5e-4
-        weight_decay = 54-4
+        weight_decay = 5e-4
         epochs = 100
         coco_train_path = 'coco_train.txt'
         coco_eval_path = 'coco_val.txt'
