@@ -3,15 +3,19 @@ import cv2 as cv
 from torch.utils.data.dataset import Dataset
 import numpy as np
 import tqdm
+import yaml
 
-from config.yolov3 import CONF
 from utils.tools import *
+
+with open('config/yolov3.yaml', 'r', encoding='utf-8') as f:
+    config = yaml.safe_load(f)
 
 class YOLODataset(Dataset):
     def __init__(self, labels_path = '', train=False, val=False):
         super(YOLODataset, self).__init__()
         #------------------------------#
-        self.IMG_SIZE = CONF.imgsize
+        self.IMG_SIZE = 416
+        self.class_names = config['dataset']['class_names']
 
         self.train = train
         self.val = val
@@ -169,7 +173,7 @@ class YOLODataset(Dataset):
         for i in range(len(boxes)):
             x1,y1,x2,y2 = boxes[i]
             cv.rectangle(image, (x1,y1), (x2,y2), (0, 0, 255), thickness=1)
-            cv.putText(image, f'{ids[i]} {CONF.class_name[ids[i]]}',
+            cv.putText(image, f'{ids[i]} {self.class_names[ids[i]]}',
                        (int(x1), int(y1)-5), cv.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), thickness=1)
         cv.imshow('show', image)
         cv.waitKey(0)
@@ -180,6 +184,8 @@ def yolo_collate_fn(batch):
     bboxes = []
     for img, box in batch:
         images.append(cv.normalize(img, None, 0, 1, cv.NORM_MINMAX, dtype=cv.CV_32F).transpose(2, 0, 1))
+        # box
+        box[:, :4] = box[:, :4] / 416.0
         bboxes.append(box)
     images = torch.from_numpy(np.array(images)).type(torch.float32)
     bboxes = [torch.from_numpy(boxes).type(torch.float32) for boxes in bboxes]

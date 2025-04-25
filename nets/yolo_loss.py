@@ -1,38 +1,25 @@
 import torch
-import numpy as np
+import torch.nn as nn
 
-from config.yolov3 import CONF
-from utils.tools import compute_iou, clear
+import yaml
+
+with open('config/yolov3.yaml', 'r', encoding='utf-8') as f:
+    config = yaml.safe_load(f)
 
 class YOLOv3LOSS():
     def __init__(self):
-        super(YOLOv3LOSS,self).__init__()
-        self.device = CONF.device
-        self.feature_map = CONF.feature_map
-        self.IMG_SIZE = CONF.imgsize
-        self.anchors  = CONF.anchors
-        self.anchors_mask = CONF.anchors_mask
-        self.classes_num = len(CONF.class_name)
-        self.stride = CONF.sample_ratio
+        self.device       = config['hardware']['device']
+        self.stride       = config['model']['stride']
+        self.anchors      = config['model']['anchors']
+        self.anchors_mask = config['model']['anchors_mask']
 
         self.loc_lambda = 0.05
         self.cls_lambda = 5
-        self.obj_lambda = 10
-        self.noobj_lambda = 0.1
-
-        self.dynamic_lambda_loc = DynamicLambda('loc_lambda', init_val=self.loc_lambda)
-        self.dynamic_lambda_cls = DynamicLambda('cls_lambda', init_val=self.cls_lambda)
-        self.dynamic_lambda_obj = DynamicLambda('obj_lambda', init_val=self.obj_lambda)
-        self.dynamic_lambda_noobj = DynamicLambda('noobj_lambda', init_val=self.noobj_lambda)
+        self.obj_lambda = 5
+        self.noobj_lambda = 1
 
         self.conf_lambda = [0.4, 1.0, 4]
-    def BCELoss(self, x, y):
-        eps = 1e-7
-        x = torch.clamp(x, eps, 1 - eps)
-        return - (y * torch.log(x) + (1 - y) * torch.log(1 - x))
-    
-    def MSELoss(self, x, y):
-        return (x - y) ** 2
+
     def __call__(self, predict, targets):
         all_loss_loc = torch.zeros(1, device=self.device)
         all_obj_conf = all_loss_loc.clone()
@@ -43,7 +30,7 @@ class YOLOv3LOSS():
         #===========================================#
         for i in range(3):
             #===========================================#
-            #   获取batch size
+            #   参数
             #===========================================#
             B = predict[i].shape[0]
             #===========================================#
@@ -51,7 +38,7 @@ class YOLOv3LOSS():
             #   将图像分割为SxS个网格
             #   13,26,52
             #===========================================#
-            S = self.feature_map[i]
+            S = predict[i].shape[2]
             #===========================================#
             #   获取每个网格的步长
             #   13,26,52 ==> 32,16,8
@@ -96,7 +83,7 @@ class YOLOv3LOSS():
                 _cls = torch.sigmoid(prediction[..., 5:])[obj_mask]
                 t_cls = y_true[..., 5:][obj_mask]
 
-                giou = self.new_function(x, y, w, h, obj_mask, anchors, stride, y_true)
+                giou = self.compute_giou(x, y, w, h, obj_mask, anchors, stride, y_true)
                 #===========================================#
                 #   位置损失 GIoU损失
                 #===========================================#
@@ -105,12 +92,12 @@ class YOLOv3LOSS():
                 #===========================================#
                 #   分类损失
                 #===========================================#
-                loss_cls = self.BCELoss(_cls, t_cls).mean()
+                loss_cls = nn.BCELoss(reduction='mean')(_cls, t_cls)
                 all_loss_cls += loss_cls
             #===========================================#
             #   置信度损失
             #===========================================#
-            loss_conf = self.BCELoss(conf, t_conf)
+            loss_conf = nn.BCELoss(reduction='none')(conf, t_conf)
             #===========================================#
             #   GroundTrue Postivez正样本置信度损失
             #===========================================#
@@ -122,20 +109,13 @@ class YOLOv3LOSS():
             noobj_conf = loss_conf[noobj_mask].mean() * self.conf_lambda[i]
             all_noobj_conf += noobj_conf
         #===========================================#
-        #   动态更新lambda值
-        #===========================================#
-        self.loc_lambda = self.dynamic_lambda_loc.maybe_update(all_loss_loc)
-        self.cls_lambda = self.dynamic_lambda_cls.maybe_update(all_loss_cls)
-        self.obj_lambda = self.dynamic_lambda_obj.maybe_update(all_obj_conf)
-        self.noobj_lambda = self.dynamic_lambda_noobj.maybe_update(all_noobj_conf)
-        #===========================================#
         #   计算总loss
         #===========================================#
-        all_loss_loc = all_loss_loc * self.loc_lambda
-        all_loss_cls = all_loss_cls * self.cls_lambda
-        all_obj_conf = all_obj_conf * self.obj_lambda
-        all_noobj_conf = all_noobj_conf * self.noobj_lambda
-        loss = all_loss_loc + all_obj_conf + all_noobj_conf + all_loss_cls
+        all_loss_loc   *= self.loc_lambda
+        all_loss_cls   *= self.cls_lambda
+        all_obj_conf   *= self.obj_lambda
+        all_noobj_conf *= self.noobj_lambda
+        loss            = all_loss_loc + all_obj_conf + all_noobj_conf + all_loss_cls
 
         return {'loss':loss,
                 'loss_loc':all_loss_loc,
@@ -152,7 +132,7 @@ class YOLOv3LOSS():
 
             batch_target = torch.zeros_like(targets[bs])
             batch_target[:, 0:2] = targets[bs][:, 0:2] * S
-            batch_target[:, 2:4] = targets[bs][:, 2:4] * self.IMG_SIZE
+            batch_target[:, 2:4] = targets[bs][:, 2:4] * 416
             batch_target[:, 4] = targets[bs][:, 4]
 
             gt_box = batch_target[:, 2:4]
@@ -187,32 +167,8 @@ class YOLOv3LOSS():
         iou_u = area_a + area_b - iou_i
 
         return iou_i / iou_u
-    
-    def compute_giou(self, gt_box, t_gt_box):
-        # box1, box2: [N, 4], in (x1, y1, x2, y2)
-        x1 = torch.max(gt_box[:, 0], t_gt_box[:, 0])
-        y1 = torch.max(gt_box[:, 1], t_gt_box[:, 1])
-        x2 = torch.min(gt_box[:, 2], t_gt_box[:, 2])
-        y2 = torch.min(gt_box[:, 3], t_gt_box[:, 3])
 
-        inter = (x2 - x1).clamp(min=0) * (y2 - y1).clamp(min=0)
-        area1 = (gt_box[:, 2] - gt_box[:, 0]) * (gt_box[:, 3] - gt_box[:, 1])
-        area2 = (t_gt_box[:, 2] - t_gt_box[:, 0]) * (t_gt_box[:, 3] - t_gt_box[:, 1])
-        union = area1 + area2 - inter
-
-        iou = inter / union.clamp(min=1e-6)
-
-        # 最小包围框
-        xc1 = torch.min(gt_box[:, 0], t_gt_box[:, 0])
-        yc1 = torch.min(gt_box[:, 1], t_gt_box[:, 1])
-        xc2 = torch.max(gt_box[:, 2], t_gt_box[:, 2])
-        yc2 = torch.max(gt_box[:, 3], t_gt_box[:, 3])
-        area_c = (xc2 - xc1) * (yc2 - yc1)
-
-        giou = iou - (area_c - union) / area_c.clamp(min=1e-6)
-        return giou
-
-    def new_function(self, x, y, w, h, obj_mask, anchors, stride, y_true):
+    def compute_giou(self, x, y, w, h, obj_mask, anchors, stride, y_true):
         best_a = obj_mask.nonzero()[:, 1]
         grid_x = obj_mask.nonzero()[:, 2]
         grid_y = obj_mask.nonzero()[:, 3]
@@ -222,26 +178,44 @@ class YOLOv3LOSS():
         w = torch.exp(w[obj_mask]) * anchors[best_a][:, 0]
         h = torch.exp(h[obj_mask]) * anchors[best_a][:, 1]
 
-        t_x = y_true[obj_mask][:, 0] * stride
-        t_y = y_true[obj_mask][:, 1] * stride
+        t_x = (y_true[obj_mask][:, 0] + grid_x) * stride
+        t_y = (y_true[obj_mask][:, 1] + grid_y) * stride
         t_w = torch.exp(y_true[obj_mask][:, 2]) * anchors[best_a][:, 0]
         t_h = torch.exp(y_true[obj_mask][:, 3]) * anchors[best_a][:, 1]
 
-        x1 = torch.clamp(x - w / 2, min=1e-6, max=self.IMG_SIZE)
-        y1 = torch.clamp(y - h / 2, min=1e-6, max=self.IMG_SIZE)
-        x2 = torch.clamp(x + w / 2, min=1e-6, max=self.IMG_SIZE)
-        y2 = torch.clamp(y + h / 2, min=1e-6, max=self.IMG_SIZE)
+        # xywh -> xyxy
+        x1 = torch.clamp(x - w / 2, min=1e-6, max=416)
+        y1 = torch.clamp(y - h / 2, min=1e-6, max=416)
+        x2 = torch.clamp(x + w / 2, min=1e-6, max=416)
+        y2 = torch.clamp(y + h / 2, min=1e-6, max=416)
 
-        t_x1 = torch.clamp(t_x - t_w / 2, min=1e-6, max=self.IMG_SIZE)
-        t_y1 = torch.clamp(t_y - t_h / 2, min=1e-6, max=self.IMG_SIZE)
-        t_x2 = torch.clamp(t_x + t_w / 2, min=1e-6, max=self.IMG_SIZE)
-        t_y2 = torch.clamp(t_y + t_h / 2, min=1e-6, max=self.IMG_SIZE)
+        t_x1 = torch.clamp(t_x - t_w / 2, min=1e-6, max=416)
+        t_y1 = torch.clamp(t_y - t_h / 2, min=1e-6, max=416)
+        t_x2 = torch.clamp(t_x + t_w / 2, min=1e-6, max=416)
+        t_y2 = torch.clamp(t_y + t_h / 2, min=1e-6, max=416)
 
-        pred_box = torch.stack([x1, y1, x2, y2], dim=-1)
-        targ_box = torch.stack([t_x1, t_y1, t_x2, t_y2], dim=-1)
+        # 计算交集区域面积
+        area_x1 = torch.max(x1, t_x1)
+        area_y1 = torch.max(y1, t_y1)
+        area_x2 = torch.min(x2, t_x2)
+        area_y2 = torch.min(y2, t_y2)
 
-        giou = self.compute_giou(pred_box, targ_box)
-        
+        inter = (area_x2 - area_x1).clamp(min=0) * (area_y2 - area_y1).clamp(min=0)
+        area_1 = (x2 - x1) * (y2 - y1)
+        area_2 = (t_x2 - t_x1) * (t_y2 - t_y1)
+        union = area_1 + area_2 - inter
+
+        iou = inter / union.clamp(min=1e-6)
+
+        # 最小包围框
+        xc1 = torch.min(x1, t_x1)
+        yc1 = torch.min(y1, t_y1)
+        xc2 = torch.max(x2, t_x2)
+        yc2 = torch.max(y2, t_y2)
+        area_c = (xc2 - xc1) * (yc2 - yc1)
+
+        giou = iou - (area_c - union) / area_c.clamp(min=1e-6)
+
         return giou
     
     def ignore_target(self, obj_mask):
@@ -277,49 +251,3 @@ class YOLOv3LOSS():
                 noobj_mask[bs, :, x, y] = False
         
         return noobj_mask
-
-class DynamicLambda:
-    def __init__(self, name, init_val=1.0, up_rate=1.1, down_rate=0.9,
-                 min_val=1e-4, max_val=10.0, update_interval=10, epsilon=1e-3):
-        self.name = name
-        self.val = init_val
-        self.min_val = min_val
-        self.max_val = max_val
-        self.up_rate = up_rate
-        self.down_rate = down_rate
-        self.update_interval = update_interval
-        self.epsilon = epsilon
-
-        self.history = []
-        self.step = 0
-        self.last_status = 0
-        self.flag = False
-
-    def maybe_update(self, loss_val):
-        self.history.append(loss_val.item())
-        self.step += 1
-
-        if self.step == self.update_interval:
-            current_mean = np.mean(self.history)
-
-            if self.flag:
-                if current_mean > self.last_status + self.epsilon:
-                    self.val *= self.up_rate
-                else:
-                    self.val *= self.down_rate
-
-                # clamp
-                self.val = min(max(self.val, self.min_val), self.max_val)
-                self.flag = False
-            else:
-                self.last_status = current_mean
-                self.flag = True
-
-            # reset
-            self.history.clear()
-            self.step = 0
-
-        return self.val
-
-    def __str__(self):
-        return f"{self.name}: lambda={self.val:.4f}"

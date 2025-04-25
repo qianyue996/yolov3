@@ -34,7 +34,7 @@ def kmeans(boxes: list, k=9):
             areas = clusters[:,0] * clusters[:,1]
             sorted_indices = np.argsort(areas)
             sorted_boxes = clusters[sorted_indices]
-            with open('config/anchors.txt1', 'w', encoding='utf-8') as f:
+            with open('config/anchors.txt', 'w', encoding='utf-8') as f:
                 for w, h in sorted_boxes:
                     f.write(f"{w},{h} ")
                 f.write('\n')
