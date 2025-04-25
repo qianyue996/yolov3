@@ -104,10 +104,11 @@ class YOLOv3LOSS():
         #-----------------------------------------------------#
         #   计算总loss
         #-----------------------------------------------------#
-        loss = (all_loss_loc * self.loc_lambda
-                + all_obj_conf * self.obj_lambda
-                + all_noobj_conf * self.noobj_lambda
-                + all_loss_cls * self.cls_lambda)
+        all_loss_loc = all_loss_loc * self.loc_lambda
+        all_loss_cls = all_loss_cls * self.cls_lambda
+        all_obj_conf = all_obj_conf * self.obj_lambda
+        all_noobj_conf = all_noobj_conf * self.noobj_lambda
+        loss = all_loss_loc + all_obj_conf + all_noobj_conf + all_loss_cls
 
         return {'loss':loss,
                 'loss_loc':all_loss_loc,
