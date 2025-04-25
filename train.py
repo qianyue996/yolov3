@@ -120,16 +120,16 @@ class Trainer():
             torch.save(checkpoint,'.checkpoint.pth')
             os.replace('.checkpoint.pth','checkpoint.pth')
 
-        EARLY_STOP_PATIENCE = 5   # 早停忍耐度
-        if len(self.losses) >= EARLY_STOP_PATIENCE:
-            early_stop = True
-            for i in range(1, EARLY_STOP_PATIENCE):
-                if self.losses[-i] < self.losses[-i-1]:
-                    early_stop = False
-                    break
-                if early_stop:
-                    print(f'early stop, final loss={self.losses[-1]}')
-                    sys.exit()
+        # EARLY_STOP_PATIENCE = 5   # 早停忍耐度
+        # if len(self.losses) >= EARLY_STOP_PATIENCE:
+        #     early_stop = True
+        #     for i in range(1, EARLY_STOP_PATIENCE):
+        #         if self.losses[-i] < self.losses[-i-1]:
+        #             early_stop = False
+        #             break
+        #         if early_stop:
+        #             print(f'early stop, final loss={self.losses[-1]}')
+        #             sys.exit()
     
 if __name__ == '__main__':
     trainer=Trainer()
