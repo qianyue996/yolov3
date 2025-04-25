@@ -6,12 +6,13 @@ from torch.utils.tensorboard import SummaryWriter
 import os
 import sys
 from tqdm import tqdm
+import shutil
 
 from config.yolov3 import CONF
 # from nets.yolo import YOLOv3
 from nets.yolo_copy import YOLOv3
 from utils.dataloader import YOLODataset, yolo_collate_fn
-from utils.tools import Dynamic_lr
+from utils.tools import Dynamic_lr, clean_folder
 from utils.logger import Logger
 from nets.yolo_loss import YOLOv3LOSS
 
@@ -68,7 +69,9 @@ class Trainer():
         self.logger = Logger(total_epochs=self.epochs, total_batches=len(self.dataloader))
 
         # tensorboard
-        self.writer=SummaryWriter(f'runs/{time.strftime("%Y-%m-%d-%H-%M-%S",time.localtime())}')
+        writer_path = 'runs'
+        clean_folder(folder_path=writer_path, keep_last=3)
+        self.writer=SummaryWriter(f'{writer_path}/{time.strftime("%Y-%m-%d-%H-%M-%S",time.localtime())}')
 
         self.model.train()
 
@@ -123,18 +126,17 @@ class Trainer():
             torch.save(checkpoint,'.checkpoint.pth')
             os.replace('.checkpoint.pth','checkpoint.pth')
 
-        EARLY_STOP_PATIENCE=5   # 早停忍耐度
-        if len(self.losses)>=EARLY_STOP_PATIENCE:
-            early_stop=True
-            for i in range(1,EARLY_STOP_PATIENCE):
-                if self.losses[-i]<self.losses[-i-1]:
-                    early_stop=False
+        EARLY_STOP_PATIENCE = 5   # 早停忍耐度
+        if len(self.losses) >= EARLY_STOP_PATIENCE:
+            early_stop = True
+            for i in range(1, EARLY_STOP_PATIENCE):
+                if self.losses[-i] < self.losses[-i-1]:
+                    early_stop = False
                     break
                 if early_stop:
                     print(f'early stop, final loss={self.losses[-1]}')
                     sys.exit()
     
-
 if __name__ == '__main__':
     trainer=Trainer()
     trainer.setup()

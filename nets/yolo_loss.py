@@ -1,4 +1,5 @@
 import torch
+import torch.nn as nn
 
 from config.yolov3 import CONF
 from utils.tools import compute_iou, clear
@@ -14,11 +15,17 @@ class YOLOv3LOSS():
         self.classes_num = len(CONF.class_name)
         self.stride = CONF.sample_ratio
 
-        self.conf_lambda = [0.4, 1.0, 4]
         self.loc_lambda = 0.05
+        self.cls_lambda = 5
         self.obj_lambda = 10
         self.noobj_lambda = 0.1
-        self.cls_lambda = 5
+
+        self.dynamic_lambda_loc = DynamicLambda('loc_lambda', init_val=self.loc_lambda)
+        self.dynamic_lambda_cls = DynamicLambda('cls_lambda', init_val=self.cls_lambda)
+        self.dynamic_lambda_obj = DynamicLambda('obj_lambda', init_val=self.obj_lambda)
+        self.dynamic_lambda_noobj = DynamicLambda('noobj_lambda', init_val=self.noobj_lambda)
+
+        self.conf_lambda = [0.4, 1.0, 4]
     def BCELoss(self, x, y):
         eps = 1e-7
         x = torch.clamp(x, eps, 1 - eps)
@@ -63,20 +70,44 @@ class YOLOv3LOSS():
                 t_cls = y_true[..., 5:][obj_mask]
 
                 giou = self.new_function(x, y, w, h, obj_mask, anchors, stride, y_true)
-                loss_loc = (1 - giou).mean() * self.loc_lambda
-                loss_cls = self.BCELoss(_cls, t_cls).mean() * self.cls_lambda
-                
+                #-----------------------------------------------#
+                #   位置损失 GIoU损失
+                #-----------------------------------------------#
+                loss_loc = (1 - giou).mean()
                 all_loss_loc += loss_loc
+                #-----------------------------------------------#
+                #   分类损失
+                #-----------------------------------------------#
+                loss_cls = self.BCELoss(_cls, t_cls).mean()
                 all_loss_cls += loss_cls
-
+            #-----------------------------------------------#
+            #   置信度损失
+            #-----------------------------------------------#
             loss_conf = self.BCELoss(conf, t_conf)
-            obj_conf = loss_conf[obj_mask].mean() * self.conf_lambda[i] * self.obj_lambda
-            noobj_conf = loss_conf[noobj_mask].mean() * self.conf_lambda[i] * self.noobj_lambda
-
+            #-----------------------------------------------#
+            #   GroundTrue Postivez正样本置信度损失
+            #-----------------------------------------------#
+            obj_conf = loss_conf[obj_mask].mean() * self.conf_lambda[i]
             all_obj_conf += torch.nan_to_num(obj_conf, nan=0)
+            #-----------------------------------------------#
+            #   Background Negative负样本置信度损失
+            #-----------------------------------------------#
+            noobj_conf = loss_conf[noobj_mask].mean() * self.conf_lambda[i]
             all_noobj_conf += noobj_conf
-                
-        loss = all_loss_loc + all_obj_conf + all_noobj_conf + all_loss_cls
+        #-----------------------------------------------------#
+        #   动态更新lambda值
+        #-----------------------------------------------------#
+        self.loc_lambda = self.dynamic_lambda_loc.maybe_update(all_loss_loc)
+        self.cls_lambda = self.dynamic_lambda_cls.maybe_update(all_loss_cls)
+        self.obj_lambda = self.dynamic_lambda_obj.maybe_update(all_obj_conf)
+        self.noobj_lambda = self.dynamic_lambda_noobj.maybe_update(all_noobj_conf)
+        #-----------------------------------------------------#
+        #   计算总loss
+        #-----------------------------------------------------#
+        loss = (all_loss_loc * self.loc_lambda
+                + all_obj_conf * self.obj_lambda
+                + all_noobj_conf * self.noobj_lambda
+                + all_loss_cls * self.cls_lambda)
 
         return {'loss':loss,
                 'loss_loc':all_loss_loc,
@@ -184,3 +215,57 @@ class YOLOv3LOSS():
         giou = self.compute_giou(pred_box, targ_box)
         
         return giou
+    
+class DynamicLambda():
+    def __init__(self, step):
+        '''
+        根据训练步数调整lambda值，如果一定距离内loss上升，则增大lambda，反之减小
+
+        step: 每step进行一次lambda调整
+        '''
+        self.step = step
+
+    def forward(self, step):
+
+        pass
+
+class DynamicLambda:
+    def __init__(self, name, init_val=1.0, up_rate=1.1, down_rate=0.9,
+                 min_val=1e-4, max_val=10.0, patience=10, update_interval=10):
+        '''
+        达到更新周期update_interval后，如果loss上升，则lambda值增加，反之减少
+        '''
+        self.name = name                              # lambda的名称
+        self.val = init_val                           # lambda初始值
+        self.min_val = min_val                        # lambda最小值
+        self.max_val = max_val                        # lambda最大值
+        self.up_rate = up_rate                        # lambda值增加倍率
+        self.down_rate = down_rate                    # lambda值减少倍率
+        self.patience = patience                      # loss上升多少次才更新lambda
+        self.update_interval = update_interval        # 更新周期
+
+        self.history = []
+        self.step = 0                                 # 当前步数
+
+    def maybe_update(self, loss_val):
+        self.history.append(loss_val)
+
+        # 检查是否到了更新周期
+        self.step += 1
+        if self.step >= self.update_interval and len(self.history) >= self.patience:
+            recent = self.history[-self.patience:]
+            delta = recent[-1] - recent[0]
+
+            if delta > 0:  # loss 上升
+                self.val *= self.up_rate
+            else:          # loss 下降
+                self.val *= self.down_rate
+
+            self.val = min(max(self.val, self.min_val), self.max_val)
+            self.step = 0
+
+        return self.val
+
+    def __str__(self):
+        return f"{self.name}: lambda={self.val:.4f}"
+

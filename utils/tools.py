@@ -2,7 +2,7 @@ import numpy as np
 import cv2 as cv
 import torch
 import os
-
+import shutil
 def xywh2xyx2(box: list):
     try:
         x,y,w,h = box
@@ -66,3 +66,17 @@ def compute_iou(box_a, box_b):
 
 def clear():
     os.system('cls' if os.name == 'nt' else 'clear')
+
+def clean_folder(folder_path='runs', keep_last=5):
+    if not os.path.exists(folder_path):
+        print(f"{folder_path} 不存在")
+        return
+
+    subfolders = [os.path.join(folder_path, subfolder) for subfolder in os.listdir(folder_path)]
+    subfolders.sort(key=lambda x: os.path.getmtime(x), reverse=True)
+
+    # 保留最新 keep_last 个，其余都删
+    to_delete = subfolders[keep_last:]
+
+    for folder in to_delete:
+        shutil.rmtree(folder)

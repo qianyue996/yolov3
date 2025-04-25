@@ -29,7 +29,7 @@ def process(img, input):
         stride = CONF.sample_ratio[i]
 
         prediction = output[i].squeeze().view(3, 85, S, S).permute(0, 2, 3, 1)
-        anchors = torch.tensor(CONF.anchors[i], device=CONF.device)
+        anchors = torch.tensor(CONF.anchors, device=CONF.device).view(3, 3, 2)[i]
 
         grid_x, grid_y = torch.meshgrid(
             torch.arange(S, dtype=torch.float32, device=CONF.device),
