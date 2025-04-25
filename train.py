@@ -6,14 +6,12 @@ from torch.utils.tensorboard import SummaryWriter
 import os
 import sys
 from tqdm import tqdm
-import shutil
 
 from config.yolov3 import CONF
 # from nets.yolo import YOLOv3
 from nets.yolo_copy import YOLOv3
 from utils.dataloader import YOLODataset, yolo_collate_fn
 from utils.tools import DynamicLr, clean_folder
-from utils.logger import Logger
 from nets.yolo_loss import YOLOv3LOSS
 
 class Trainer():
@@ -47,7 +45,7 @@ class Trainer():
         self.optimizer=optim.Adam(self.model.parameters(),
                                   lr=self.lr,
                                   weight_decay=self.weight_decay)
-        self.lr_scheduler    = DynamicLr(self.optimizer, step_size=1)
+        self.lr_scheduler = DynamicLr(self.optimizer, step_size=1)
         self.loss_fn = YOLOv3LOSS()
 
         # 尝试从上次训练结束点开始
@@ -96,8 +94,8 @@ class Trainer():
                         lr = params['lr']
                             
                     bar.set_postfix({'epoch':epoch,
-                                    'loss':avg_loss,
-                                    'lr':lr})
+                                    'loss':f'{avg_loss:.4f}',
+                                    'lr':f'{lr:.6f}'})
                     
                     self.writer.add_scalars('loss', {'Avg_loss':avg_loss,
                                                      'loss_loc':loss_params['loss_loc'],

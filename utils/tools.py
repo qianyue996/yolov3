@@ -123,42 +123,51 @@ def clean_folder(folder_path='runs', keep_last=5):
     for folder in to_delete:
         shutil.rmtree(folder)
 
-import torch
-import torch.nn.functional as F
-
 class DynamicLr():
-    def __init__(self, optimizer, max_lr=0.01, step_size=50, decay_factor=0.95, boost_factor=1.05):
+    '''
+    主要传入optimizer和step_size
+    说明：
+        - optimizer 优化器
+        - step_size 观察次数，每多少步观察一次 loss 均值
+    实现：
+        - 每隔 step_size 步，观察 loss 均值
+        - 如果 loss 均值没有明显下降，则将学习率乘以 decay_factor
+        - 如果 loss 均值下降明显，则将学习率乘以 boost_factor
+    '''
+    def __init__(self, optimizer, step_size=5, max_lr=0.01, decay_factor=0.96, boost_factor=1.05):
         self.optimizer = optimizer
         self.max_lr = max_lr
         self.step_size = step_size  # 每多少步观察一次 loss 均值
         self.decay_factor = decay_factor  # 降速因子
         self.boost_factor = boost_factor  # 升速因子
 
+        self.run_step = 1
         self.loss_history = []
         self.last_avg_loss = None
 
     def step(self, current_loss):
+        #===========================================#
+        #   Loss均值计数
+        #===========================================#
         self.loss_history.append(current_loss)
-
-        if len(self.loss_history) < self.step_size:
-            return
-
         avg_loss = np.array(self.loss_history).mean()
-
-        if self.last_avg_loss is not None:
+        #===========================================#
+        #   判断step是否大于step_size，选择操作
+        #===========================================#
+        if self.run_step > self.step_size:
             delta = self.last_avg_loss - avg_loss
-
             # loss 没明显下降
             if delta < 1e-4:
-                self.wait += 1
-                if self.wait >= self.patience:
-                    self._adjust_lr(decay=True)
-                    self.wait = 0
+                self._adjust_lr(decay=True)
             # loss 下降明显
             elif delta > 1e-2:
                 self._adjust_lr(boost=True)
+        #===========================================#
+        #   更新last_avg_loss和step
+        #===========================================#
         self.last_avg_loss = avg_loss
-
+        self.run_step += 1
+        
     def _adjust_lr(self, decay=False, boost=False):
         for group in self.optimizer.param_groups:
             old_lr = group['lr']
@@ -169,4 +178,4 @@ class DynamicLr():
             else:
                 new_lr = old_lr
             group['lr'] = new_lr
-
+        self.run_step = 1
