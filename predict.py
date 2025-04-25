@@ -5,9 +5,7 @@ import torchvision
 
 from config.yolov3 import CONF
 from nets.yolo_copy import YOLOv3
-from nets.yolo_loss import YOLOv3LOSS
-
-loss_fn = YOLOv3LOSS()
+from utils.tools import nms, build_target
 
 model = YOLOv3().to(CONF.device)
 model.load_state_dict(torch.load("checkpoint.pth", map_location=CONF.device)['model'])
@@ -29,7 +27,9 @@ def process(img, input):
         stride = CONF.sample_ratio[i]
 
         prediction = output[i].squeeze().view(3, 85, S, S).permute(0, 2, 3, 1)
-        anchors = torch.tensor(CONF.anchors, device=CONF.device).view(3, 3, 2)[i]
+        anchors = torch.tensor(CONF.anchors, device=CONF.device)
+
+        build_target(i, S, stride, prediction, anchors, CONF.anchors_mask)
 
         grid_x, grid_y = torch.meshgrid(
             torch.arange(S, dtype=torch.float32, device=CONF.device),

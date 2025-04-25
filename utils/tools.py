@@ -48,7 +48,49 @@ class Dynamic_lr():
         except Exception as e:
             pass
 
-def nms(boxes, scores, iou_threshold):
+def buildBox(i, S, stride, pred, anchors, anchors_mask, score_thresh=0.4):
+    grid_x, grid_y = torch.meshgrid(
+        torch.arange(S, dtype=pred.dtype, device=pred.device),
+        torch.arange(S, dtype=pred.dtype, device=pred.device),
+        indexing='ij'
+    )
+    grid_xy = torch.stack([grid_x, grid_y], dim=-1).unsqueeze(0).expand_as(pred[..., 0:2])
+    pred[..., 0:2] = (pred[..., 0:2].sigmoid() + grid_xy) * stride
+
+    pred[..., 2] = torch.exp(pred[..., 2]) * anchors[anchors_mask[i]][:, 0].unsqueeze(-1).unsqueeze(-1)
+    pred[..., 3] = torch.exp(pred[..., 3]) * anchors[anchors_mask[i]][:, 1].unsqueeze(-1).unsqueeze(-1)
+
+    boxes = torch.stack([pred[..., 0] - pred[..., 2] / 2,
+                        pred[..., 1] - pred[..., 3] / 2,
+                        pred[..., 0] + pred[..., 2] / 2,
+                        pred[..., 1] + pred[..., 3] / 2
+                        ], dim=-1)
+    boxes = torch.clamp(boxes, min=0, max=416)
+    #===========================================#
+    #   模型预测为正样本的输出
+    #===========================================#
+    pos_conf = pred[..., 4].sigmoid()
+    #===========================================#
+    #   模型预测的类别输出
+    #===========================================#
+    cls_conf = pred[..., 5:].sigmoid()
+    #===========================================#
+    #   模型预测所有位置的所有类别分数
+    #   shape: 3, 13, 13, 80
+    #===========================================#
+    scores = pos_conf.unsqueeze(-1) * cls_conf
+    # 选出所有分数大于阈值的 box + 类别
+    for cls_id in range(80):
+        cls_scores = scores[..., cls_id]
+        keep = cls_scores > score_thresh
+        if keep.sum() == 0:
+            continue
+        cls_boxes = boxes[keep]
+        cls_scores = cls_scores[keep]
+        cls_labels = torch.full((cls_scores.shape[0],), cls_id, dtype=torch.int64, device=CONF.device)
+    pass
+
+def nms(pred, target, iou_threshold=0.45):
     if len(boxes) != len(scores):
         print('boxes and scores length is not equal!')
         return
@@ -80,3 +122,51 @@ def clean_folder(folder_path='runs', keep_last=5):
 
     for folder in to_delete:
         shutil.rmtree(folder)
+
+import torch
+import torch.nn.functional as F
+
+class DynamicLr():
+    def __init__(self, optimizer, max_lr=0.01, smooth_steps=160, decay_factor=0.95, boost_factor=1.05):
+        self.optimizer = optimizer
+        self.max_lr = max_lr
+        self.smooth_steps = smooth_steps  # 每多少步观察一次 loss 均值
+        self.decay_factor = decay_factor  # 降速因子
+        self.boost_factor = boost_factor  # 升速因子
+
+        self.loss_history = []
+        self.last_avg_loss = None
+
+    def step_update(self, current_loss):
+        self.loss_history.append(current_loss.item())
+
+        if len(self.loss_history) < self.smooth_steps:
+            return
+
+        avg_loss = np.array(self.loss_history).mean()
+
+        if self.last_avg_loss is not None:
+            delta = self.last_avg_loss - avg_loss
+
+            # loss 没明显下降
+            if delta < 1e-4:
+                self.wait += 1
+                if self.wait >= self.patience:
+                    self._adjust_lr(decay=True)
+                    self.wait = 0
+            # loss 下降明显
+            elif delta > 1e-2:
+                self._adjust_lr(boost=True)
+        self.last_avg_loss = avg_loss
+
+    def _adjust_lr(self, decay=False, boost=False):
+        for group in self.optimizer.param_groups:
+            old_lr = group['lr']
+            if decay:
+                new_lr = old_lr * self.decay_factor
+            elif boost:
+                new_lr = min(old_lr * self.boost_factor, self.max_lr)
+            else:
+                new_lr = old_lr
+            group['lr'] = new_lr
+
