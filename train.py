@@ -95,7 +95,7 @@ class Trainer():
                             
                     bar.set_postfix({'epoch':epoch,
                                     'loss':f'{avg_loss:.4f}',
-                                    'lr':f'{lr:.6f}'})
+                                    'lr':lr})
                     
                     self.writer.add_scalars('loss', {'Avg_loss':avg_loss,
                                                      'loss_loc':loss_params['loss_loc'],
