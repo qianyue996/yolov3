@@ -13,11 +13,6 @@ class YOLOv3LOSS():
         self.anchors      = config['model']['anchors']
         self.anchors_mask = config['model']['anchors_mask']
 
-        self.loc_lambda = 0.05
-        self.cls_lambda = 5
-        self.obj_lambda = 5
-        self.noobj_lambda = 1
-
         self.conf_lambda = [0.4, 1.0, 4]
 
     def __call__(self, predict, targets):
@@ -111,10 +106,10 @@ class YOLOv3LOSS():
         #===========================================#
         #   计算总loss
         #===========================================#
-        all_loss_loc   *= self.loc_lambda
-        all_loss_cls   *= self.cls_lambda
-        all_obj_conf   *= self.obj_lambda
-        all_noobj_conf *= self.noobj_lambda
+        all_loss_loc   *= 0.05
+        all_loss_cls   *= 0.5
+        all_obj_conf   *= 1.0
+        all_noobj_conf *= 1.0
         loss            = all_loss_loc + all_obj_conf + all_noobj_conf + all_loss_cls
 
         return {'loss':loss,
