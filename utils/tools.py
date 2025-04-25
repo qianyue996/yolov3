@@ -143,19 +143,27 @@ class DynamicLr():
 
         self.run_step = 1
         self.loss_history = []
-        self.last_avg_loss = None
 
     def step(self, current_loss):
         #===========================================#
         #   Loss均值计数
         #===========================================#
         self.loss_history.append(current_loss)
-        avg_loss = np.array(self.loss_history).mean()
+        avg_loss = np.array(self.loss_history[:-self.run_step]).mean()
         #===========================================#
         #   判断step是否大于step_size，选择操作
         #===========================================#
         if self.run_step > self.step_size:
-            delta = self.last_avg_loss - avg_loss
+            #===========================================#
+            #   实现：
+            #       - avg_loss：全局loss减去最新step_size个loss均值
+            #       - last_avg_loss：全局loss均值
+            #       - 目的是看最新加入step_size个loss的loss均值
+            #       - 如果loss没明显下降，则将学习率乘以 decay_factor
+            #       - 如果loss下降明显，则将学习率乘以 boost_factor
+            #===========================================#
+            last_avg_loss = np.array(self.loss_history).mean()
+            delta = last_avg_loss - avg_loss
             # loss 没明显下降
             if delta < 1e-4:
                 self._adjust_lr(decay=True)
@@ -163,9 +171,8 @@ class DynamicLr():
             elif delta > 1e-2:
                 self._adjust_lr(boost=True)
         #===========================================#
-        #   更新last_avg_loss和step
+        #   更新step
         #===========================================#
-        self.last_avg_loss = avg_loss
         self.run_step += 1
         
     def _adjust_lr(self, decay=False, boost=False):
