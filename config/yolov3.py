@@ -7,8 +7,8 @@ class MyConf():
         anchors_mask = [[0, 1, 2], [3, 4, 5], [6, 7, 8]]
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
         batchsize = 2
-        learning_rate = 1e-3
-        weight_decay = 1e-3
+        learning_rate = 5e-4
+        weight_decay = 54-4
         epochs = 100
         coco_train_path = 'coco_train.txt'
         coco_eval_path = 'coco_val.txt'

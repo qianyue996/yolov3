@@ -1,5 +1,5 @@
 import torch
-import torch.nn as nn
+import numpy as np
 
 from config.yolov3 import CONF
 from utils.tools import compute_iou, clear
@@ -217,56 +217,49 @@ class YOLOv3LOSS():
         
         return giou
     
-class DynamicLambda():
-    def __init__(self, step):
-        '''
-        根据训练步数调整lambda值，如果一定距离内loss上升，则增大lambda，反之减小
-
-        step: 每step进行一次lambda调整
-        '''
-        self.step = step
-
-    def forward(self, step):
-
-        pass
 
 class DynamicLambda:
     def __init__(self, name, init_val=1.0, up_rate=1.1, down_rate=0.9,
-                 min_val=1e-4, max_val=10.0, patience=10, update_interval=10):
-        '''
-        达到更新周期update_interval后，如果loss上升，则lambda值增加，反之减少
-        '''
-        self.name = name                              # lambda的名称
-        self.val = init_val                           # lambda初始值
-        self.min_val = min_val                        # lambda最小值
-        self.max_val = max_val                        # lambda最大值
-        self.up_rate = up_rate                        # lambda值增加倍率
-        self.down_rate = down_rate                    # lambda值减少倍率
-        self.patience = patience                      # loss上升多少次才更新lambda
-        self.update_interval = update_interval        # 更新周期
+                 min_val=1e-4, max_val=10.0, update_interval=10, epsilon=1e-3):
+        self.name = name
+        self.val = init_val
+        self.min_val = min_val
+        self.max_val = max_val
+        self.up_rate = up_rate
+        self.down_rate = down_rate
+        self.update_interval = update_interval
+        self.epsilon = epsilon
 
         self.history = []
-        self.step = 0                                 # 当前步数
+        self.step = 0
+        self.last_status = 0
+        self.flag = False
 
     def maybe_update(self, loss_val):
-        self.history.append(loss_val)
-
-        # 检查是否到了更新周期
+        self.history.append(loss_val.item())
         self.step += 1
-        if self.step >= self.update_interval and len(self.history) >= self.patience:
-            recent = self.history[-self.patience:]
-            delta = recent[-1] - recent[0]
 
-            if delta > 0:  # loss 上升
-                self.val *= self.up_rate
-            else:          # loss 下降
-                self.val *= self.down_rate
+        if self.step == self.update_interval:
+            current_mean = np.mean(self.history)
 
-            self.val = min(max(self.val, self.min_val), self.max_val)
+            if self.flag:
+                if current_mean > self.last_status + self.epsilon:
+                    self.val *= self.up_rate
+                else:
+                    self.val *= self.down_rate
+
+                # clamp
+                self.val = min(max(self.val, self.min_val), self.max_val)
+                self.flag = False
+            else:
+                self.last_status = current_mean
+                self.flag = True
+
+            # reset
+            self.history.clear()
             self.step = 0
 
         return self.val
 
     def __str__(self):
         return f"{self.name}: lambda={self.val:.4f}"
-
