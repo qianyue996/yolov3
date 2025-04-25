@@ -38,16 +38,38 @@ class YOLOv3LOSS():
         all_obj_conf = all_loss_loc.clone()
         all_noobj_conf = all_loss_loc.clone()
         all_loss_cls = all_loss_loc.clone()
-
+        #===========================================#
+        #   循环3个Layers，对应yolov3的三个特征层
+        #===========================================#
         for i in range(3):
+            #===========================================#
+            #   获取batch size
+            #===========================================#
             B = predict[i].shape[0]
+            #===========================================#
+            #   获取feature map的宽高
+            #   将图像分割为SxS个网格
+            #   13,26,52
+            #===========================================#
             S = self.feature_map[i]
+            #===========================================#
+            #   获取每个网格的步长
+            #   13,26,52 ==> 32,16,8
+            #===========================================#
             stride = self.stride[i]
-            
+            #===========================================#
+            #   加载anchors锚框
+            #===========================================#
             anchors = torch.tensor(self.anchors, dtype=torch.float32, device=self.device)
-
+            #===========================================#
+            #   重构网络预测结果
+            #   shape: (B, 3, S, S, 5+80) coco
+            #===========================================#
             prediction = predict[i].view(-1, 3, 5 + 80, S, S).permute(0, 1, 3, 4, 2)
-
+            #===========================================#
+            #   构建网络应有的预测结果y_true
+            #   shape: (B, 3, S, S, 5+80)
+            #===========================================#
             y_true = self.build_target(i, B, S, targets, anchors)
 
             x = torch.sigmoid(prediction[..., 0])
@@ -60,9 +82,14 @@ class YOLOv3LOSS():
 
             conf = torch.sigmoid(prediction[..., 4])
             t_conf = y_true[..., 4]
-
+            #===========================================#
+            #   正样本mask
+            #===========================================#
             obj_mask = y_true[..., 4] == 1
-            noobj_mask = ~obj_mask
+            #===========================================#
+            #   负样本mask
+            #===========================================#
+            noobj_mask = self.ignore_target(obj_mask)
             
             if obj_mask.sum() != 0:
 
@@ -70,40 +97,40 @@ class YOLOv3LOSS():
                 t_cls = y_true[..., 5:][obj_mask]
 
                 giou = self.new_function(x, y, w, h, obj_mask, anchors, stride, y_true)
-                #-----------------------------------------------#
+                #===========================================#
                 #   位置损失 GIoU损失
-                #-----------------------------------------------#
+                #===========================================#
                 loss_loc = (1 - giou).mean()
                 all_loss_loc += loss_loc
-                #-----------------------------------------------#
+                #===========================================#
                 #   分类损失
-                #-----------------------------------------------#
+                #===========================================#
                 loss_cls = self.BCELoss(_cls, t_cls).mean()
                 all_loss_cls += loss_cls
-            #-----------------------------------------------#
+            #===========================================#
             #   置信度损失
-            #-----------------------------------------------#
+            #===========================================#
             loss_conf = self.BCELoss(conf, t_conf)
-            #-----------------------------------------------#
+            #===========================================#
             #   GroundTrue Postivez正样本置信度损失
-            #-----------------------------------------------#
+            #===========================================#
             obj_conf = loss_conf[obj_mask].mean() * self.conf_lambda[i]
             all_obj_conf += torch.nan_to_num(obj_conf, nan=0)
-            #-----------------------------------------------#
+            #===========================================#
             #   Background Negative负样本置信度损失
-            #-----------------------------------------------#
+            #===========================================#
             noobj_conf = loss_conf[noobj_mask].mean() * self.conf_lambda[i]
             all_noobj_conf += noobj_conf
-        #-----------------------------------------------------#
+        #===========================================#
         #   动态更新lambda值
-        #-----------------------------------------------------#
+        #===========================================#
         self.loc_lambda = self.dynamic_lambda_loc.maybe_update(all_loss_loc)
         self.cls_lambda = self.dynamic_lambda_cls.maybe_update(all_loss_cls)
         self.obj_lambda = self.dynamic_lambda_obj.maybe_update(all_obj_conf)
         self.noobj_lambda = self.dynamic_lambda_noobj.maybe_update(all_noobj_conf)
-        #-----------------------------------------------------#
+        #===========================================#
         #   计算总loss
-        #-----------------------------------------------------#
+        #===========================================#
         all_loss_loc = all_loss_loc * self.loc_lambda
         all_loss_cls = all_loss_cls * self.cls_lambda
         all_obj_conf = all_obj_conf * self.obj_lambda
@@ -217,6 +244,39 @@ class YOLOv3LOSS():
         
         return giou
     
+    def ignore_target(self, obj_mask):
+        #===========================================#
+        #   batch size
+        #===========================================#
+        B = obj_mask.shape[0]
+        #===========================================#
+        #   构建noobj mask
+        #===========================================#
+        noobj_mask = torch.ones_like(obj_mask, dtype=torch.bool, device=obj_mask.device)
+        #===========================================#
+        #   遍历每一个正样本
+        #   在正样本位置上的anchors 都置为0
+        #===========================================#
+        for bs in range(B):
+            if obj_mask[bs].sum().item() == 0:
+                continue
+            #===========================================#
+            #   正样本数量
+            #===========================================#
+            N = obj_mask[bs].sum().item()
+            for n in range(N):
+                #===========================================#
+                #   获取正样本的x坐标
+                #===========================================#
+                x = obj_mask[bs].nonzero()[n][-2:][0].item()
+                #===========================================#
+                #   获取正样本的y坐标
+                #===========================================#
+                y = obj_mask[bs].nonzero()[n][-2:][1].item()
+
+                noobj_mask[bs, :, x, y] = False
+        
+        return noobj_mask
 
 class DynamicLambda:
     def __init__(self, name, init_val=1.0, up_rate=1.1, down_rate=0.9,

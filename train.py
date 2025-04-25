@@ -52,10 +52,10 @@ class Trainer():
 
         # 尝试从上次训练结束点开始
         checkpoint = None
-        try:
-            checkpoint=torch.load('checkpoint.pth', map_location=self.device)
-        except Exception as e:
-            pass
+        # try:
+        #     checkpoint=torch.load('checkpoint.pth', map_location=self.device)
+        # except Exception as e:
+        #     pass
         if checkpoint:
             try:
                 self.model.load_state_dict(checkpoint['model'])
@@ -75,7 +75,7 @@ class Trainer():
         for epoch in range(self.start_epoch,self.epochs):
             epoch_loss=0
             with tqdm(self.dataloader, disable=False) as bar:
-                for batch,item in enumerate(bar):
+                for batch, item in enumerate(bar):
                     batch_x, batch_y = item
                     batch_x = batch_x.to(self.device)
                     batch_y = [i.to(self.device) for i in batch_y]
