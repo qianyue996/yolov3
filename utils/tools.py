@@ -20,12 +20,6 @@ def xyxy2xywh(box: list):
     except Exception as e:
         print('检查是否x2<x1 / y2<y1')
     return [x,y,w,h]
-#---------------------------------------------------------#
-#   将图像转换成RGB图像，防止灰度图在预测时报错。
-#   代码仅仅支持CV2读入的BRG转RGB
-#---------------------------------------------------------#
-def cvtColor(image):
-    return cv.cvtColor(image, cv.COLOR_BGR2RGB)
 
 def buildBox(i, S, stride, pred, anchors, anchors_mask, score_thresh=0.4):
 
@@ -110,12 +104,13 @@ def compute_iou(box_a, box_b):
     area_x1y1 = torch.max(box_a[:2], box_b[:, :2])
     area_x2y2 = torch.min(box_a[2:], box_b[:, 2:])
 
-    area_w = (area_x2y2 - area_x1y1)[:, 0]
-    area_h = (area_x2y2 - area_x1y1)[:, 1]
+    area_wh = (area_x2y2 - area_x1y1).clamp(min=0)
 
-    inter = area_w * area_h
+    inter = area_wh[:, 0] * area_wh[:, 1]
 
-    return inter / (area_a + area_b - inter)
+    union = area_a + area_b - inter
+
+    return inter / union
 
 def clear():
     os.system('cls' if os.name == 'nt' else 'clear')

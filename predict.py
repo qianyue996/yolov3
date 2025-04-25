@@ -1,13 +1,12 @@
 import cv2 as cv
 import numpy as np
 import torch
-import torchvision
 
 from config.yolov3 import CONF
-from nets.yolo_copy import YOLOv3
+from nets.yolo import YoloBody
 from utils.tools import nms, buildBox
 
-model = YOLOv3().to(CONF.device)
+model = YoloBody(anchors_mask=CONF.anchors_mask, num_classes=80).to(CONF.device)
 model.load_state_dict(torch.load("checkpoint.pth", map_location=CONF.device)['model'])
 model.eval()
 def draw(img, boxes, scores, labels):

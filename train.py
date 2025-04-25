@@ -8,8 +8,7 @@ import sys
 from tqdm import tqdm
 
 from config.yolov3 import CONF
-# from nets.yolo import YOLOv3
-from nets.yolo_copy import YOLOv3
+from nets.yolo import YoloBody
 from utils.dataloader import YOLODataset, yolo_collate_fn
 from utils.tools import DynamicLr, clean_folder
 from nets.yolo_loss import YOLOv3LOSS
@@ -19,6 +18,7 @@ class Trainer():
         super().__init__()
         self.device       = CONF.device
         self.anchors      = CONF.anchors
+        self.anchor_mask  = CONF.anchors_mask
         self.batch_size   = CONF.batchsize
         self.epochs       = CONF.epochs
         self.IMG_SIZE     = CONF.imgsize
@@ -33,13 +33,12 @@ class Trainer():
 
     def setup(self):
         # 加载数据集
-        train_ds=YOLODataset(labels_path=self.train_path)
+        train_ds=YOLODataset(labels_path=self.train_path, train=True)
         self.dataloader=DataLoader(train_ds, batch_size=self.batch_size,
                                    shuffle=True,
                                    collate_fn=yolo_collate_fn)
         # 模型初始化
-        self.model=YOLOv3().to(self.device)
-        self.model.getWeight(self.model)
+        self.model=YoloBody(anchors_mask=self.anchor_mask, num_classes=80, pretrained=True).to(self.device)
 
         # train utils
         self.optimizer=optim.Adam(self.model.parameters(),

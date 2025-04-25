@@ -65,7 +65,7 @@ class YOLOv3LOSS():
             #   重构网络预测结果
             #   shape: (B, 3, S, S, 5+80) coco
             #===========================================#
-            prediction = predict[i].view(-1, 3, 5 + 80, S, S).permute(0, 1, 3, 4, 2)
+            prediction = predict[i].view(B, 3, 5 + 80, S, S).permute(0, 1, 3, 4, 2)
             #===========================================#
             #   构建网络应有的预测结果y_true
             #   shape: (B, 3, S, S, 5+80)
