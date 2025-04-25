@@ -101,7 +101,8 @@ class Trainer():
                                                      'loss_loc':loss_params['loss_loc'],
                                                      'obj_conf':loss_params['obj_conf'],
                                                      'noobj_conf':loss_params['noobj_conf'],
-                                                     'loss_cls':loss_params['loss_cls']}, self.global_step)
+                                                     'loss_cls':loss_params['loss_cls'],
+                                                     'lr':lr}, self.global_step)
                     self.lr_scheduler.step(avg_loss)
                     self.global_step += 1
             self.losses.append(avg_loss)

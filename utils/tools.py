@@ -162,7 +162,7 @@ class DynamicLr():
         self.loss_history.append(current_loss)
         loss_arr = np.array(self.loss_history[:-self.run_step])
         if loss_arr.size == 0:
-            avg_loss = None
+            avg_loss = 0
         else:
             avg_loss = loss_arr.mean()
         #===========================================#
