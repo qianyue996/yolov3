@@ -12,7 +12,7 @@ from config.yolov3 import CONF
 # from nets.yolo import YOLOv3
 from nets.yolo_copy import YOLOv3
 from utils.dataloader import YOLODataset, yolo_collate_fn
-from utils.tools import Dynamic_lr, clean_folder
+from utils.tools import DynamicLr, clean_folder
 from utils.logger import Logger
 from nets.yolo_loss import YOLOv3LOSS
 
@@ -47,7 +47,7 @@ class Trainer():
         self.optimizer=optim.Adam(self.model.parameters(),
                                   lr=self.lr,
                                   weight_decay=self.weight_decay)
-        self.lr_scheduler    = optim.lr_scheduler.StepLR(self.optimizer, step_size=1, gamma=0.94)
+        self.lr_scheduler    = DynamicLr(self.optimizer, step_size=1)
         self.loss_fn = YOLOv3LOSS()
 
         # 尝试从上次训练结束点开始
@@ -59,7 +59,6 @@ class Trainer():
         if checkpoint:
             try:
                 self.model.load_state_dict(checkpoint['model'])
-                # self.optimizer.load_state_dict(checkpoint['optimizer'])
                 self.start_epoch = checkpoint['epoch'] + 1
             except Exception as e:
                 pass
@@ -105,7 +104,7 @@ class Trainer():
                                                      'obj_conf':loss_params['obj_conf'],
                                                      'noobj_conf':loss_params['noobj_conf'],
                                                      'loss_cls':loss_params['loss_cls']}, self.global_step)
-                    self.lr_scheduler.step()
+                    self.lr_scheduler.step(avg_loss)
                     self.global_step += 1
             self.losses.append(avg_loss)
             self.save_best_model(epoch=epoch)

@@ -127,20 +127,20 @@ import torch
 import torch.nn.functional as F
 
 class DynamicLr():
-    def __init__(self, optimizer, max_lr=0.01, smooth_steps=160, decay_factor=0.95, boost_factor=1.05):
+    def __init__(self, optimizer, max_lr=0.01, step_size=50, decay_factor=0.95, boost_factor=1.05):
         self.optimizer = optimizer
         self.max_lr = max_lr
-        self.smooth_steps = smooth_steps  # 每多少步观察一次 loss 均值
+        self.step_size = step_size  # 每多少步观察一次 loss 均值
         self.decay_factor = decay_factor  # 降速因子
         self.boost_factor = boost_factor  # 升速因子
 
         self.loss_history = []
         self.last_avg_loss = None
 
-    def step_update(self, current_loss):
-        self.loss_history.append(current_loss.item())
+    def step(self, current_loss):
+        self.loss_history.append(current_loss)
 
-        if len(self.loss_history) < self.smooth_steps:
+        if len(self.loss_history) < self.step_size:
             return
 
         avg_loss = np.array(self.loss_history).mean()
