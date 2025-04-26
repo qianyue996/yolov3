@@ -5,6 +5,12 @@ import json
 import os
 from collections import defaultdict
 from tqdm import tqdm
+import yaml
+
+with open('config/yolov3.yaml', 'r', encoding='utf-8') as f:
+    config = yaml.safe_load(f)
+
+class_names = config['dataset']['class_names']
 
 class PreData():
     def __init__(self):
@@ -37,16 +43,6 @@ class PreData():
             print('\nloading val annotation...\n')
             self.val_data = json.load(f)
         
-        #-------------------------------------------------------#
-        #   类别txt文件路径
-        #-------------------------------------------------------#
-        self.coco_classes_path = 'config/coco_classes.txt'
-
-        self.coco_classes = sorted(name['name'] for name in self.train_data['categories'])
-        with open(self.coco_classes_path, 'r', encoding='utf-8')as f:
-            for name in f.readlines():
-                self.coco_classes.append(name.strip('\n'))
-
     def __call__(self):
         #-------------------------------------------------------#
         #   train 定义变量
@@ -62,7 +58,7 @@ class PreData():
             image_id = data['image_id']
             full_path = os.path.join(self.train_datasets_path,
                                      f'COCO_train2014_{image_id:012d}.jpg')
-            real_id = self.coco_classes.index(self.id2name[data['category_id']])
+            real_id = class_names.index(self.id2name[data['category_id']])
             name_box_id[full_path].append([data['bbox'], real_id])
 
         with open(self.train_output_path, 'w', encoding='utf-8')as f:
@@ -81,6 +77,26 @@ class PreData():
         #   val 定义变量
         #-------------------------------------------------------#
         name_box_id = defaultdict(list)
+
+        for data in tqdm(self.val_data['annotations'], desc='processing... '):
+            image_id = data['image_id']
+            full_path = os.path.join(self.val_datasets_path,
+                                     f'COCO_val2014_{image_id:012d}.jpg')
+            real_id = class_names.index(self.id2name[data['category_id']])
+            name_box_id[full_path].append([data['bbox'], real_id])
+
+        with open(self.val_output_path, 'w', encoding='utf-8')as f:
+            for key in tqdm(name_box_id.keys(), desc='writing... '):
+                f.write(key)
+                box_infos = name_box_id[key]
+                for info in box_infos:
+                    x_min = int(info[0][0])
+                    y_min = int(info[0][1])
+                    x_max = x_min + int(info[0][2])
+                    y_max = y_min + int(info[0][3])
+                    box_info = f' {x_min},{y_min},{x_max},{y_max},{int(info[1])}'
+                    f.write(box_info)
+                f.write('\n')
 
 if __name__=='__main__':
     predata = PreData()

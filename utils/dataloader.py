@@ -86,6 +86,8 @@ class YOLODataset(Dataset):
 
         return image, labels
     def augment_data(self, image, labels, hue=.1, sat=.7, val=.4, aug=False):
+        #   增强选项
+        flip = False
         #===========================================#
         #   配置基础参数
         #===========================================#

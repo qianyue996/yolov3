@@ -107,7 +107,7 @@ class YOLOv3LOSS():
         #   计算总loss
         #===========================================#
         all_loss_loc   *= 0.05
-        all_loss_cls   *= 0.5
+        all_loss_cls   *= 1.0
         all_obj_conf   *= 5.0
         all_noobj_conf *= 0.5
         loss            = all_loss_loc + all_obj_conf + all_noobj_conf + all_loss_cls
@@ -116,7 +116,8 @@ class YOLOv3LOSS():
                 'loss_loc':all_loss_loc,
                 'obj_conf': all_obj_conf,
                 'noobj_conf': all_noobj_conf,
-                'loss_cls': all_loss_cls}
+                'loss_cls': all_loss_cls,
+                'positive_num':obj_mask.sum()}
 
     def build_target(self, i, B, S, targets, anchors):
         y_true = torch.zeros(B, 3, S, S, 5 + 80, device=self.device)

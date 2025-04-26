@@ -153,7 +153,7 @@ class DynamicLr():
         - 如果 loss 均值下降明显，则将学习率乘以 boost_factor
     
     '''
-    def __init__(self, optimizer, step_size=5, lr=None, max_lr=0.01, min_lr=1e-6, decay_factor=0.96, boost_factor=1.05):
+    def __init__(self, optimizer, step_size=5, lr=None, max_lr=0.01, min_lr=1e-8, decay_factor=0.96, boost_factor=1.05):
         self.optimizer = optimizer
         self.max_lr = max_lr
         self.min_lr = min_lr
