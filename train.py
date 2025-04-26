@@ -19,11 +19,27 @@ with open('config/yolov3.yaml', 'r', encoding='utf-8') as f:
 class Trainer():
     def __init__(self):
         #====================================================#
+        #   是否开启自动化模式训练
+        #   当达到3次epoch后，解冻backbone，全参训练
+        #   默认全参微调为False
+        #====================================================#
+        self.auto_train = False
+        #====================================================#
+        #   不同训练模式的batchsize
+        #====================================================#
+        self.freeze_batch_size = config['training']['freeze_batch_size']
+        self.unfreeze_batch_size = config['training']['unfreeze_batch_size']
+        #====================================================#
+        #   number workers
+        #====================================================#
+        self.num_workers = config['hardware']['num_workers']
+
+        #====================================================#
         #   seed种子，使得每次独立训练结果一致
         #====================================================#
         seed               = 11
         seed_everything(seed)
-        self.batch_size   = config['training']['batch_size']
+        self.batch_size   = 2
         #====================================================#
         #   设备自动选择，优先使用GPU
         #====================================================#
@@ -33,13 +49,13 @@ class Trainer():
         #====================================================#
         #   加载数据集
         #====================================================#
-        train_ds         = YOLODataset(labels_path=config['training']['train_path'],
+        self.train_dataset         = YOLODataset(labels_path=config['training']['train_path'],
                                        train=True)
         #====================================================#
         #   数据集加载器
         #====================================================#
-        self.dataloader  = DataLoader(train_ds,
-                                   batch_size=self.batch_size,
+        self.dataloader  = DataLoader(self.train_dataset,
+                                   batch_size=self.unfreeze_batch_size,
                                    shuffle=True,
                                    num_workers=4,
                                    collate_fn=yolo_collate_fn)
@@ -49,9 +65,6 @@ class Trainer():
         self.model       = YoloBody(anchors_mask=config['model']['anchors_mask'],
                                     num_classes=config['dataset']['length'],
                                     pretrained=True).to(self.device)
-        if True:
-            for param in self.model.backbone.parameters():
-                param.requires_grad = False
         #====================================================#
         #   初始化优化器
         #====================================================#
@@ -76,7 +89,7 @@ class Trainer():
         #======================================================#
         #   初始化动态学习率
         #====================================================#
-        self.lr_scheduler = DynamicLr(self.optimizer, step_size=1, lr=5e-4)
+        self.lr_scheduler = DynamicLr(self.optimizer, step_size=1, init_lr=5e-4)
         #=======================================================#
         #   初始化损失函数
         #====================================================#
@@ -98,6 +111,32 @@ class Trainer():
         losses         = []
         global_step    = 0
         for epoch in range(100):
+            #====================================================#
+            #   如果epoch超过3次，则解冻backbone，全参训练
+            #====================================================#
+            if self.auto_train:
+                if epoch <= 3:
+                    for param in self.model.backbone.parameters():
+                        param.requires_grad = False
+                    #====================================================#
+                    #   使用冻结模式的batchsize加载数据
+                    #====================================================#
+                    self.dataloader = DataLoader(dataset=self.train_dataset,
+                                                batch_size=self.freeze_batch_size,
+                                                shuffle=True,
+                                                num_workers=self.num_workers,
+                                                collate_fn=yolo_collate_fn)
+                else:
+                    for param in self.model.backbone.parameters():
+                        param.requires_grad = True
+                    #====================================================#
+                    #   使用解冻模式的batchsize加载数据
+                    #====================================================#
+                    self.dataloader = DataLoader(dataset=self.train_dataset,
+                                                batch_size=self.unfreeze_batch_size,
+                                                shuffle=True,
+                                                num_workers=self.num_workers,
+                                                collate_fn=yolo_collate_fn)
             #====================================================#
             #   单个epoch总损失，用于计算epoch内平均损失
             #====================================================#
@@ -139,7 +178,11 @@ class Trainer():
                                                      'obj_conf':loss_params['obj_conf'],
                                                      'noobj_conf':loss_params['noobj_conf'],
                                                      'loss_cls':loss_params['loss_cls'],
-                                                     'lr':lr}, global_step)
+                                                     'lr':lr,
+                                                     'loc_l':loss_params['loc_l'],
+                                                     'cls_l':loss_params['cls_l'],
+                                                     'obj_l':loss_params['obj_l'],
+                                                     'noobj_l':loss_params['obj_l']}, global_step)
                     
                     self.lr_scheduler.step(avg_loss)
 

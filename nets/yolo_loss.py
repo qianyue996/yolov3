@@ -1,10 +1,16 @@
 import torch
 import torch.nn as nn
-
 import yaml
+
+from utils.tools import DynamicLambda
 
 with open('config/yolov3.yaml', 'r', encoding='utf-8') as f:
     config = yaml.safe_load(f)
+
+dynamic_lambda_loc     = DynamicLambda(step_size=3)
+dynamic_lambda_cls     = DynamicLambda(step_size=3)
+dynamic_lambda_obj     = DynamicLambda(step_size=3)
+dynamic_lambda_noobj   = DynamicLambda(step_size=3)
 
 class YOLOv3LOSS():
     def __init__(self):
@@ -14,6 +20,11 @@ class YOLOv3LOSS():
         self.anchors_mask = config['model']['anchors_mask']
 
         self.conf_lambda = [0.4, 1.0, 4]
+
+        self.lambda_loc   = 0.05
+        self.lambda_cls   = 1.0
+        self.lambda_obj   = 5.0
+        self.lambda_noobj = 0.5
 
     def __call__(self, predict, targets):
         all_loss_loc = torch.zeros(1, device=self.device)
@@ -106,10 +117,23 @@ class YOLOv3LOSS():
         #===========================================#
         #   计算总loss
         #===========================================#
-        all_loss_loc   *= 0.05
-        all_loss_cls   *= 1.0
-        all_obj_conf   *= 5.0
-        all_noobj_conf *= 0.5
+        #   归一化loss用于计算动态lambda
+        #===========================================#
+        all_loss        = all_loss_loc + all_obj_conf + all_noobj_conf + all_loss_cls
+        normalize_loc   = all_loss_loc / all_loss
+        normalize_cls   = all_loss_cls / all_loss
+        normalize_obj   = all_obj_conf / all_loss
+        normalize_noobj = all_noobj_conf / all_loss
+
+        self.lambda_loc      = dynamic_lambda_loc.step(normalize_loc, self.lambda_loc)
+        self.lambda_cls      = dynamic_lambda_cls.step(normalize_cls, self.lambda_cls)
+        self.lambda_obj      = dynamic_lambda_obj.step(normalize_obj, self.lambda_obj)
+        self.lambda_noobj    = dynamic_lambda_noobj.step(normalize_noobj, self.lambda_noobj)
+
+        all_loss_loc   *= self.lambda_loc
+        all_loss_cls   *= self.lambda_cls
+        all_obj_conf   *= self.lambda_obj
+        all_noobj_conf *= self.lambda_noobj
         loss            = all_loss_loc + all_obj_conf + all_noobj_conf + all_loss_cls
 
         return {'loss':loss,
@@ -117,7 +141,11 @@ class YOLOv3LOSS():
                 'obj_conf': all_obj_conf,
                 'noobj_conf': all_noobj_conf,
                 'loss_cls': all_loss_cls,
-                'positive_num':obj_mask.sum()}
+                'positive_num':obj_mask.sum(),
+                'loc_l':self.lambda_loc,
+                'cls_l':self.lambda_cls,
+                'obj_l':self.lambda_obj,
+                'noobj_l':self.lambda_noobj}
 
     def build_target(self, i, B, S, targets, anchors):
         y_true = torch.zeros(B, 3, S, S, 5 + 80, device=self.device)

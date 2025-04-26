@@ -1,7 +1,9 @@
 hardware:
   device: 'cpu' # 优先使用 GPU，否则使用 CPU
+  num_workers: 4
 training:
-  batch_size: 16 # 批大小
+  freeze_batch_size: 32 # 批大小
+  unfreeze_batch_size: 2
   train_path: 'coco_train.txt'
   val_path: 'coco_val.txt'
 model:
