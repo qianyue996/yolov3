@@ -24,7 +24,7 @@ class YOLOv3LOSS():
         self.lambda_loc   = 0.05
         self.lambda_cls   = 1.0
         self.lambda_obj   = 5.0
-        self.lambda_noobj = 0.5
+        self.lambda_noobj = 0.1
 
     def __call__(self, predict, targets):
         all_loss_loc = torch.zeros(1, device=self.device)
@@ -108,7 +108,7 @@ class YOLOv3LOSS():
             #   GroundTrue Postivez正样本置信度损失
             #===========================================#
             obj_conf = loss_conf[obj_mask].mean() * self.conf_lambda[i]
-            all_obj_conf += torch.nan_to_num(obj_conf, nan=0)
+            all_obj_conf += torch.nan_to_num(obj_conf, nan=0.0)
             #===========================================#
             #   Background Negative负样本置信度损失
             #===========================================#
@@ -125,10 +125,10 @@ class YOLOv3LOSS():
         normalize_obj   = all_obj_conf / all_loss
         normalize_noobj = all_noobj_conf / all_loss
 
-        self.lambda_loc      = dynamic_lambda_loc.step(normalize_loc, self.lambda_loc)
-        self.lambda_cls      = dynamic_lambda_cls.step(normalize_cls, self.lambda_cls)
-        self.lambda_obj      = dynamic_lambda_obj.step(normalize_obj, self.lambda_obj)
-        self.lambda_noobj    = dynamic_lambda_noobj.step(normalize_noobj, self.lambda_noobj)
+        # self.lambda_loc      = dynamic_lambda_loc.step(normalize_loc, self.lambda_loc)
+        # self.lambda_cls      = dynamic_lambda_cls.step(normalize_cls, self.lambda_cls)
+        # self.lambda_obj      = dynamic_lambda_obj.step(normalize_obj, self.lambda_obj)
+        # self.lambda_noobj    = dynamic_lambda_noobj.step(normalize_noobj, self.lambda_noobj)
 
         all_loss_loc   *= self.lambda_loc
         all_loss_cls   *= self.lambda_cls

@@ -10,7 +10,7 @@ import yaml
 
 from nets.yolo import YoloBody
 from utils.dataloader import YOLODataset, yolo_collate_fn
-from utils.tools import DynamicLr, seed_everything
+from utils.tools import DynamicLr, set_seed, worker_init_fn
 from nets.yolo_loss import YOLOv3LOSS
 
 with open('config/yolov3.yaml', 'r', encoding='utf-8') as f:
@@ -30,16 +30,19 @@ class Trainer():
         self.freeze_batch_size = config['training']['freeze_batch_size']
         self.unfreeze_batch_size = config['training']['unfreeze_batch_size']
         #====================================================#
+        #   learning rate
+        #====================================================#
+        self.lr = config['training']['learning_rate']
+        #====================================================#
         #   number workers
         #====================================================#
         self.num_workers = config['hardware']['num_workers']
-
         #====================================================#
         #   seed种子，使得每次独立训练结果一致
         #====================================================#
-        seed               = 11
-        seed_everything(seed)
-        self.batch_size   = 2
+        seed               = 27
+        set_seed(seed)
+        self.batch_size    = 2
         #====================================================#
         #   设备自动选择，优先使用GPU
         #====================================================#
@@ -58,18 +61,20 @@ class Trainer():
                                    batch_size=self.unfreeze_batch_size,
                                    shuffle=True,
                                    num_workers=4,
+                                   worker_init_fn=worker_init_fn,
                                    collate_fn=yolo_collate_fn)
         #====================================================#
         #   初始化模型
         #====================================================#
         self.model       = YoloBody(anchors_mask=config['model']['anchors_mask'],
-                                    num_classes=config['dataset']['length'],
-                                    pretrained=True).to(self.device)
+                                    num_classes=config['dataset']['length']).to(self.device)
+        self.model.initialParam(self.model)
+        self.model.backbone.load_state_dict(torch.load("models/darknet53_backbone_weights.pth"))
         #====================================================#
         #   初始化优化器
         #====================================================#
         self.optimizer   = optim.Adam(self.model.parameters(),
-                                        lr=5e-4,
+                                        lr=self.lr,
                                         weight_decay=1e-3)
         #=======================================================#
         #   尝试读取上次训练进度
@@ -89,7 +94,7 @@ class Trainer():
         #======================================================#
         #   初始化动态学习率
         #====================================================#
-        self.lr_scheduler = DynamicLr(self.optimizer, step_size=1, init_lr=5e-4)
+        self.lr_scheduler = DynamicLr(self.optimizer, step_size=100, init_lr=self.lr)
         #=======================================================#
         #   初始化损失函数
         #====================================================#
@@ -125,6 +130,7 @@ class Trainer():
                                                 batch_size=self.freeze_batch_size,
                                                 shuffle=True,
                                                 num_workers=self.num_workers,
+                                                worker_init_fn=worker_init_fn,
                                                 collate_fn=yolo_collate_fn)
                 else:
                     for param in self.model.backbone.parameters():
@@ -136,6 +142,7 @@ class Trainer():
                                                 batch_size=self.unfreeze_batch_size,
                                                 shuffle=True,
                                                 num_workers=self.num_workers,
+                                                worker_init_fn=worker_init_fn,
                                                 collate_fn=yolo_collate_fn)
             #====================================================#
             #   单个epoch总损失，用于计算epoch内平均损失
@@ -178,11 +185,7 @@ class Trainer():
                                                      'obj_conf':loss_params['obj_conf'],
                                                      'noobj_conf':loss_params['noobj_conf'],
                                                      'loss_cls':loss_params['loss_cls'],
-                                                     'lr':lr,
-                                                     'loc_l':loss_params['loc_l'],
-                                                     'cls_l':loss_params['cls_l'],
-                                                     'obj_l':loss_params['obj_l'],
-                                                     'noobj_l':loss_params['obj_l']}, global_step)
+                                                     'lr':lr}, global_step)
                     
                     self.lr_scheduler.step(avg_loss)
 

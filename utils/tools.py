@@ -23,14 +23,25 @@ def xyxy2xywh(box: list):
         print('检查是否x2<x1 / y2<y1')
     return [x,y,w,h]
 
-def seed_everything(seed=11):
-    random.seed(seed)
-    np.random.seed(seed)
+def set_seed(seed=27):
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
+    torch.cuda.manual_seed_all(seed)  # if using multi-GPU
+    np.random.seed(seed)
+    random.seed(seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
+
+# 自定义 worker_init_fn，设置每个 worker 的随机种子
+def worker_init_fn(worker_id):
+    # 设置 worker 的随机种子，可以用 worker_id 保证每个 worker 的种子不同
+    seed = torch.initial_seed() % 2**32  # 获取当前随机种子
+    np.random.seed(seed)  # 为 numpy 设置随机种子
+    torch.manual_seed(seed)  # 为 torch 设置随机种子
+    # 你也可以为其他库设置种子，例如 random 库:
+    # import random
+    # random.seed(seed)
+
 
 def buildBox(i, S, stride, pred, anchors, anchors_mask, score_thresh=0.4):
 
@@ -153,7 +164,7 @@ class DynamicLr():
         - 如果 loss 均值下降明显，则将学习率乘以 boost_factor
     
     '''
-    def __init__(self, optimizer, step_size=5, init_lr=None, max_lr=0.01, min_lr=1e-8, decay_factor=0.96, boost_factor=1.05):
+    def __init__(self, optimizer, step_size=5, init_lr=None, max_lr=0.01, min_lr=1e-4, decay_factor=0.96, boost_factor=1.05):
         self.optimizer = optimizer
         self.max_lr = max_lr
         self.min_lr = min_lr
