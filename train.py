@@ -1,109 +1,84 @@
 from torch.utils.data.dataloader import DataLoader
 from torch import optim
 import torch
+import numpy as np
 import time
 from torch.utils.tensorboard import SummaryWriter
 import os
 import sys
 from tqdm import tqdm
-import yaml
 
-from nets.yolo import YoloBody
+from nets.yolo import YoloBody, initialParam
 from utils.dataloader import YOLODataset, yolo_collate_fn
 from utils.tools import DynamicLr, set_seed, worker_init_fn
 from nets.yolo_loss import YOLOv3LOSS
 
-with open('config/yolov3.yaml', 'r', encoding='utf-8') as f:
-    config = yaml.safe_load(f)
+from config.model_config import yolov3_cfg
+from config.dataset_config import dataset_cfg
+
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 class Trainer():
     def __init__(self):
-        #====================================================#
-        #   是否开启自动化模式训练
-        #   当达到3次epoch后，解冻backbone，全参训练
-        #   默认全参微调为False
-        #====================================================#
-        self.auto_train = False
-        #====================================================#
-        #   不同训练模式的batchsize
-        #====================================================#
-        self.freeze_batch_size = config['training']['freeze_batch_size']
-        self.unfreeze_batch_size = config['training']['unfreeze_batch_size']
-        #====================================================#
-        #   learning rate
-        #====================================================#
-        self.lr = config['training']['learning_rate']
-        #====================================================#
-        #   number workers
-        #====================================================#
-        self.num_workers = config['hardware']['num_workers']
-        #====================================================#
-        #   seed种子，使得每次独立训练结果一致
-        #====================================================#
-        seed               = 27
-        set_seed(seed)
-        self.batch_size    = 2
-        #====================================================#
-        #   设备自动选择，优先使用GPU
-        #====================================================#
-        self.device        = config['hardware']['device']
+        set_seed(seed = 27)
+        self.batch_size = 2
+        self.num_workers = 4
+        self.anchors_mask = yolov3_cfg['yolov3']['anchors_mask']
+        self.dataset_num_class = dataset_cfg['coco']['num_classes']
 
     def setup(self):
         #====================================================#
-        #   加载数据集
+        #   初始化数据集
         #====================================================#
-        self.train_dataset         = YOLODataset(labels_path=config['training']['train_path'],
-                                       train=True)
+        self.train_dataset = YOLODataset()
         #====================================================#
-        #   数据集加载器
+        #   使用解冻模式的batchsize加载数据
         #====================================================#
-        self.dataloader  = DataLoader(self.train_dataset,
-                                   batch_size=self.unfreeze_batch_size,
-                                   shuffle=True,
-                                   num_workers=4,
-                                   worker_init_fn=worker_init_fn,
-                                   collate_fn=yolo_collate_fn)
+        self.dataloader = DataLoader(dataset=self.train_dataset,
+                                    batch_size=self.batch_size,
+                                    shuffle=True,
+                                    drop_last=True,
+                                    num_workers=self.num_workers,
+                                    worker_init_fn=worker_init_fn,
+                                    collate_fn=yolo_collate_fn)
         #====================================================#
         #   初始化模型
         #====================================================#
-        self.model       = YoloBody(anchors_mask=config['model']['anchors_mask'],
-                                    num_classes=config['dataset']['length']).to(self.device)
-        self.model.initialParam(self.model)
+        self.model = YoloBody(num_classes = self.dataset_num_class).to(device)
+        initialParam(self.model)
         self.model.backbone.load_state_dict(torch.load("models/darknet53_backbone_weights.pth"))
         #====================================================#
         #   初始化优化器
         #====================================================#
-        self.optimizer   = optim.Adam(self.model.parameters(),
-                                        lr=self.lr,
-                                        weight_decay=1e-3)
+        self.optimizer = optim.Adam(self.model.parameters(),
+                                    lr=5e-4,
+                                    weight_decay=5e-4)
+        for param_group in self.optimizer.param_groups:
+            param_group['initial_lr'] = 5e-4
         #=======================================================#
-        #   尝试读取上次训练进度
-        #=======================================================#
-        checkpoint = None
-        try:
-            checkpoint=torch.load('checkpoint.pth', map_location=self.device)
-        except Exception as e:
-            pass
-        if checkpoint:
-            try:
-                self.model.load_state_dict(checkpoint['model'])
-                self.optimizer.load_state_dict(checkpoint['optimizer'])
-                self.start_epoch = checkpoint['epoch'] + 1
-            except Exception as e:
-                pass
-        #======================================================#
         #   初始化动态学习率
-        #====================================================#
-        self.lr_scheduler = DynamicLr(self.optimizer, step_size=100, init_lr=self.lr)
+        #=======================================================#
+        self.lr_scheduler = optim.lr_scheduler.OneCycleLR(self.optimizer,
+                                                          max_lr=1e-2,
+                                                          steps_per_epoch=len(self.dataloader),
+                                                          epochs=10,
+                                                          pct_start=0.3,
+                                                          anneal_strategy='cos',
+                                                          div_factor=25,
+                                                          final_div_factor=1e4)
         #=======================================================#
         #   初始化损失函数
-        #====================================================#
+        #=======================================================#
         self.loss_fn = YOLOv3LOSS()
         #=======================================================#
         #   初始化tensorboard
         #=======================================================#
         writer_path = 'runs'
         self.writer=SummaryWriter(f'{writer_path}/{time.strftime("%Y-%m-%d-%H-%M-%S",time.localtime())}')
+        #=======================================================#
+        #   尝试读取上次训练进度
+        #=======================================================#
+        # self.continue_train()
         #=======================================================#
         #   模型设置为训练模式
         #=======================================================#
@@ -115,35 +90,7 @@ class Trainer():
         #====================================================#
         losses         = []
         global_step    = 0
-        for epoch in range(100):
-            #====================================================#
-            #   如果epoch超过3次，则解冻backbone，全参训练
-            #====================================================#
-            if self.auto_train:
-                if epoch <= 3:
-                    for param in self.model.backbone.parameters():
-                        param.requires_grad = False
-                    #====================================================#
-                    #   使用冻结模式的batchsize加载数据
-                    #====================================================#
-                    self.dataloader = DataLoader(dataset=self.train_dataset,
-                                                batch_size=self.freeze_batch_size,
-                                                shuffle=True,
-                                                num_workers=self.num_workers,
-                                                worker_init_fn=worker_init_fn,
-                                                collate_fn=yolo_collate_fn)
-                else:
-                    for param in self.model.backbone.parameters():
-                        param.requires_grad = True
-                    #====================================================#
-                    #   使用解冻模式的batchsize加载数据
-                    #====================================================#
-                    self.dataloader = DataLoader(dataset=self.train_dataset,
-                                                batch_size=self.unfreeze_batch_size,
-                                                shuffle=True,
-                                                num_workers=self.num_workers,
-                                                worker_init_fn=worker_init_fn,
-                                                collate_fn=yolo_collate_fn)
+        for epoch in range(10):
             #====================================================#
             #   单个epoch总损失，用于计算epoch内平均损失
             #====================================================#
@@ -152,31 +99,30 @@ class Trainer():
                 for batch, item in enumerate(bar):
                     batch_x, batch_y = item
 
-                    batch_x = batch_x.to(self.device)
+                    batch_x = batch_x.to(device)
 
-                    batch_y = [i.to(self.device) for i in batch_y]
+                    batch_y = [i.to(device) for i in batch_y]
                     
+                    self.optimizer.zero_grad()
+
                     batch_output = self.model(batch_x)
 
                     loss_params = self.loss_fn(predict=batch_output,
                                                 targets=batch_y)
                     
-                    loss = loss_params['loss'] / self.batch_size
-
-                    self.optimizer.zero_grad()
+                    loss = loss_params['loss']
 
                     loss.backward()
 
                     self.optimizer.step()
 
-                    epoch_loss+=loss.item()
+                    epoch_loss += loss.item()
 
-                    avg_loss = epoch_loss/(batch + 1)
+                    avg_loss = np.array(epoch_loss).mean()
 
-                    for params in self.optimizer.param_groups:
-                        lr = params['lr']
+                    lr = self.optimizer.param_groups[0]['lr']
                             
-                    bar.set_postfix({'epoch':epoch,
+                    bar.set_postfix(**{'epoch':epoch,
                                     'loss':f'{avg_loss:.4f}',
                                     'lr':lr})
                     
@@ -187,9 +133,9 @@ class Trainer():
                                                      'loss_cls':loss_params['loss_cls'],
                                                      'lr':lr}, global_step)
                     
-                    self.lr_scheduler.step(avg_loss)
-
                     global_step += 1
+
+                    self.lr_scheduler.step()
 
             losses.append(avg_loss)
 
@@ -217,6 +163,24 @@ class Trainer():
                 print(f'early stop, final loss={losses[-1]}')
                 sys.exit()
     
+    def continue_train(self, checkpoint=None):
+        try:
+            checkpoint=torch.load('checkpoint.pth', map_location=device)
+            print(f'load model success, start epoch={self.start_epoch}')
+        except Exception as e:
+            print(e)
+            print('load model failed,start from scratch')
+            pass
+
+        if checkpoint:
+            try:
+                self.model.load_state_dict(checkpoint['model'])
+                self.optimizer.load_state_dict(checkpoint['optimizer'])
+                self.start_epoch = checkpoint['epoch']
+            except Exception as e:
+                print(e)
+                pass
+
 if __name__ == '__main__':
     trainer=Trainer()
     trainer.setup()

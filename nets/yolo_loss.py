@@ -24,7 +24,7 @@ class YOLOv3LOSS():
         self.lambda_loc   = 0.05
         self.lambda_cls   = 1.0
         self.lambda_obj   = 5.0
-        self.lambda_noobj = 0.1
+        self.lambda_noobj = 5.0
 
     def __call__(self, predict, targets):
         all_loss_loc = torch.zeros(1, device=self.device)

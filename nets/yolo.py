@@ -30,7 +30,7 @@ def make_last_layers(filters_list, in_filters, out_filter):
     return m
 
 class YoloBody(nn.Module):
-    def __init__(self, anchors_mask, num_classes):
+    def __init__(self, num_classes):
         super(YoloBody, self).__init__()
         #---------------------------------------------------#   
         #   生成darknet53的主干模型
@@ -51,15 +51,15 @@ class YoloBody(nn.Module):
         #   计算yolo_head的输出通道数，对于voc数据集而言
         #   final_out_filter0 = final_out_filter1 = final_out_filter2 = 75
         #------------------------------------------------------------------------#
-        self.last_layer0            = make_last_layers([512, 1024], out_filters[-1], len(anchors_mask[0]) * (num_classes + 5))
+        self.last_layer0            = make_last_layers([512, 1024], out_filters[-1], 3 * (num_classes + 5))
 
         self.last_layer1_conv       = conv2d(512, 256, 1)
         self.last_layer1_upsample   = nn.Upsample(scale_factor=2, mode='nearest')
-        self.last_layer1            = make_last_layers([256, 512], out_filters[-2] + 256, len(anchors_mask[1]) * (num_classes + 5))
+        self.last_layer1            = make_last_layers([256, 512], out_filters[-2] + 256, 3 * (num_classes + 5))
 
         self.last_layer2_conv       = conv2d(256, 128, 1)
         self.last_layer2_upsample   = nn.Upsample(scale_factor=2, mode='nearest')
-        self.last_layer2            = make_last_layers([128, 256], out_filters[-3] + 128, len(anchors_mask[2]) * (num_classes + 5))
+        self.last_layer2            = make_last_layers([128, 256], out_filters[-3] + 128, 3 * (num_classes + 5))
 
     def forward(self, x):
         #---------------------------------------------------#   
@@ -104,18 +104,18 @@ class YoloBody(nn.Module):
         out2 = self.last_layer2(x2_in)
         return out0, out1, out2
     
-    #==================================#
-    #           初始化参数        
-    #==================================#
-    def initialParam(self,m):
-        if isinstance(m, nn.Conv2d):
-            torch.nn.init.xavier_uniform_(m.weight)
-            if m.bias is not None:
-                torch.nn.init.constant_(m.bias, 0)
-        elif isinstance(m, nn.BatchNorm2d):
-            torch.nn.init.constant_(m.weight, 1)
+#==================================#
+#           初始化参数        
+#==================================#
+def initialParam(m):
+    if isinstance(m, nn.Conv2d):
+        torch.nn.init.xavier_uniform_(m.weight)
+        if m.bias is not None:
             torch.nn.init.constant_(m.bias, 0)
-        elif isinstance(m, nn.Linear):
-            torch.nn.init.normal_(m.weight, std=1e-3)
-            if m.bias is not None:
-                torch.nn.init.constant_(m.bias, 0)
+    elif isinstance(m, nn.BatchNorm2d):
+        torch.nn.init.constant_(m.weight, 1)
+        torch.nn.init.constant_(m.bias, 0)
+    elif isinstance(m, nn.Linear):
+        torch.nn.init.normal_(m.weight, std=1e-3)
+        if m.bias is not None:
+            torch.nn.init.constant_(m.bias, 0)

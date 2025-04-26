@@ -1,27 +1,17 @@
 hardware:
-  device: 'cuda' # 优先使用 GPU，否则使用 CPU
-  num_workers: 0
+  device: 'cpu' # 优先使用 GPU，否则使用 CPU
+  num_workers: 4
 training:
-  learning_rate: 1e-3
+  learning_rate: 0.01
   freeze_batch_size: 32 # 批大小
   unfreeze_batch_size: 12
   train_path: 'coco_train.txt'
   val_path: 'coco_val.txt'
 model:
   anchors: # Anchor boxes for YOLO detection
-    - [7, 9]
-    - [16, 24]
-    - [43, 26]
-    - [29, 60]
-    - [72, 56]
-    - [63, 133]
-    - [142, 96]
-    - [166, 223]
-    - [400, 342]
+    [[7, 9], [16, 24], [43, 26], [29, 60], [72, 56], [63, 133], [142, 96], [166, 223], [400, 342]]
   anchors_mask: # Anchor mask for different scales
-    - [6, 7, 8] # 大尺度
-    - [3, 4, 5] # 中尺度
-    - [0, 1, 2] # 小尺度
+    [[6, 7, 8], [3, 4, 5], [0, 1, 2]]
   stride: [32, 16, 8] # 特征图下采样步幅
 dataset:
   length: 80
