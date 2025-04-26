@@ -153,9 +153,10 @@ class DynamicLr():
         - 如果 loss 均值下降明显，则将学习率乘以 boost_factor
     
     '''
-    def __init__(self, optimizer, step_size=5, lr=None, max_lr=0.01, decay_factor=0.96, boost_factor=1.05):
+    def __init__(self, optimizer, step_size=5, lr=None, max_lr=0.01, min_lr=1e-6, decay_factor=0.96, boost_factor=1.05):
         self.optimizer = optimizer
         self.max_lr = max_lr
+        self.min_lr = min_lr
         self.step_size = step_size  # 每多少步观察一次 loss 均值
         self.decay_factor = decay_factor  # 降速因子
         self.boost_factor = boost_factor  # 升速因子
@@ -163,9 +164,6 @@ class DynamicLr():
         if lr is not None:
             for param_group in self.optimizer.param_groups:
                 param_group['lr'] = lr
-
-        self.run_step = 1
-        self.loss_history = []
 
         self.run_step = 1
         self.loss_history = []
@@ -209,7 +207,7 @@ class DynamicLr():
         for group in self.optimizer.param_groups:
             old_lr = group['lr']
             if decay:
-                new_lr = old_lr * self.decay_factor
+                new_lr = max(old_lr * self.decay_factor, self.min_lr)
             elif boost:
                 new_lr = min(old_lr * self.boost_factor, self.max_lr)
             else:

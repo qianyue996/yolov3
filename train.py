@@ -147,10 +147,11 @@ class Trainer():
 
             losses.append(avg_loss)
 
-            self.save_best_model(epoch=epoch)
+            self.save_best_model(epoch=epoch,
+                                 losses=losses)
 
-    def save_best_model(self,epoch):
-        if len(self.losses)==1 or self.losses[-1]<self.losses[-2]: # 保存更优的model
+    def save_best_model(self,epoch,losses):
+        if len(losses)==1 or losses[-1]<losses[-2]: # 保存更优的model
             checkpoint={
                 'model' : self.model.state_dict(),
                 'optimizer' : self.optimizer.state_dict(),
@@ -160,15 +161,15 @@ class Trainer():
             os.replace('.checkpoint.pth', 'checkpoint.pth')
 
         EARLY_STOP_PATIENCE = 5   # 早停忍耐度
-        if len(self.losses) >= EARLY_STOP_PATIENCE:
+        if len(losses) >= EARLY_STOP_PATIENCE:
             early_stop = True
             for i in range(1, EARLY_STOP_PATIENCE):
-                if self.losses[-i] < self.losses[-i-1]:
+                if losses[-i] < losses[-i-1]:
                     early_stop = False
                     break
-                if early_stop:
-                    print(f'early stop, final loss={self.losses[-1]}')
-                    sys.exit()
+            if early_stop:
+                print(f'early stop, final loss={losses[-1]}')
+                sys.exit()
     
 if __name__ == '__main__':
     trainer=Trainer()

@@ -108,8 +108,8 @@ class YOLOv3LOSS():
         #===========================================#
         all_loss_loc   *= 0.05
         all_loss_cls   *= 0.5
-        all_obj_conf   *= 1.0
-        all_noobj_conf *= 1.0
+        all_obj_conf   *= 5.0
+        all_noobj_conf *= 0.5
         loss            = all_loss_loc + all_obj_conf + all_noobj_conf + all_loss_cls
 
         return {'loss':loss,
