@@ -6,7 +6,11 @@ import time
 from torch.utils.tensorboard import SummaryWriter
 import os
 import sys
+import json
 from tqdm import tqdm
+import gradio as gr
+import threading
+from multiprocessing import Process
 
 from nets.yolo import YoloBody, initialParam
 from utils.dataloader import YOLODataset, yolo_collate_fn
@@ -17,23 +21,22 @@ from config.model_config import yolov3_cfg
 from config.dataset_config import dataset_cfg
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
-
+    
 class Trainer():
     def __init__(self):
+        #
+        self.config = get_config()
+        #
         set_seed(seed = 27)
-        self.batch_size = 2
+        self.batchsize = self.config['batchsize']
+        self.lr = self.config['lr']
+
         self.num_workers = 4
         self.anchors_mask = yolov3_cfg['yolov3']['anchors_mask']
         self.dataset_num_class = dataset_cfg['coco']['num_classes']
 
     def setup(self):
-        #====================================================#
-        #   初始化数据集
-        #====================================================#
         self.train_dataset = YOLODataset()
-        #====================================================#
-        #   使用解冻模式的batchsize加载数据
-        #====================================================#
         self.dataloader = DataLoader(dataset=self.train_dataset,
                                     batch_size=self.batch_size,
                                     shuffle=True,
@@ -41,23 +44,14 @@ class Trainer():
                                     num_workers=self.num_workers,
                                     worker_init_fn=worker_init_fn,
                                     collate_fn=yolo_collate_fn)
-        #====================================================#
-        #   初始化模型
-        #====================================================#
         self.model = YoloBody(num_classes = self.dataset_num_class).to(device)
         initialParam(self.model)
         self.model.backbone.load_state_dict(torch.load("models/darknet53_backbone_weights.pth"))
-        #====================================================#
-        #   初始化优化器
-        #====================================================#
         self.optimizer = optim.Adam(self.model.parameters(),
                                     lr=5e-4,
                                     weight_decay=5e-4)
         for param_group in self.optimizer.param_groups:
             param_group['initial_lr'] = 5e-4
-        #=======================================================#
-        #   初始化动态学习率
-        #=======================================================#
         self.lr_scheduler = optim.lr_scheduler.OneCycleLR(self.optimizer,
                                                           max_lr=1e-2,
                                                           steps_per_epoch=len(self.dataloader),
@@ -66,34 +60,19 @@ class Trainer():
                                                           anneal_strategy='cos',
                                                           div_factor=25,
                                                           final_div_factor=1e4)
-        #=======================================================#
-        #   初始化损失函数
-        #=======================================================#
         self.loss_fn = YOLOv3LOSS()
-        #=======================================================#
-        #   初始化tensorboard
-        #=======================================================#
         writer_path = 'runs'
         self.writer=SummaryWriter(f'{writer_path}/{time.strftime("%Y-%m-%d-%H-%M-%S",time.localtime())}')
         #=======================================================#
         #   尝试读取上次训练进度
         #=======================================================#
         # self.continue_train()
-        #=======================================================#
-        #   模型设置为训练模式
-        #=======================================================#
         self.model.train()
 
     def train(self):
-        #====================================================#
-        #   总loss列表存放，全局步数计数器
-        #====================================================#
         losses         = []
         global_step    = 0
         for epoch in range(10):
-            #====================================================#
-            #   单个epoch总损失，用于计算epoch内平均损失
-            #====================================================#
             epoch_loss = 0
             with tqdm(self.dataloader, disable=False) as bar:
                 for batch, item in enumerate(bar):
@@ -118,7 +97,7 @@ class Trainer():
 
                     epoch_loss += loss.item()
 
-                    avg_loss = np.array(epoch_loss).mean()
+                    avg_loss = epoch_loss / (batch + 1)
 
                     lr = self.optimizer.param_groups[0]['lr']
                             
@@ -135,8 +114,7 @@ class Trainer():
                     
                     global_step += 1
 
-                    self.lr_scheduler.step()
-
+                    self.config = get_config()
             losses.append(avg_loss)
 
             self.save_best_model(epoch=epoch,
@@ -181,7 +159,13 @@ class Trainer():
                 print(e)
                 pass
 
+def get_config():
+    with open('config/config.json', 'r', encoding='utf-8') as f:
+        config = json.load(f)
+    return config
+
 if __name__ == '__main__':
     trainer=Trainer()
+
     trainer.setup()
     trainer.train()

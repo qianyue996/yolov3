@@ -58,13 +58,14 @@ def ToTensor(images, labels):
     labels = [torch.tensor(label, dtype=torch.float32) for label in labels]
     return images, labels
 
-def chakan(self, image, boxes, ids):
+def chakan(image, labels):
+    labels = list(labels)
     cv.namedWindow('show', cv.WINDOW_NORMAL)
     image = cv.cvtColor(image, cv.COLOR_RGB2BGR)
-    for i in range(len(boxes)):
-        x1,y1,x2,y2 = boxes[i]
+    for i in range(len(labels)):
+        x1,y1,x2,y2,id = labels[i]
         cv.rectangle(image, (x1,y1), (x2,y2), (0, 0, 255), thickness=1)
-        cv.putText(image, f'{ids[i]} {self.class_names[ids[i]]}',
+        cv.putText(image, f'{id}',
                     (int(x1), int(y1)-5), cv.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), thickness=1)
     cv.imshow('show', image)
     cv.waitKey(0)
@@ -82,6 +83,7 @@ def yolo_collate_fn(batch):
     # 随机增强
     # images, labels = randomAug(images, labels)
     # 
+    # chakan(images[0], labels[0])
     labels = xyxy2xywh(labels)
     images, labels = normalizeData(images, labels)
     images, labels = ToTensor(images, labels)
