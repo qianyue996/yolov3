@@ -150,8 +150,8 @@ class YOLOv3LOSS():
 
                 y_true[bs, k, x, y, 0] = batch_target[index, 0] - x.float()
                 y_true[bs, k, x, y, 1] = batch_target[index, 1] - y.float()
-                y_true[bs, k, x, y, 2] = torch.log(batch_target[index, 2] / anchors[k][0])
-                y_true[bs, k, x, y, 3] = torch.log(batch_target[index, 3] / anchors[k][1])
+                y_true[bs, k, x, y, 2] = torch.log(batch_target[index, 2] / anchors[n_a][0])
+                y_true[bs, k, x, y, 3] = torch.log(batch_target[index, 3]) / anchors[n_a][1]
                 y_true[bs, k, x, y, 4] = 1
                 y_true[bs, k, x, y, 5 + c] = 1
 

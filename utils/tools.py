@@ -47,11 +47,11 @@ def buildBox(i, S, stride, pred, anchors, anchors_mask, score_thresh=0.4):
         torch.arange(S, dtype=pred.dtype, device=pred.device),
         indexing='ij'
     )
-    grid_xy = torch.stack([grid_x, grid_y], dim=-1).unsqueeze(0).expand_as(pred[..., 0:2])
-    pred[..., 0:2] = (pred[..., 0:2].sigmoid() + grid_xy) * stride
+    grid_xy = torch.stack([grid_x, grid_y], dim=-1).view(1, 1, S, S, 2).expand_as(pred[..., :2])
+    pred[..., :2] = (pred[..., :2].sigmoid() + grid_xy) * stride
 
-    pred[..., 2] = torch.exp(pred[..., 2]) * anchors[anchors_mask[i]][:, 0].unsqueeze(-1).unsqueeze(-1)
-    pred[..., 3] = torch.exp(pred[..., 3]) * anchors[anchors_mask[i]][:, 1].unsqueeze(-1).unsqueeze(-1)
+    pred[..., 2] = torch.log(pred[..., 2]) * anchors[anchors_mask[i]][:, 0].view(1, -1, 1, 1)
+    pred[..., 3] = torch.log(pred[..., 3]) * anchors[anchors_mask[i]][:, 1].view(1, -1, 1, 1)
 
     boxes = torch.stack([pred[..., 0] - pred[..., 2] / 2,
                         pred[..., 1] - pred[..., 3] / 2,

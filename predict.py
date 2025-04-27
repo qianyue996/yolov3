@@ -36,7 +36,7 @@ def process(img, input):
         S = output[i].shape[2]
         stride = modelConfig['stride'][i]
 
-        prediction = output[i].squeeze().view(3, 85, S, S).permute(0, 2, 3, 1)
+        prediction = output[i].view(-1, 3, 85, S, S).permute(0, 1, 3, 4, 2)
         anchors = torch.tensor(modelConfig['anchor'], device=device)
 
         boxes, scores, labels = buildBox(i, S, stride, prediction, anchors, modelConfig['anchor_mask'])
@@ -60,7 +60,7 @@ def process(img, input):
 
 def transport(img, to_tensor=True):
     if to_tensor:
-        img = cv.resize(img, (416, 416))
+        img = cv.resize(img, (416, 416), interpolation=cv.INTER_AREA)
         input = cv.cvtColor(img, cv.COLOR_BGR2RGB)
         input = np.transpose(np.array(input / 255.0, dtype=np.float32), (2, 0, 1))
         input = torch.tensor(input).unsqueeze(0).to(torch.float32).to(device)

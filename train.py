@@ -9,8 +9,6 @@ import sys
 import json
 from tqdm import tqdm
 import gradio as gr
-import threading
-from multiprocessing import Process
 
 from nets.yolo import YoloBody, initialParam
 from utils.dataloader import YOLODataset, yolo_collate_fn
@@ -75,12 +73,12 @@ class Trainer():
                     avg_loss = epoch_loss / (batch + 1)
                     lr = self.optimizer.param_groups[0]['lr']
                     bar.set_postfix(**{'epoch':epoch,
-                                    'loss':f'{avg_loss:.4f}',
+                                    'loss':f'{loss.item():.4f}',
                                     'lr':lr})
-                    self.writer.add_scalars('loss', {'avg_loss':avg_loss,
-                                                     'lambda_loc':loss_params['lambda_loc'],
-                                                     'lambda_cls':loss_params['lambda_cls'],
-                                                     'lambda_obj':loss_params['lambda_obj'],
+                    self.writer.add_scalars('loss', {'loss':loss.item(),
+                                                     'loss_loc':loss_params['loss_loc'],
+                                                     'loss_obj':loss_params['loss_obj'],
+                                                     'loss_cls':loss_params['loss_cls'],
                                                      'lr':lr}, global_step)
                     # 更新lr
                     self.optimizer.param_groups[0]['lr'] = get_config()['lr']
