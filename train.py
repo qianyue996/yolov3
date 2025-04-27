@@ -20,7 +20,7 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 class Trainer():
     def __init__(self):
         set_seed(seed = 27)
-        self.batch_size = get_config()['batch_size']
+        self.batch_size = 12
         self.lr = get_config()['lr']
 
     def setup(self):

@@ -40,7 +40,7 @@ def create_input_components(config):
     for key, value in config.items():
         if isinstance(value, (int, float)):  # 判断是否是数字类型
             input_components.append(
-                gr.Slider(minimum=0.000001, maximum=32, step=0.00001, label=key, value=value)
+                gr.Slider(minimum=0.000001, maximum=12, step=0.000001, label=key, value=value)
             )
         elif isinstance(value, list):  # 判断是否是列表
             input_components.append(
