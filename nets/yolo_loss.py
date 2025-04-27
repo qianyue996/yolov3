@@ -13,7 +13,7 @@ dynamic_lambda_obj     = DynamicLambda(step_size=3)
 dynamic_lambda_noobj   = DynamicLambda(step_size=3)
 
 class YOLOv3LOSS():
-    def __init__(self):
+    def __init__(self, l_loc, l_cls, l_obj, l_noobj):
         self.device       = config['hardware']['device']
         self.stride       = config['model']['stride']
         self.anchors      = config['model']['anchors']
@@ -21,10 +21,10 @@ class YOLOv3LOSS():
 
         self.conf_lambda = [0.4, 1.0, 4]
 
-        self.lambda_loc   = 0.05
-        self.lambda_cls   = 1.0
-        self.lambda_obj   = 5.0
-        self.lambda_noobj = 5.0
+        self.lambda_loc   = l_loc
+        self.lambda_cls   = l_cls
+        self.lambda_obj   = l_obj
+        self.lambda_noobj = l_noobj
 
     def __call__(self, predict, targets):
         all_loss_loc = torch.zeros(1, device=self.device)
@@ -117,19 +117,6 @@ class YOLOv3LOSS():
         #===========================================#
         #   计算总loss
         #===========================================#
-        #   归一化loss用于计算动态lambda
-        #===========================================#
-        all_loss        = all_loss_loc + all_obj_conf + all_noobj_conf + all_loss_cls
-        normalize_loc   = all_loss_loc / all_loss
-        normalize_cls   = all_loss_cls / all_loss
-        normalize_obj   = all_obj_conf / all_loss
-        normalize_noobj = all_noobj_conf / all_loss
-
-        # self.lambda_loc      = dynamic_lambda_loc.step(normalize_loc, self.lambda_loc)
-        # self.lambda_cls      = dynamic_lambda_cls.step(normalize_cls, self.lambda_cls)
-        # self.lambda_obj      = dynamic_lambda_obj.step(normalize_obj, self.lambda_obj)
-        # self.lambda_noobj    = dynamic_lambda_noobj.step(normalize_noobj, self.lambda_noobj)
-
         all_loss_loc   *= self.lambda_loc
         all_loss_cls   *= self.lambda_cls
         all_obj_conf   *= self.lambda_obj

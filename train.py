@@ -24,15 +24,10 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
     
 class Trainer():
     def __init__(self):
-        #
-        self.config = get_config()
-        #
         set_seed(seed = 27)
-        self.batchsize = self.config['batchsize']
-        self.lr = self.config['lr']
+        self.batch_size = get_config()['batch_size']
+        self.lr = get_config()['lr']
 
-        self.num_workers = 4
-        self.anchors_mask = yolov3_cfg['yolov3']['anchors_mask']
         self.dataset_num_class = dataset_cfg['coco']['num_classes']
 
     def setup(self):
@@ -41,32 +36,25 @@ class Trainer():
                                     batch_size=self.batch_size,
                                     shuffle=True,
                                     drop_last=True,
-                                    num_workers=self.num_workers,
+                                    num_workers=2,
                                     worker_init_fn=worker_init_fn,
                                     collate_fn=yolo_collate_fn)
         self.model = YoloBody(num_classes = self.dataset_num_class).to(device)
         initialParam(self.model)
         self.model.backbone.load_state_dict(torch.load("models/darknet53_backbone_weights.pth"))
-        self.optimizer = optim.Adam(self.model.parameters(),
-                                    lr=5e-4,
+        self.optimizer = optim.AdamW(self.model.parameters(),
+                                    lr=self.lr,
                                     weight_decay=5e-4)
-        for param_group in self.optimizer.param_groups:
-            param_group['initial_lr'] = 5e-4
-        self.lr_scheduler = optim.lr_scheduler.OneCycleLR(self.optimizer,
-                                                          max_lr=1e-2,
-                                                          steps_per_epoch=len(self.dataloader),
-                                                          epochs=10,
-                                                          pct_start=0.3,
-                                                          anneal_strategy='cos',
-                                                          div_factor=25,
-                                                          final_div_factor=1e4)
-        self.loss_fn = YOLOv3LOSS()
+        self.loss_fn = YOLOv3LOSS(l_loc = get_config()['l_loc'],
+                                l_cls = get_config()['l_cls'],
+                                l_obj = get_config()['l_obj'],
+                                l_noobj = get_config()['l_noobj'])
         writer_path = 'runs'
         self.writer=SummaryWriter(f'{writer_path}/{time.strftime("%Y-%m-%d-%H-%M-%S",time.localtime())}')
         #=======================================================#
         #   尝试读取上次训练进度
         #=======================================================#
-        # self.continue_train()
+        self.continue_train()
         self.model.train()
 
     def train(self):
@@ -74,47 +62,40 @@ class Trainer():
         global_step    = 0
         for epoch in range(10):
             epoch_loss = 0
+            for param in self.model.backbone.parameters(): # 冻结backbone
+                param.requires_grad = False
             with tqdm(self.dataloader, disable=False) as bar:
                 for batch, item in enumerate(bar):
                     batch_x, batch_y = item
-
                     batch_x = batch_x.to(device)
-
                     batch_y = [i.to(device) for i in batch_y]
-                    
                     self.optimizer.zero_grad()
-
                     batch_output = self.model(batch_x)
-
                     loss_params = self.loss_fn(predict=batch_output,
                                                 targets=batch_y)
-                    
                     loss = loss_params['loss']
-
                     loss.backward()
-
                     self.optimizer.step()
-
                     epoch_loss += loss.item()
-
                     avg_loss = epoch_loss / (batch + 1)
-
                     lr = self.optimizer.param_groups[0]['lr']
-                            
                     bar.set_postfix(**{'epoch':epoch,
                                     'loss':f'{avg_loss:.4f}',
                                     'lr':lr})
-                    
                     self.writer.add_scalars('loss', {'avg_loss':avg_loss,
                                                      'loss_loc':loss_params['loss_loc'],
                                                      'obj_conf':loss_params['obj_conf'],
                                                      'noobj_conf':loss_params['noobj_conf'],
                                                      'loss_cls':loss_params['loss_cls'],
                                                      'lr':lr}, global_step)
-                    
+                    # 更新lr
+                    self.optimizer.param_groups[0]['lr'] = get_config()['lr']
+                    # 更新loss fn
+                    self.loss_fn = YOLOv3LOSS(l_loc = get_config()['l_loc'],
+                                              l_cls = get_config()['l_cls'],
+                                              l_obj = get_config()['l_obj'],
+                                              l_noobj = get_config()['l_noobj'])
                     global_step += 1
-
-                    self.config = get_config()
             losses.append(avg_loss)
 
             self.save_best_model(epoch=epoch,
