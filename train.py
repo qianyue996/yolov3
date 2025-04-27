@@ -17,18 +17,13 @@ from utils.dataloader import YOLODataset, yolo_collate_fn
 from utils.tools import set_seed, worker_init_fn
 from nets.yolo_loss import YOLOv3LOSS
 
-from config.model_config import yolov3_cfg
-from config.dataset_config import dataset_cfg
-
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    
+
 class Trainer():
     def __init__(self):
         set_seed(seed = 27)
         self.batch_size = get_config()['batch_size']
         self.lr = get_config()['lr']
-
-        self.dataset_num_class = dataset_cfg['coco']['num_classes']
 
     def setup(self):
         self.train_dataset = YOLODataset()
@@ -39,7 +34,7 @@ class Trainer():
                                     num_workers=2,
                                     worker_init_fn=worker_init_fn,
                                     collate_fn=yolo_collate_fn)
-        self.model = YoloBody(num_classes = self.dataset_num_class).to(device)
+        self.model = YoloBody().to(device)
         initialParam(self.model)
         # self.model.backbone.load_state_dict(torch.load("models/darknet53_backbone_weights.pth"))
         self.optimizer = optim.AdamW(self.model.parameters(),
@@ -83,9 +78,9 @@ class Trainer():
                                     'loss':f'{avg_loss:.4f}',
                                     'lr':lr})
                     self.writer.add_scalars('loss', {'avg_loss':avg_loss,
-                                                     'loss_loc':loss_params['loss_loc'],
-                                                     'loss_obj':loss_params['loss_obj'],
-                                                     'loss_cls':loss_params['loss_cls'],
+                                                     'lambda_loc':loss_params['lambda_loc'],
+                                                     'lambda_cls':loss_params['lambda_cls'],
+                                                     'lambda_obj':loss_params['lambda_obj'],
                                                      'lr':lr}, global_step)
                     # 更新lr
                     self.optimizer.param_groups[0]['lr'] = get_config()['lr']

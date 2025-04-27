@@ -338,3 +338,6 @@ def multi_class_nms(boxes, scores, labels, iou_threshold=0.5, score_threshold=0.
         return torch.cat(keep_boxes), torch.cat(keep_scores), torch.cat(keep_labels)
     else:
         return torch.empty((0, 4), device=boxes.device), torch.empty((0,), device=boxes.device), torch.empty((0,), dtype=torch.int64, device=boxes.device)
+
+def get_config():
+    pass

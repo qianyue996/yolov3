@@ -2,7 +2,7 @@ import gradio as gr
 import json
 import os
 
-CONFIG_PATH = 'config/config.json'
+CONFIG_PATH = 'config/trainParameter.json'
 
 # 读取配置文件的函数
 def read_config():

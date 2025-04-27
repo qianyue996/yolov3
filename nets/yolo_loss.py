@@ -1,14 +1,18 @@
+import json
 import torch
 import torch.nn as nn
+
+with open("config/modelParameter.json", 'r', encoding='utf-8')as f:
+    config = json.load(f)
 
 class YOLOv3LOSS():
     def __init__(self, device, l_loc, l_cls, l_obj):
         self.device       = device
-        self.stride       = [32, 16, 8]
-        self.anchors      = [[7, 9], [16, 24], [43, 26], [29, 60], [72, 56], [63, 133], [142, 96], [166, 223], [400, 342]]
-        self.anchors_mask = [[6, 7, 8], [3, 4, 5], [0, 1, 2]]
+        self.stride       = config['stride']
+        self.anchors      = config['anchor']
+        self.anchors_mask = config['anchor_mask']
 
-        self.conf_lambda = [0.4, 1.0, 4]
+        self.lambda_obj_layers = [0.4, 1.0, 4]
 
         self.lambda_loc   = l_loc
         self.lambda_cls   = l_cls
@@ -16,8 +20,8 @@ class YOLOv3LOSS():
 
     def __call__(self, predict, targets):
         all_loss_loc = torch.zeros(1, device=self.device)
-        all_obj_conf = all_loss_loc.clone()
         all_loss_cls = all_loss_loc.clone()
+        all_loss_obj = all_loss_loc.clone()
         #===========================================#
         #   循环3个Layers，对应yolov3的三个特征层
         #===========================================#
@@ -91,8 +95,8 @@ class YOLOv3LOSS():
             #   置信度损失
             #===========================================#
             loss_conf = nn.BCELoss(reduction='none')(conf, t_conf)
-            loss_conf = loss_conf[obj_mask | noobj_mask].mean() * self.conf_lambda[i]
-            all_obj_conf += loss_conf
+            loss_conf = loss_conf[obj_mask | noobj_mask].mean() * self.lambda_obj_layers[i]
+            all_loss_obj += loss_conf
             #===========================================#
             #   GroundTrue Postivez正样本置信度损失
             #===========================================#
@@ -108,17 +112,17 @@ class YOLOv3LOSS():
         #===========================================#
         all_loss_loc   *= self.lambda_loc
         all_loss_cls   *= self.lambda_cls
-        all_obj_conf   *= self.lambda_obj
-        loss            = all_loss_loc + all_obj_conf + all_loss_cls
+        all_loss_obj   *= self.lambda_obj
+        loss            = all_loss_loc + all_loss_obj + all_loss_cls
 
         return {'loss':loss,
                 'loss_loc':all_loss_loc,
-                'loss_obj': all_obj_conf,
+                'loss_obj': all_loss_obj,
                 'loss_cls': all_loss_cls,
                 'positive_num':obj_mask.sum(),
-                'loc_l':self.lambda_loc,
-                'cls_l':self.lambda_cls,
-                'obj_l':self.lambda_obj}
+                'lambda_loc':self.lambda_loc,
+                'lambda_cls':self.lambda_cls,
+                'lambda_obj':self.lambda_obj}
 
     def build_target(self, i, B, S, targets, anchors):
         y_true = torch.zeros(B, 3, S, S, 5 + 80, device=self.device)
