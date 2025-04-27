@@ -42,6 +42,10 @@ class Trainer():
                                 l_loc = get_config()['l_loc'],
                                 l_cls = get_config()['l_cls'],
                                 l_obj = get_config()['l_obj'])
+        optim.lr_scheduler.CosineAnnealingWarmRestarts(self.optimizer,
+                                                        T_0=2,
+                                                        T_mult=1,
+                                                        eta_min=1e-6)
         writer_path = 'runs'
         self.writer=SummaryWriter(f'{writer_path}/{time.strftime("%Y-%m-%d-%H-%M-%S",time.localtime())}')
         #=======================================================#
