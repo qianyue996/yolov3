@@ -8,9 +8,9 @@ with open("config/modelParameter.json", 'r', encoding='utf-8')as f:
 class YOLOv3LOSS():
     def __init__(self, device, l_loc, l_cls, l_obj):
         self.device       = device
-        self.stride       = config['stride']
-        self.anchors      = config['anchor']
-        self.anchors_mask = config['anchor_mask']
+        self.stride       = [32, 16, 8]
+        self.anchors      = [[7, 9],[16, 24],[43, 26],[29, 60],[72, 56],[63, 133],[142, 96],[166, 223],[400, 342]]
+        self.anchors_mask = [[6, 7, 8],[3, 4, 5],[0, 1, 2]]
 
         self.lambda_obj_layers = [0.4, 1.0, 4]
 

@@ -42,10 +42,10 @@ class Trainer():
                                 l_loc = get_config()['l_loc'],
                                 l_cls = get_config()['l_cls'],
                                 l_obj = get_config()['l_obj'])
-        optim.lr_scheduler.CosineAnnealingWarmRestarts(self.optimizer,
-                                                        T_0=2,
+        self.lr_scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(self.optimizer,
+                                                        T_0=1000,
                                                         T_mult=1,
-                                                        eta_min=1e-6)
+                                                        eta_min=1e-5)
         writer_path = 'runs'
         self.writer=SummaryWriter(f'{writer_path}/{time.strftime("%Y-%m-%d-%H-%M-%S",time.localtime())}')
         #=======================================================#
@@ -59,8 +59,8 @@ class Trainer():
         global_step    = 0
         for epoch in range(10):
             epoch_loss = 0
-            for param in self.model.backbone.parameters(): # 冻结backbone
-                param.requires_grad = False
+            # for param in self.model.backbone.parameters(): # 冻结backbone
+            #     param.requires_grad = False
             with tqdm(self.dataloader, disable=False) as bar:
                 for batch, item in enumerate(bar):
                     batch_x, batch_y = item
@@ -91,6 +91,7 @@ class Trainer():
                                               l_loc = get_config()['l_loc'],
                                               l_cls = get_config()['l_cls'],
                                               l_obj = get_config()['l_obj'])
+                    self.lr_scheduler.step()
                     global_step += 1
             losses.append(avg_loss)
 

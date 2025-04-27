@@ -20,6 +20,18 @@ model = YoloBody().to(device)
 model.load_state_dict(torch.load("checkpoint.pth", map_location=device)['model'])
 model.eval()
 
+class Abc():
+    def __init__(self):
+        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        self.stride       = [32, 16, 8]
+        self.anchors      = [[7, 9],[16, 24],[43, 26],[29, 60],[72, 56],[63, 133],[142, 96],[166, 223],[400, 342]]
+        self.anchors_mask = [[6, 7, 8],[3, 4, 5],[0, 1, 2]]
+        pass
+
+    def __call__(self, img):
+        pass
+
+
 def draw(img, boxes, scores, labels):
     for i in range(len(boxes)):
         x1, y1, x2, y2 = boxes[i]
