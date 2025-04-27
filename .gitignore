@@ -5,6 +5,7 @@ models
 runs
 data
 .venv
+.gradio
 
 checkpoint.pth
 yolov3.ipynb

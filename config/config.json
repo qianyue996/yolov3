@@ -1,9 +1,8 @@
 {
-    "model": "yolov3",
-    "lr": 0.0005,
-    "batch_size": 1,
-    "l_loc": 0.05,
-    "l_cls": 1,
-    "l_obj": 2,
-    "l_noobj": 1
+  "model": "yolov3",
+  "lr": 0.001,
+  "batch_size": 2,
+  "l_loc": 0.05,
+  "l_cls": 1,
+  "l_obj": 3
 }

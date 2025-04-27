@@ -14,7 +14,7 @@ from multiprocessing import Process
 
 from nets.yolo import YoloBody, initialParam
 from utils.dataloader import YOLODataset, yolo_collate_fn
-from utils.tools import DynamicLr, set_seed, worker_init_fn
+from utils.tools import set_seed, worker_init_fn
 from nets.yolo_loss import YOLOv3LOSS
 
 from config.model_config import yolov3_cfg
@@ -41,15 +41,14 @@ class Trainer():
                                     collate_fn=yolo_collate_fn)
         self.model = YoloBody(num_classes = self.dataset_num_class).to(device)
         initialParam(self.model)
-        self.model.backbone.load_state_dict(torch.load("models/darknet53_backbone_weights.pth"))
+        # self.model.backbone.load_state_dict(torch.load("models/darknet53_backbone_weights.pth"))
         self.optimizer = optim.AdamW(self.model.parameters(),
                                     lr=self.lr,
                                     weight_decay=5e-4)
         self.loss_fn = YOLOv3LOSS(device=device,
                                 l_loc = get_config()['l_loc'],
                                 l_cls = get_config()['l_cls'],
-                                l_obj = get_config()['l_obj'],
-                                l_noobj = get_config()['l_noobj'])
+                                l_obj = get_config()['l_obj'])
         writer_path = 'runs'
         self.writer=SummaryWriter(f'{writer_path}/{time.strftime("%Y-%m-%d-%H-%M-%S",time.localtime())}')
         #=======================================================#
@@ -85,8 +84,7 @@ class Trainer():
                                     'lr':lr})
                     self.writer.add_scalars('loss', {'avg_loss':avg_loss,
                                                      'loss_loc':loss_params['loss_loc'],
-                                                     'obj_conf':loss_params['obj_conf'],
-                                                     'noobj_conf':loss_params['noobj_conf'],
+                                                     'loss_obj':loss_params['loss_obj'],
                                                      'loss_cls':loss_params['loss_cls'],
                                                      'lr':lr}, global_step)
                     # 更新lr
@@ -95,8 +93,7 @@ class Trainer():
                     self.loss_fn = YOLOv3LOSS(device=device,
                                               l_loc = get_config()['l_loc'],
                                               l_cls = get_config()['l_cls'],
-                                              l_obj = get_config()['l_obj'],
-                                              l_noobj = get_config()['l_noobj'])
+                                              l_obj = get_config()['l_obj'])
                     global_step += 1
             losses.append(avg_loss)
 
@@ -127,7 +124,6 @@ class Trainer():
     def continue_train(self, checkpoint=None):
         try:
             checkpoint=torch.load('checkpoint.pth', map_location=device)
-            print(f'load model success, start epoch={self.start_epoch}')
         except Exception as e:
             print(e)
             print('load model failed,start from scratch')
@@ -137,7 +133,7 @@ class Trainer():
             try:
                 self.model.load_state_dict(checkpoint['model'])
                 self.optimizer.load_state_dict(checkpoint['optimizer'])
-                self.start_epoch = checkpoint['epoch']
+                self.epoch = checkpoint['epoch']
             except Exception as e:
                 print(e)
                 pass

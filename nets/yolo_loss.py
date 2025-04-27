@@ -1,9 +1,8 @@
 import torch
 import torch.nn as nn
-import yaml
 
 class YOLOv3LOSS():
-    def __init__(self, device, l_loc, l_cls, l_obj, l_noobj):
+    def __init__(self, device, l_loc, l_cls, l_obj):
         self.device       = device
         self.stride       = [32, 16, 8]
         self.anchors      = [[7, 9], [16, 24], [43, 26], [29, 60], [72, 56], [63, 133], [142, 96], [166, 223], [400, 342]]
@@ -14,12 +13,10 @@ class YOLOv3LOSS():
         self.lambda_loc   = l_loc
         self.lambda_cls   = l_cls
         self.lambda_obj   = l_obj
-        self.lambda_noobj = l_noobj
 
     def __call__(self, predict, targets):
         all_loss_loc = torch.zeros(1, device=self.device)
         all_obj_conf = all_loss_loc.clone()
-        all_noobj_conf = all_loss_loc.clone()
         all_loss_cls = all_loss_loc.clone()
         #===========================================#
         #   循环3个Layers，对应yolov3的三个特征层
@@ -94,35 +91,34 @@ class YOLOv3LOSS():
             #   置信度损失
             #===========================================#
             loss_conf = nn.BCELoss(reduction='none')(conf, t_conf)
+            loss_conf = loss_conf[obj_mask | noobj_mask].mean() * self.conf_lambda[i]
+            all_obj_conf += loss_conf
             #===========================================#
             #   GroundTrue Postivez正样本置信度损失
             #===========================================#
-            obj_conf = loss_conf[obj_mask].mean() * self.conf_lambda[i]
-            all_obj_conf += torch.nan_to_num(obj_conf, nan=0.0)
+            # obj_conf = loss_conf[obj_mask].mean() * self.conf_lambda[i]
+            # all_obj_conf += torch.nan_to_num(obj_conf, nan=0.0)
             #===========================================#
             #   Background Negative负样本置信度损失
             #===========================================#
-            noobj_conf = loss_conf[noobj_mask].mean() * self.conf_lambda[i]
-            all_noobj_conf += noobj_conf
+            # noobj_conf = loss_conf[noobj_mask].mean() * self.conf_lambda[i]
+            # all_noobj_conf += noobj_conf
         #===========================================#
         #   计算总loss
         #===========================================#
         all_loss_loc   *= self.lambda_loc
         all_loss_cls   *= self.lambda_cls
         all_obj_conf   *= self.lambda_obj
-        all_noobj_conf *= self.lambda_noobj
-        loss            = all_loss_loc + all_obj_conf + all_noobj_conf + all_loss_cls
+        loss            = all_loss_loc + all_obj_conf + all_loss_cls
 
         return {'loss':loss,
                 'loss_loc':all_loss_loc,
-                'obj_conf': all_obj_conf,
-                'noobj_conf': all_noobj_conf,
+                'loss_obj': all_obj_conf,
                 'loss_cls': all_loss_cls,
                 'positive_num':obj_mask.sum(),
                 'loc_l':self.lambda_loc,
                 'cls_l':self.lambda_cls,
-                'obj_l':self.lambda_obj,
-                'noobj_l':self.lambda_noobj}
+                'obj_l':self.lambda_obj}
 
     def build_target(self, i, B, S, targets, anchors):
         y_true = torch.zeros(B, 3, S, S, 5 + 80, device=self.device)
