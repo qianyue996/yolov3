@@ -2,22 +2,12 @@ import torch
 import torch.nn as nn
 import yaml
 
-from utils.tools import DynamicLambda
-
-with open('config/yolov3.yaml', 'r', encoding='utf-8') as f:
-    config = yaml.safe_load(f)
-
-dynamic_lambda_loc     = DynamicLambda(step_size=3)
-dynamic_lambda_cls     = DynamicLambda(step_size=3)
-dynamic_lambda_obj     = DynamicLambda(step_size=3)
-dynamic_lambda_noobj   = DynamicLambda(step_size=3)
-
 class YOLOv3LOSS():
-    def __init__(self, l_loc, l_cls, l_obj, l_noobj):
-        self.device       = config['hardware']['device']
-        self.stride       = config['model']['stride']
-        self.anchors      = config['model']['anchors']
-        self.anchors_mask = config['model']['anchors_mask']
+    def __init__(self, device, l_loc, l_cls, l_obj, l_noobj):
+        self.device       = device
+        self.stride       = [32, 16, 8]
+        self.anchors      = [[7, 9], [16, 24], [43, 26], [29, 60], [72, 56], [63, 133], [142, 96], [166, 223], [400, 342]]
+        self.anchors_mask = [[6, 7, 8], [3, 4, 5], [0, 1, 2]]
 
         self.conf_lambda = [0.4, 1.0, 4]
 

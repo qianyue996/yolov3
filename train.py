@@ -45,7 +45,8 @@ class Trainer():
         self.optimizer = optim.AdamW(self.model.parameters(),
                                     lr=self.lr,
                                     weight_decay=5e-4)
-        self.loss_fn = YOLOv3LOSS(l_loc = get_config()['l_loc'],
+        self.loss_fn = YOLOv3LOSS(device=device,
+                                l_loc = get_config()['l_loc'],
                                 l_cls = get_config()['l_cls'],
                                 l_obj = get_config()['l_obj'],
                                 l_noobj = get_config()['l_noobj'])
@@ -91,7 +92,8 @@ class Trainer():
                     # 更新lr
                     self.optimizer.param_groups[0]['lr'] = get_config()['lr']
                     # 更新loss fn
-                    self.loss_fn = YOLOv3LOSS(l_loc = get_config()['l_loc'],
+                    self.loss_fn = YOLOv3LOSS(device=device,
+                                              l_loc = get_config()['l_loc'],
                                               l_cls = get_config()['l_cls'],
                                               l_obj = get_config()['l_obj'],
                                               l_noobj = get_config()['l_noobj'])
