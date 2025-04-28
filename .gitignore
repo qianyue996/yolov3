@@ -6,10 +6,11 @@ runs
 data
 .venv
 .gradio
+flagged
 
 checkpoint.pth
 yolov3.ipynb
 coco_train.txt
 coco_val.txt
-output.jpg
 yolov3_env.tar.gz
+voc_train.txt

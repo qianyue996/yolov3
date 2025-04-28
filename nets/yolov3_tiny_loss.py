@@ -7,10 +7,14 @@ imgSize = 416
 
 
 class YOLOv3TinyLoss:
-    def __init__(self, device, l_loc, l_cls, l_obj):
+    def __init__(self, device, l_loc, l_cls, l_obj, num_classes=80):
         self.device = device
-        self.stride = [32, 16]
+        self.num_classes = num_classes
+        self.stride = [32, 16, 8]
         self.anchors = [
+            [7, 9],
+            [16, 24],
+            [43, 26],
             [29, 60],
             [72, 56],
             [63, 133],
@@ -18,9 +22,9 @@ class YOLOv3TinyLoss:
             [166, 223],
             [400, 342],
         ]
-        self.anchors_mask = [[3, 4, 5], [0, 1, 2]]
+        self.anchors_mask = [[6, 7, 8], [3, 4, 5], [0, 1, 2]]
 
-        self.lambda_obj_layers = [0.4, 1.0]
+        self.lambda_obj_layers = [0.4, 1.0, 4]
 
         self.lambda_loc = l_loc
         self.lambda_cls = l_cls
@@ -28,7 +32,7 @@ class YOLOv3TinyLoss:
 
     def __call__(self, predict, targets):
         num_feature = len(predict)
-        all_loss_loc = torch.zeros(1, device=self.device)
+        all_loss_loc = torch.zeros(1).to(self.device)
         all_loss_cls = all_loss_loc.clone()
         all_loss_obj = all_loss_loc.clone()
         # ===========================================#
@@ -53,19 +57,19 @@ class YOLOv3TinyLoss:
             # ===========================================#
             #   加载anchors锚框
             # ===========================================#
-            anchors = torch.tensor(
-                self.anchors, dtype=torch.float32, device=self.device
-            )
+            anchors = torch.tensor(self.anchors, dtype=torch.float32).to(self.device)
             # ===========================================#
             #   重构网络预测结果
             #   shape: (B, 3, S, S, 5+80) coco
             # ===========================================#
-            prediction = predict[i].view(B, 3, 5 + 80, S, S).permute(0, 1, 3, 4, 2)
+            prediction = (
+                predict[i].view(B, 3, 5 + self.num_classes, S, S).permute(0, 1, 3, 4, 2)
+            )
             # ===========================================#
             #   构建网络应有的预测结果y_true
             #   shape: (B, 3, S, S, 5+80)
             # ===========================================#
-            y_true = self.build_target(i, B, S, targets, anchors)
+            y_true = self.build_target(i, B, S, prediction, targets, anchors)
 
             x = torch.sigmoid(prediction[..., 0])
 
@@ -91,7 +95,9 @@ class YOLOv3TinyLoss:
                 _cls = torch.sigmoid(prediction[..., 5:])[obj_mask]
                 t_cls = y_true[..., 5:][obj_mask]
 
-                giou = self.compute_giou(x, y, w, h, obj_mask, anchors, stride, y_true)
+                giou = self.compute_giou(
+                    i, x, y, w, h, obj_mask, anchors, stride, y_true
+                )
                 # ===========================================#
                 #   位置损失 GIoU损失
                 # ===========================================#
@@ -139,8 +145,8 @@ class YOLOv3TinyLoss:
             "lambda_obj": self.lambda_obj,
         }
 
-    def build_target(self, i, B, S, targets, anchors):
-        y_true = torch.zeros(B, 3, S, S, 5 + 80, device=self.device)
+    def build_target(self, i, B, S, prediction, targets, anchors):
+        y_true = torch.zeros_like(prediction).to(self.device)
 
         for bs in range(B):
             if targets[bs].shape[0] == 0:  # 处理无目标的情况
@@ -181,28 +187,34 @@ class YOLOv3TinyLoss:
         anchors = anchors.unsqueeze(0)
 
         min_wh = torch.min(gt_box, anchors)
-        iou_i = min_wh[..., 0] * min_wh[..., 1]
+        area = min_wh[..., 0] * min_wh[..., 1]
 
-        area_a = (gt_box[..., 0] * gt_box[..., 1]).expand_as(iou_i)
-        area_b = (anchors[..., 0] * anchors[..., 1]).expand_as(iou_i)
-        iou_u = area_a + area_b - iou_i
+        area_a = (gt_box[..., 0] * gt_box[..., 1]).expand_as(area)
+        area_b = (anchors[..., 0] * anchors[..., 1]).expand_as(area)
+        union = area_a + area_b - area
 
-        return iou_i / iou_u
+        return area / union
 
-    def compute_giou(self, x, y, w, h, obj_mask, anchors, stride, y_true):
+    def compute_giou(self, i, x, y, w, h, obj_mask, anchors, stride, y_true):
         best_a = obj_mask.nonzero()[:, 1]
         grid_x = obj_mask.nonzero()[:, 2]
         grid_y = obj_mask.nonzero()[:, 3]
 
         x = (x[obj_mask] + grid_x) * stride
         y = (y[obj_mask] + grid_y) * stride
-        w = torch.exp(w[obj_mask]) * anchors[best_a][:, 0]
-        h = torch.exp(h[obj_mask]) * anchors[best_a][:, 1]
+        w = torch.exp(w[obj_mask]) * anchors[self.anchors_mask[i]][best_a][:, 0]
+        h = torch.exp(h[obj_mask]) * anchors[self.anchors_mask[i]][best_a][:, 1]
 
         t_x = (y_true[obj_mask][:, 0] + grid_x) * stride
         t_y = (y_true[obj_mask][:, 1] + grid_y) * stride
-        t_w = torch.exp(y_true[obj_mask][:, 2]) * anchors[best_a][:, 0]
-        t_h = torch.exp(y_true[obj_mask][:, 3]) * anchors[best_a][:, 1]
+        t_w = (
+            torch.exp(y_true[obj_mask][:, 2])
+            * anchors[self.anchors_mask[i]][best_a][:, 0]
+        )
+        t_h = (
+            torch.exp(y_true[obj_mask][:, 3])
+            * anchors[self.anchors_mask[i]][best_a][:, 1]
+        )
 
         # xywh -> xyxy
         x1 = torch.clamp(x - w / 2, min=1e-6, max=imgSize)
@@ -247,7 +259,7 @@ class YOLOv3TinyLoss:
         # ===========================================#
         #   构建noobj mask
         # ===========================================#
-        noobj_mask = torch.ones_like(obj_mask, dtype=torch.bool, device=obj_mask.device)
+        noobj_mask = torch.ones_like(obj_mask, dtype=torch.bool).to(self.device)
         # ===========================================#
         #   遍历每一个正样本
         #   在正样本位置上的anchors 都置为0
