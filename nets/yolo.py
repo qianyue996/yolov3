@@ -49,7 +49,7 @@ def make_last_layers(filters_list, in_filters, out_filter):
 
 
 class YoloBody(nn.Module):
-    def __init__(self, num_classes=80, pretrain=False):
+    def __init__(self, num_classes=None, pretrain=False):
         super(YoloBody, self).__init__()
         # ---------------------------------------------------#
         #   生成darknet53的主干模型

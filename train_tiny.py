@@ -1,10 +1,7 @@
-import json
-import math
 import os
 import sys
 import time
 
-import numpy as np
 import torch
 import tqdm
 from torch import optim
@@ -21,21 +18,16 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 
 if __name__ == "__main__":
-    with open("config/trainParameter.json", "r", encoding="utf-8") as f:
-        config = json.load(f)
-
     set_seed(seed=27)
-    batch_size = 64
+    batch_size = 12
     epochs = 30
-    lr = config["lr"]
+    lr = 0.01
+    l_loc = 1
+    l_cls = 1
+    l_obj = 0.5
+    l_noo = 1
     train_dataset = YOLODataset(dataset_type="voc")
-
-    # 收敛降lr
-    steps = len(train_dataset) / batch_size * epochs
-    oversteps = int(steps * 0.8)
-    a = steps - oversteps
-    min_lr = 1e-5
-    gamma = round(math.exp((math.log(min_lr) - math.log(lr)) / a), 4)
+    num_classes = 20
 
     dataloader = DataLoader(
         dataset=train_dataset,
@@ -46,15 +38,26 @@ if __name__ == "__main__":
         worker_init_fn=worker_init_fn,
         collate_fn=yolo_collate_fn,
     )
-    model = YOLOv3Tiny(num_classes=20).to(device)
+    # model = YOLOv3Tiny(num_classes=num_classes).to(device)
+    model = YoloBody(num_classes=num_classes, pretrain=True)
     optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=1e-4)
-    lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=gamma)
+    lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.1)
 
-    loss_fn = YOLOv3LOSS(device=device, l_loc=1, l_cls=1, l_obj=1, num_classes=20)
+    loss_fn = YOLOv3LOSS(
+        device=device,
+        l_loc=l_loc,
+        l_cls=l_cls,
+        l_obj=l_obj,
+        l_noo=l_noo,
+        num_classes=num_classes,
+    )
     writer_path = "runs"
     writer = SummaryWriter(
         f'{writer_path}/{time.strftime("%Y-%m-%d-%H-%M-%S",time.localtime())}'
     )
+    # checkpoint = torch.load("tiny_checkpoint.pth", map_location=device)
+    # model.load_state_dict(checkpoint["model"])
+    # optimizer.load_state_dict(checkpoint["optimizer"])
     # train
     losses = []
     global_step = 0
@@ -85,13 +88,14 @@ if __name__ == "__main__":
                         "loss_loc": loss_params["loss_loc"],
                         "loss_obj": loss_params["loss_obj"],
                         "loss_cls": loss_params["loss_cls"],
+                        "loss_noo": loss_params["loss_noo"],
                         "lr": lr,
                     },
                     global_step,
                 )
-                if global_step > oversteps:
-                    lr_scheduler.step()
                 global_step += 1
+
+        lr_scheduler.step()
         losses.append(avg_loss)
         if len(losses) == 1 or losses[-1] < losses[-2]:  # 保存更优的model
             checkpoint = {
@@ -100,7 +104,7 @@ if __name__ == "__main__":
                 "epoch": epoch,
             }
             torch.save(checkpoint, ".checkpoint.pth")
-            os.replace(".checkpoint.pth", "tiny_checkpoint.pth")
+            os.replace(".checkpoint.pth", "checkpoint.pth")
 
         EARLY_STOP_PATIENCE = 5  # 早停忍耐度
         if len(losses) >= EARLY_STOP_PATIENCE:

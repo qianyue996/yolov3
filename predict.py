@@ -1,11 +1,13 @@
 import json
 
 import cv2 as cv
+import mss
 import numpy as np
 import torch
 
 from nets.yolo import YoloBody
 from nets.yolov3_tiny import YOLOv3Tiny
+from utils.dataloader import resizeCvt
 from utils.tools import buildBox, multi_class_nms
 
 with open("config/datasetParameter.json", "r", encoding="utf-8") as f:
@@ -14,6 +16,7 @@ with open("config/datasetParameter.json", "r", encoding="utf-8") as f:
 class_name = datasetConfig["voc"]["class_name"]
 
 device = "cpu" if torch.cuda.is_available() else "cpu"
+imgSize = 416
 stride = [32, 16, 8]
 anchors = [
     [7, 9],
@@ -35,7 +38,7 @@ model.eval()
 
 def draw(img, boxes, scores, labels):
     for i, box in enumerate(boxes):
-        x1, y1, x2, y2 = boxes[i]
+        x1, y1, x2, y2 = box
         cv.rectangle(
             img, (int(x1), int(y1)), (int(x2), int(y2)), (0, 0, 255), thickness=1
         )
@@ -87,17 +90,31 @@ def process(img, _input):
     draw(img, boxes, scores, labels)
 
 
-def transport(img, to_tensor=True):
-    if to_tensor:
-        img = cv.resize(img, (416, 416), interpolation=cv.INTER_AREA)
-        _input = cv.cvtColor(img, cv.COLOR_BGR2RGB)
-        _input = np.transpose(np.array(_input / 255.0, dtype=np.float32), (2, 0, 1))
-        _input = torch.tensor(_input).unsqueeze(0).to(torch.float32).to(device)
-    return img, _input
+def normalizeData(images):
+    images = np.expand_dims(images, axis=0)
+    images = (images.astype(np.float32) / 255.0).transpose(0, 3, 1, 2)
+    return images
+
+
+def transport(image):
+    im_h, im_w = image.shape[0], image.shape[1]
+    scale = min(imgSize / im_h, imgSize / im_w)
+    nh, nw = int(im_h * scale), int(im_w * scale)
+    nx, ny = (imgSize - nw) // 2, (imgSize - nh) // 2
+    image = cv.resize(image, (nw, nh), interpolation=cv.INTER_AREA)
+    nImage = np.full((imgSize, imgSize, 3), (128, 128, 128)).astype(np.uint8)
+    nImage[ny : ny + nh, nx : nx + nw] = image
+
+    image = cv.cvtColor(nImage, cv.COLOR_BGR2RGB)
+    image = normalizeData(image)
+    _input = torch.tensor(image, dtype=torch.float32)
+    return nImage, _input
 
 
 if __name__ == "__main__":
     is_cap = False
+    is_img = False
+    is_screenshot = True
 
     if is_cap:
         cap = cv.VideoCapture(0)
@@ -106,8 +123,8 @@ if __name__ == "__main__":
             if not ret:
                 print("无法获取帧！")
                 break
-            img, __input = transport(img, to_tensor=True)  # to tensor
-            process(img, __input)  # predict
+            img, _input = transport(img)  # to tensor
+            process(img, _input)  # predict
             cv.namedWindow("Camera", cv.WINDOW_NORMAL)
             cv.imshow("Camera", img)
             if cv.waitKey(1) == ord("q"):
@@ -115,9 +132,33 @@ if __name__ == "__main__":
         # 释放资源
         cap.release()
         cv.destroyAllWindows()
-    else:
+    elif is_img:
         test_img = r"img/street.jpg"
         img = cv.imread(test_img)
-        img, __input = transport(img, to_tensor=True)  # to tensor
-        process(img, __input)  # predict
+        img, _input = transport(img)  # to tensor
+        process(img, _input)  # predict
         cv.imwrite("output.jpg", img)
+    elif is_screenshot:
+        screen_width, screen_height = 2880, 1800
+        size_w, size_h = 640, 640
+
+        # 定义截取的区域
+        monitor = {
+            "top": screen_height // 2 - size_h // 2,  # y坐标
+            "left": screen_width // 2 - size_w // 2,  # x坐标
+            "width": size_w,  # 宽度
+            "height": size_h,  # 高度
+        }
+        while True:
+            with mss.mss() as sct:
+                # 截图
+                screenshot = sct.grab(monitor)
+                img = np.array(screenshot)[:, :, :3]  # BGRA -> BGR
+                img, _input = transport(img)
+                process(img, _input)
+                # 展示
+                cv.namedWindow("Crop Screenshot", cv.WINDOW_NORMAL)
+                cv.imshow("Crop Screenshot", img)
+                if cv.waitKey(1) == ord("q"):
+                    break
+        cv.destroyAllWindows()

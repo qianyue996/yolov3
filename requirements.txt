@@ -7,4 +7,5 @@ opencv-python
 numpy==1.25.1
 tensorboard
 tqdm
+mss
 # gradio #可选，用于web调参 -> hyperGUI.py

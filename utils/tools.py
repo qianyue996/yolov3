@@ -1,9 +1,11 @@
-import numpy as np
-import cv2 as cv
-import torch
 import os
-import shutil
 import random
+import shutil
+
+import cv2 as cv
+import numpy as np
+import torch
+
 
 def set_seed(seed=27):
     torch.manual_seed(seed)
@@ -14,55 +16,68 @@ def set_seed(seed=27):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
+
 def worker_init_fn(worker_id):
     seed = 27 + worker_id
     np.random.seed(seed)
     random.seed(seed)
 
 
-def buildBox(i, S, stride, pred, anchors, anchors_mask, score_thresh=0.4):
+def buildBox(i, S, stride, pred, anchors, anchors_mask, score_thresh=0.8):
 
     all_boxes, all_scores, all_labels = [], [], []
 
     grid_x, grid_y = torch.meshgrid(
         torch.arange(S, dtype=pred.dtype, device=pred.device),
         torch.arange(S, dtype=pred.dtype, device=pred.device),
-        indexing='ij'
+        indexing="ij",
     )
-    grid_xy = torch.stack([grid_x, grid_y], dim=-1).view(1, 1, S, S, 2).expand_as(pred[..., :2])
+    grid_xy = (
+        torch.stack([grid_x, grid_y], dim=-1)
+        .view(1, 1, S, S, 2)
+        .expand_as(pred[..., :2])
+    )
     pred[..., :2] = (pred[..., :2].sigmoid() + grid_xy) * stride
 
-    pred[..., 2] = torch.log(pred[..., 2]) * anchors[anchors_mask[i]][:, 0].view(1, -1, 1, 1)
-    pred[..., 3] = torch.log(pred[..., 3]) * anchors[anchors_mask[i]][:, 1].view(1, -1, 1, 1)
+    pred[..., 2] = torch.exp(pred[..., 2]) * anchors[anchors_mask[i]][:, 0].view(
+        1, -1, 1, 1
+    )
+    pred[..., 3] = torch.exp(pred[..., 3]) * anchors[anchors_mask[i]][:, 1].view(
+        1, -1, 1, 1
+    )
 
-    boxes = torch.stack([pred[..., 0] - pred[..., 2] / 2,
-                        pred[..., 1] - pred[..., 3] / 2,
-                        pred[..., 0] + pred[..., 2] / 2,
-                        pred[..., 1] + pred[..., 3] / 2
-                        ], dim=-1)
+    boxes = torch.stack(
+        [
+            pred[..., 0] - pred[..., 2] / 2,
+            pred[..., 1] - pred[..., 3] / 2,
+            pred[..., 0] + pred[..., 2] / 2,
+            pred[..., 1] + pred[..., 3] / 2,
+        ],
+        dim=-1,
+    )
     boxes = torch.clamp(boxes, min=0, max=416)
-    #===========================================#
+    # ===========================================#
     #   模型预测为正样本的输出
-    #===========================================#
+    # ===========================================#
     pos_conf = pred[..., 4].sigmoid()
-    #===========================================#
+    # ===========================================#
     #   模型预测的类别输出
-    #===========================================#
+    # ===========================================#
     cls_conf = pred[..., 5:].sigmoid()
-    #===========================================#
+    # ===========================================#
     #   模型预测所有位置的所有类别分数
     #   shape: 3, 13, 13, 80
-    #===========================================#
+    # ===========================================#
     scores = pos_conf.unsqueeze(-1) * cls_conf
     # 选出所有分数大于阈值的 box + 类别
-    for cls_id in range(80):
+    for cls_id in range(20):
         cls_scores = scores[..., cls_id]
         keep = cls_scores > score_thresh
         if keep.sum() == 0:
             continue
         cls_boxes = boxes[keep]
         cls_scores = cls_scores[keep]
-        cls_labels = torch.full((cls_scores.shape[0], ), cls_id).long()
+        cls_labels = torch.full((cls_scores.shape[0],), cls_id).long()
 
         all_boxes.append(cls_boxes)
         all_scores.append(cls_scores)
@@ -70,9 +85,10 @@ def buildBox(i, S, stride, pred, anchors, anchors_mask, score_thresh=0.4):
 
     return all_boxes, all_scores, all_labels
 
+
 def nms(boxes, scores, iou_threshold=0.45):
     if len(boxes) != len(scores):
-        print('boxes and scores length is not equal!')
+        print("boxes and scores length is not equal!")
         return
     keep = []
     idxs = scores.argsort(descending=True)
@@ -86,14 +102,15 @@ def nms(boxes, scores, iou_threshold=0.45):
 
         ious = compute_iou(boxes[current], boxes[idxs[1:]])
         idxs = idxs[1:][ious < iou_threshold]
-    
+
     return keep
-    
+
+
 def compute_iou(box_a, box_b):
-    '''
+    """
     box_a = [x1, y1, x2, y2] shape: (4)
     box_b = [x1, y1, x2, y2] shape: (N, 4)
-    '''
+    """
     box_a_wh = box_a[2:] - box_a[:2]
     box_b_wh = box_b[:, 2:] - box_b[:, :2]
 
@@ -111,8 +128,9 @@ def compute_iou(box_a, box_b):
 
     return inter / union
 
-class DynamicLr():
-    '''
+
+class DynamicLr:
+    """
     主要传入optimizer和step_size
     说明：
         - optimizer 优化器
@@ -122,9 +140,19 @@ class DynamicLr():
         - 每隔 step_size 步，观察 loss 均值
         - 如果 loss 均值没有明显下降，则将学习率乘以 decay_factor
         - 如果 loss 均值下降明显，则将学习率乘以 boost_factor
-    
-    '''
-    def __init__(self, optimizer, step_size=5, init_lr=None, max_lr=0.01, min_lr=1e-4, decay_factor=0.5, boost_factor=2):
+
+    """
+
+    def __init__(
+        self,
+        optimizer,
+        step_size=5,
+        init_lr=None,
+        max_lr=0.01,
+        min_lr=1e-4,
+        decay_factor=0.5,
+        boost_factor=2,
+    ):
         self.optimizer = optimizer
         self.max_lr = max_lr
         self.min_lr = min_lr
@@ -134,33 +162,33 @@ class DynamicLr():
         # 如果 init_lr 非 None，则设置优化器的学习率为 init_lr
         if init_lr is not None:
             for param_group in self.optimizer.param_groups:
-                param_group['lr'] = init_lr
+                param_group["lr"] = init_lr
 
         self.run_step = 1
         self.loss_history = []
 
     def step(self, current_loss):
-        #===========================================#
+        # ===========================================#
         #   Loss均值计数
-        #===========================================#
+        # ===========================================#
         self.loss_history.append(current_loss)
-        loss_arr = np.array(self.loss_history[:-self.run_step])
+        loss_arr = np.array(self.loss_history[: -self.run_step])
         if loss_arr.size == 0:
             last_avg_loss = 0
         else:
             last_avg_loss = loss_arr.mean()
-        #===========================================#
+        # ===========================================#
         #   判断step是否大于step_size，选择操作
-        #===========================================#
+        # ===========================================#
         if self.run_step > self.step_size:
-            #===========================================#
+            # ===========================================#
             #   实现：
             #       - avg_loss：全局loss减去最新step_size个loss均值
             #       - last_avg_loss：全局loss均值
             #       - 目的是看最新加入step_size个loss的loss均值
             #       - 如果loss没明显下降，则将学习率乘以 decay_factor
             #       - 如果loss下降明显，则将学习率乘以 boost_factor
-            #===========================================#
+            # ===========================================#
             avg_loss = np.array(self.loss_history).mean()
             delta = avg_loss - last_avg_loss
             # loss 没明显下降
@@ -169,22 +197,23 @@ class DynamicLr():
             # loss 下降明显
             elif delta > 1e-2:
                 self._adjust_lr(boost=True)
-        #===========================================#
+        # ===========================================#
         #   更新step
-        #===========================================#
+        # ===========================================#
         self.run_step += 1
-        
+
     def _adjust_lr(self, decay=False, boost=False):
         for group in self.optimizer.param_groups:
-            old_lr = group['lr']
+            old_lr = group["lr"]
             if decay:
                 new_lr = max(old_lr * self.decay_factor, self.min_lr)
             elif boost:
                 new_lr = min(old_lr * self.boost_factor, self.max_lr)
             else:
                 new_lr = old_lr
-            group['lr'] = new_lr
+            group["lr"] = new_lr
         self.run_step = 1
+
 
 def multi_class_nms(boxes, scores, labels, iou_threshold=0.5, score_threshold=0.01):
     """
@@ -208,7 +237,7 @@ def multi_class_nms(boxes, scores, labels, iou_threshold=0.5, score_threshold=0.
 
     unique_labels = labels.unique()
     for cls in unique_labels:
-        cls_mask = (labels == cls)
+        cls_mask = labels == cls
         cls_boxes = boxes[cls_mask]
         cls_scores = scores[cls_mask]
 
@@ -224,9 +253,15 @@ def multi_class_nms(boxes, scores, labels, iou_threshold=0.5, score_threshold=0.
         keep = nms(cls_boxes, cls_scores, iou_threshold)
         keep_boxes.append(cls_boxes[keep])
         keep_scores.append(cls_scores[keep])
-        keep_labels.append(torch.full((len(keep),), cls, dtype=torch.int64, device=boxes.device))
+        keep_labels.append(
+            torch.full((len(keep),), cls, dtype=torch.int64, device=boxes.device)
+        )
 
     if keep_boxes:
         return torch.cat(keep_boxes), torch.cat(keep_scores), torch.cat(keep_labels)
     else:
-        return torch.empty((0, 4), device=boxes.device), torch.empty((0,), device=boxes.device), torch.empty((0,), dtype=torch.int64, device=boxes.device)
+        return (
+            torch.empty((0, 4), device=boxes.device),
+            torch.empty((0,), device=boxes.device),
+            torch.empty((0,), dtype=torch.int64, device=boxes.device),
+        )

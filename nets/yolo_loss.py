@@ -1,5 +1,3 @@
-import json
-
 import torch
 import torch.nn as nn
 
@@ -7,7 +5,7 @@ imgSize = 416
 
 
 class YOLOv3LOSS:
-    def __init__(self, device, l_loc, l_cls, l_obj, num_classes=None):
+    def __init__(self, device, l_loc, l_cls, l_obj, l_noo, num_classes=None):
         self.device = device
         self.num_classes = num_classes
         self.stride = [32, 16, 8]
@@ -24,17 +22,19 @@ class YOLOv3LOSS:
         ]
         self.anchors_mask = [[6, 7, 8], [3, 4, 5], [0, 1, 2]]
 
-        self.lambda_obj_layers = [0.4, 1.0, 4]
+        self.lambda_obj_layers = [1.0, 1.0, 4]
 
         self.lambda_loc = l_loc
         self.lambda_cls = l_cls
         self.lambda_obj = l_obj
+        self.lambda_noo = l_noo
 
     def __call__(self, predict, targets):
         num_feature = len(predict)
         all_loss_loc = torch.zeros(1).to(self.device)
         all_loss_cls = all_loss_loc.clone()
         all_loss_obj = all_loss_loc.clone()
+        all_loss_noo = all_loss_loc.clone()
         # ===========================================#
         #
         # ===========================================#
@@ -112,33 +112,44 @@ class YOLOv3LOSS:
             #   置信度损失
             # ===========================================#
             loss_conf = nn.BCELoss(reduction="none")(conf, t_conf)
-            loss_conf = (
-                loss_conf[obj_mask | noobj_mask].mean() * self.lambda_obj_layers[i]
-            )
-            all_loss_obj += loss_conf
+            # loss_conf = (
+            #     loss_conf[obj_mask | noobj_mask].mean() * self.lambda_obj_layers[i]
+            # )
+            # all_loss_obj += loss_conf
             # ===========================================#
             #   GroundTrue Postivez正样本置信度损失
             # ===========================================#
-            # obj_conf = loss_conf[obj_mask].mean() * self.conf_lambda[i]
-            # all_obj_conf += torch.nan_to_num(obj_conf, nan=0.0)
+            if obj_mask.sum() != 0:
+                obj_conf = loss_conf[obj_mask].mean() * self.lambda_obj_layers[i]
+                all_loss_obj += obj_conf
             # ===========================================#
             #   Background Negative负样本置信度损失
             # ===========================================#
-            # noobj_conf = loss_conf[noobj_mask].mean() * self.conf_lambda[i]
-            # all_noobj_conf += noobj_conf
+            noobj_conf = loss_conf[noobj_mask].mean() * self.lambda_obj_layers[i]
+            all_loss_noo += noobj_conf
+        # ===========================================#
+        #   没加lambda系数的loss，方便观察loss下降情况
+        # ===========================================#
+        original_loss_loc = all_loss_loc
+        original_loss_cls = all_loss_cls
+        original_loss_obj = all_loss_obj
+        original_loss_noo = all_loss_noo
         # ===========================================#
         #   计算总loss
         # ===========================================#
         all_loss_loc *= self.lambda_loc
         all_loss_cls *= self.lambda_cls
         all_loss_obj *= self.lambda_obj
-        loss = all_loss_loc + all_loss_obj + all_loss_cls
+        all_loss_noo *= self.lambda_noo
+
+        loss = all_loss_loc + all_loss_cls + all_loss_obj + all_loss_noo
 
         return {
             "loss": loss,
-            "loss_loc": all_loss_loc,
-            "loss_obj": all_loss_obj,
-            "loss_cls": all_loss_cls,
+            "loss_loc": original_loss_loc,
+            "loss_cls": original_loss_cls,
+            "loss_obj": original_loss_obj,
+            "loss_noo": original_loss_noo,
             "positive_num": obj_mask.sum(),
             "lambda_loc": self.lambda_loc,
             "lambda_cls": self.lambda_cls,
