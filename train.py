@@ -43,7 +43,7 @@ class Trainer:
             self.model.parameters(), lr=self.lr, momentum=0.9, weight_decay=1e-4
         )
         self.lr_scheduler = optim.lr_scheduler.StepLR(
-            self.optimizer, step_size=5, gamma=0.98
+            self.optimizer, step_size=1, gamma=0.94
         )
 
         self.loss_fn = YOLOv3LOSS(
@@ -108,8 +108,8 @@ class Trainer:
                         l_cls=get_config()["l_cls"],
                         l_obj=get_config()["l_obj"],
                     )
-                    self.lr_scheduler.step()
                     global_step += 1
+                self.lr_scheduler.step()
             losses.append(avg_loss)
 
             self.save_best_model(epoch=epoch, losses=losses)

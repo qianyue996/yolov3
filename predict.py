@@ -12,7 +12,7 @@ with open("config/datasetParameter.json", "r", encoding="utf-8") as f:
 
 class_name = datasetConfig["class_name"]
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
+device = "cpu" if torch.cuda.is_available() else "cpu"
 stride = [32, 16, 8]
 anchors = [
     [7, 9],
