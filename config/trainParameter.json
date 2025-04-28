@@ -1,6 +1,6 @@
 {
   "model": "yolov3",
-  "lr": 0.005,
+  "lr": 0.01,
   "l_loc": 1,
   "l_cls": 1,
   "l_obj": 1

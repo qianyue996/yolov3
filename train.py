@@ -13,6 +13,7 @@ from tqdm import tqdm
 
 from nets.yolo import YoloBody, initialParam
 from nets.yolo_loss import YOLOv3LOSS
+from nets.yolov3_tiny import YOLOv3Tiny
 from utils.dataloader import YOLODataset, yolo_collate_fn
 from utils.tools import set_seed, worker_init_fn
 
@@ -23,7 +24,7 @@ class Trainer:
 
     def __init__(self):
         set_seed(seed=27)
-        self.batch_size = 12
+        self.batch_size = 6
         self.lr = get_config()["lr"]
 
         self.train_dataset = YOLODataset()
@@ -36,8 +37,8 @@ class Trainer:
             worker_init_fn=worker_init_fn,
             collate_fn=yolo_collate_fn,
         )
-        self.model = YoloBody().to(device)
-        initialParam(self.model)
+        self.model = YOLOv3Tiny().to(device)
+        # initialParam(self.model)
         # self.model.backbone.load_state_dict(torch.load("models/darknet53_backbone_weights.pth"))
         self.optimizer = optim.SGD(
             self.model.parameters(), lr=self.lr, momentum=0.9, weight_decay=1e-4
