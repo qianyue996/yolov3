@@ -22,7 +22,7 @@ class YOLOv3LOSS:
         ]
         self.anchors_mask = [[6, 7, 8], [3, 4, 5], [0, 1, 2]]
 
-        self.lambda_obj_layers = [1.0, 1.0, 4]
+        self.lambda_obj_layers = [1.0, 1.0, 1.0]
 
         self.lambda_loc = l_loc
         self.lambda_cls = l_cls

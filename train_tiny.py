@@ -8,8 +8,8 @@ from torch import optim
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
-from nets.yolo import YoloBody, initialParam
 from nets.yolo_loss import YOLOv3LOSS
+from nets.yolov3 import YOLOv3
 from nets.yolov3_tiny import YOLOv3Tiny
 from utils.dataloader import YOLODataset, yolo_collate_fn
 from utils.tools import set_seed, worker_init_fn
@@ -19,9 +19,9 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 if __name__ == "__main__":
     set_seed(seed=27)
-    batch_size = 12
+    batch_size = 4
     epochs = 30
-    lr = 0.01
+    lr = 0.08
     l_loc = 1
     l_cls = 1
     l_obj = 0.5
@@ -39,7 +39,7 @@ if __name__ == "__main__":
         collate_fn=yolo_collate_fn,
     )
     # model = YOLOv3Tiny(num_classes=num_classes).to(device)
-    model = YoloBody(num_classes=num_classes, pretrain=True)
+    model = YOLOv3(num_classes=num_classes, pretrained=False).to(device)
     optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=1e-4)
     lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.1)
 
@@ -55,7 +55,7 @@ if __name__ == "__main__":
     writer = SummaryWriter(
         f'{writer_path}/{time.strftime("%Y-%m-%d-%H-%M-%S",time.localtime())}'
     )
-    # checkpoint = torch.load("tiny_checkpoint.pth", map_location=device)
+    checkpoint = torch.load("checkpoint.pth", map_location=device)
     # model.load_state_dict(checkpoint["model"])
     # optimizer.load_state_dict(checkpoint["optimizer"])
     # train

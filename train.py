@@ -10,8 +10,8 @@ from torch.utils.data.dataloader import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
-from nets.yolo import YoloBody, initialParam
 from nets.yolo_loss import YOLOv3LOSS
+from nets.yolov3 import YOLOv3
 from nets.yolov3_tiny import YOLOv3Tiny
 from utils.dataloader import YOLODataset, yolo_collate_fn
 from utils.tools import set_seed, worker_init_fn

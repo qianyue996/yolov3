@@ -5,7 +5,7 @@ import mss
 import numpy as np
 import torch
 
-from nets.yolo import YoloBody
+from nets.yolov3 import YOLOv3
 from nets.yolov3_tiny import YOLOv3Tiny
 from utils.dataloader import resizeCvt
 from utils.tools import buildBox, multi_class_nms
