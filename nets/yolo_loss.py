@@ -3,6 +3,8 @@ import json
 import torch
 import torch.nn as nn
 
+imgSize = 416
+
 
 class YOLOv3LOSS:
     def __init__(self, device, l_loc, l_cls, l_obj):
@@ -148,7 +150,7 @@ class YOLOv3LOSS:
 
             batch_target = torch.zeros_like(targets[bs])
             batch_target[:, 0:2] = targets[bs][:, 0:2] * S
-            batch_target[:, 2:4] = targets[bs][:, 2:4] * 416
+            batch_target[:, 2:4] = targets[bs][:, 2:4] * imgSize
             batch_target[:, 4] = targets[bs][:, 4]
 
             gt_box = batch_target[:, 2:4]
@@ -205,15 +207,15 @@ class YOLOv3LOSS:
         t_h = torch.exp(y_true[obj_mask][:, 3]) * anchors[best_a][:, 1]
 
         # xywh -> xyxy
-        x1 = torch.clamp(x - w / 2, min=1e-6, max=416)
-        y1 = torch.clamp(y - h / 2, min=1e-6, max=416)
-        x2 = torch.clamp(x + w / 2, min=1e-6, max=416)
-        y2 = torch.clamp(y + h / 2, min=1e-6, max=416)
+        x1 = torch.clamp(x - w / 2, min=1e-6, max=imgSize)
+        y1 = torch.clamp(y - h / 2, min=1e-6, max=imgSize)
+        x2 = torch.clamp(x + w / 2, min=1e-6, max=imgSize)
+        y2 = torch.clamp(y + h / 2, min=1e-6, max=imgSize)
 
-        t_x1 = torch.clamp(t_x - t_w / 2, min=1e-6, max=416)
-        t_y1 = torch.clamp(t_y - t_h / 2, min=1e-6, max=416)
-        t_x2 = torch.clamp(t_x + t_w / 2, min=1e-6, max=416)
-        t_y2 = torch.clamp(t_y + t_h / 2, min=1e-6, max=416)
+        t_x1 = torch.clamp(t_x - t_w / 2, min=1e-6, max=imgSize)
+        t_y1 = torch.clamp(t_y - t_h / 2, min=1e-6, max=imgSize)
+        t_x2 = torch.clamp(t_x + t_w / 2, min=1e-6, max=imgSize)
+        t_y2 = torch.clamp(t_y + t_h / 2, min=1e-6, max=imgSize)
 
         # 计算交集区域面积
         area_x1 = torch.max(x1, t_x1)
