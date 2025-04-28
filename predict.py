@@ -49,9 +49,9 @@ def draw(img, boxes, scores, labels):
         )
 
 
-def process(img, input):
+def process(img, _input):
     with torch.no_grad():
-        outputs = model(input)
+        outputs = model(_input)
 
     all_boxes, all_scores, all_labels = [], [], []
 
@@ -89,10 +89,10 @@ def process(img, input):
 def transport(img, to_tensor=True):
     if to_tensor:
         img = cv.resize(img, (416, 416), interpolation=cv.INTER_AREA)
-        input = cv.cvtColor(img, cv.COLOR_BGR2RGB)
-        input = np.transpose(np.array(input / 255.0, dtype=np.float32), (2, 0, 1))
-        input = torch.tensor(input).unsqueeze(0).to(torch.float32).to(device)
-    return img, input
+        _input = cv.cvtColor(img, cv.COLOR_BGR2RGB)
+        _input = np.transpose(np.array(_input / 255.0, dtype=np.float32), (2, 0, 1))
+        _input = torch.tensor(_input).unsqueeze(0).to(torch.float32).to(device)
+    return img, _input
 
 
 if __name__ == "__main__":
@@ -105,8 +105,8 @@ if __name__ == "__main__":
             if not ret:
                 print("无法获取帧！")
                 break
-            img, input = transport(img, to_tensor=True)  # to tensor
-            process(img, input)  # predict
+            img, __input = transport(img, to_tensor=True)  # to tensor
+            process(img, __input)  # predict
             cv.namedWindow("Camera", cv.WINDOW_NORMAL)
             cv.imshow("Camera", img)
             if cv.waitKey(1) == ord("q"):
@@ -117,6 +117,6 @@ if __name__ == "__main__":
     else:
         test_img = r"img/street.jpg"
         img = cv.imread(test_img)
-        img, input = transport(img, to_tensor=True)  # to tensor
-        process(img, input)  # predict
+        img, __input = transport(img, to_tensor=True)  # to tensor
+        process(img, __input)  # predict
         cv.imwrite("output.jpg", img)

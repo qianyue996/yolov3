@@ -74,11 +74,11 @@ def chakan(image, labels):
     cv.namedWindow("show", cv.WINDOW_NORMAL)
     image = cv.cvtColor(image, cv.COLOR_RGB2BGR)
     for i, label in enumerate(labels):
-        x1, y1, x2, y2, id = [int(i) for i in label]
+        x1, y1, x2, y2, _id = [int(i) for i in label]
         cv.rectangle(image, (x1, y1), (x2, y2), (0, 0, 255), thickness=1)
         cv.putText(
             image,
-            f"{id}",
+            f"{_id}",
             (int(x1), int(y1) - 5),
             cv.FONT_HERSHEY_SIMPLEX,
             0.5,
