@@ -14,7 +14,6 @@ from torch.utils.tensorboard import SummaryWriter
 from nets.yolo import YoloBody, initialParam
 from nets.yolo_loss import YOLOv3LOSS
 from nets.yolov3_tiny import YOLOv3Tiny
-from nets.yolov3_tiny_loss import YOLOv3TinyLoss
 from utils.dataloader import YOLODataset, yolo_collate_fn
 from utils.tools import set_seed, worker_init_fn
 
@@ -29,7 +28,7 @@ if __name__ == "__main__":
     batch_size = 64
     epochs = 30
     lr = config["lr"]
-    train_dataset = YOLODataset()
+    train_dataset = YOLODataset(dataset_type="voc")
 
     # 收敛降lr
     steps = len(train_dataset) / batch_size * epochs
@@ -47,16 +46,11 @@ if __name__ == "__main__":
         worker_init_fn=worker_init_fn,
         collate_fn=yolo_collate_fn,
     )
-    model = YOLOv3Tiny().to(device)
+    model = YOLOv3Tiny(num_classes=20).to(device)
     optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=1e-4)
     lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=gamma)
 
-    loss_fn = YOLOv3TinyLoss(
-        device=device,
-        l_loc=1,
-        l_cls=1,
-        l_obj=1,
-    )
+    loss_fn = YOLOv3LOSS(device=device, l_loc=1, l_cls=1, l_obj=1, num_classes=20)
     writer_path = "runs"
     writer = SummaryWriter(
         f'{writer_path}/{time.strftime("%Y-%m-%d-%H-%M-%S",time.localtime())}'
@@ -98,6 +92,7 @@ if __name__ == "__main__":
                 if global_step > oversteps:
                     lr_scheduler.step()
                 global_step += 1
+        losses.append(avg_loss)
         if len(losses) == 1 or losses[-1] < losses[-2]:  # 保存更优的model
             checkpoint = {
                 "model": model.state_dict(),

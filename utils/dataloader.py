@@ -8,10 +8,14 @@ imgSize = 416
 
 
 class YOLODataset(Dataset):
-    def __init__(self):
+    def __init__(self, dataset_type=None):
         super(YOLODataset, self).__init__()
-        with open("voc_train.txt", "r", encoding="utf-8") as f:
-            self.datas = f.readlines()
+        if dataset_type == "coco":
+            with open("coco_train.txt", "r", encoding="utf-8") as f:
+                self.datas = f.readlines()
+        elif dataset_type == "voc":
+            with open("voc_train.txt", "r", encoding="utf-8") as f:
+                self.datas = f.readlines()
 
     def __len__(self):
         return len(self.datas)

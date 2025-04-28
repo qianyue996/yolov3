@@ -5,12 +5,13 @@ import numpy as np
 import torch
 
 from nets.yolo import YoloBody
+from nets.yolov3_tiny import YOLOv3Tiny
 from utils.tools import buildBox, multi_class_nms
 
 with open("config/datasetParameter.json", "r", encoding="utf-8") as f:
     datasetConfig = json.load(f)
 
-class_name = datasetConfig["class_name"]
+class_name = datasetConfig["voc"]["class_name"]
 
 device = "cpu" if torch.cuda.is_available() else "cpu"
 stride = [32, 16, 8]
@@ -27,8 +28,8 @@ anchors = [
 ]
 anchors_mask = [[6, 7, 8], [3, 4, 5], [0, 1, 2]]
 
-model = YoloBody().to(device)
-model.load_state_dict(torch.load("checkpoint.pth", map_location=device)["model"])
+model = YOLOv3Tiny(num_classes=20).to(device)
+model.load_state_dict(torch.load("tiny_checkpoint.pth", map_location=device)["model"])
 model.eval()
 
 
@@ -59,7 +60,7 @@ def process(img, _input):
         S = output.shape[2]
         _stride = stride[i]
 
-        prediction = output.view(-1, 3, 85, S, S).permute(0, 1, 3, 4, 2)
+        prediction = output.view(-1, 3, 25, S, S).permute(0, 1, 3, 4, 2)
         _anchors = torch.tensor(anchors, device=device)
 
         boxes, scores, labels = buildBox(

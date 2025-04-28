@@ -98,7 +98,7 @@ class Head(nn.Module):
 
 
 class YOLOv3Tiny(nn.Module):
-    def __init__(self, num_classes=80):
+    def __init__(self, num_classes=None):
         super(YOLOv3Tiny, self).__init__()
         self.backbone = Backbone()
         self.neck = Neck()
