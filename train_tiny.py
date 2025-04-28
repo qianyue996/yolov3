@@ -26,7 +26,7 @@ if __name__ == "__main__":
         config = json.load(f)
 
     set_seed(seed=27)
-    batch_size = 6
+    batch_size = 24
     epochs = 30
     lr = config["lr"]
     train_dataset = YOLODataset()

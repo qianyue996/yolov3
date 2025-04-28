@@ -20,7 +20,7 @@ class YOLODataset(Dataset):
         image = cv.imread(self.datas[index].strip("\n").split(" ")[0])
         labels = np.array(
             [
-                list(map(int, item.split(",")))
+                list(map(int, item.split(",").split(".")[0]))
                 for item in self.datas[index].strip("\n").split(" ")[1:]
             ]
         )
