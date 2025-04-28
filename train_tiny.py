@@ -1,9 +1,9 @@
 import json
+import math
 import os
 import sys
 import time
 
-import gradio as gr
 import numpy as np
 import torch
 import tqdm
@@ -26,15 +26,17 @@ if __name__ == "__main__":
         config = json.load(f)
 
     set_seed(seed=27)
-    batch_size = 24
+    batch_size = 64
     epochs = 30
     lr = config["lr"]
     train_dataset = YOLODataset()
 
     # 收敛降lr
-    oversteps = int(len(train_dataset) / batch_size * epochs * 0.8)
+    steps = len(train_dataset) / batch_size * epochs
+    oversteps = int(steps * 0.8)
+    a = steps - oversteps
     min_lr = 1e-5
-    gamma = lr / min_lr
+    gamma = round(math.exp((math.log(min_lr) - math.log(lr)) / a), 4)
 
     dataloader = DataLoader(
         dataset=train_dataset,
@@ -45,18 +47,15 @@ if __name__ == "__main__":
         worker_init_fn=worker_init_fn,
         collate_fn=yolo_collate_fn,
     )
-    model = YOLOv3Tiny(num_classes=20).to(device)
+    model = YOLOv3Tiny().to(device)
     optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=1e-4)
-    lr_scheduler = optim.lr_scheduler.StepLR(
-        optimizer, step_size=len(train_dataset) / batch_size * epochs / 5, gamma=0.9996
-    )
+    lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=gamma)
 
     loss_fn = YOLOv3TinyLoss(
         device=device,
         l_loc=1,
         l_cls=1,
         l_obj=1,
-        num_classes=20,
     )
     writer_path = "runs"
     writer = SummaryWriter(
@@ -99,7 +98,6 @@ if __name__ == "__main__":
                 if global_step > oversteps:
                     lr_scheduler.step()
                 global_step += 1
-        losses.append(avg_loss)
         if len(losses) == 1 or losses[-1] < losses[-2]:  # 保存更优的model
             checkpoint = {
                 "model": model.state_dict(),
