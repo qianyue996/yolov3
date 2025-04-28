@@ -168,8 +168,8 @@ class YOLOv3LOSS:
                 y_true[bs, k, x, y, 2] = torch.log(
                     batch_target[index, 2] / anchors[n_a][0]
                 )
-                y_true[bs, k, x, y, 3] = (
-                    torch.log(batch_target[index, 3]) / anchors[n_a][1]
+                y_true[bs, k, x, y, 3] = torch.log(
+                    batch_target[index, 3] / anchors[n_a][1]
                 )
                 y_true[bs, k, x, y, 4] = 1
                 y_true[bs, k, x, y, 5 + c] = 1

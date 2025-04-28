@@ -109,7 +109,7 @@ class Trainer:
                         l_obj=get_config()["l_obj"],
                     )
                     global_step += 1
-                self.lr_scheduler.step()
+            self.lr_scheduler.step()
             losses.append(avg_loss)
 
             self.save_best_model(epoch=epoch, losses=losses)
