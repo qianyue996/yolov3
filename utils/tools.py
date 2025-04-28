@@ -5,24 +5,6 @@ import os
 import shutil
 import random
 
-def xywh2xyx2(box: list):
-    try:
-        x,y,w,h = box
-        x1,y1 = int(x-w/2),int(y-h/2)
-        x2,y2 = int(x+w/2),int(y+h/2)
-    except Exception as e:
-        print(f'错误：{e}')
-    return [x1,y1,x2,y2]
-
-def xyxy2xywh(box: list):
-    try:
-        x1,y1,x2,y2 = box
-        x,y = int((x1+x2)/2),int((y1+y2)/2)
-        w,h = int(x2-x1),int(y2-y1)
-    except Exception as e:
-        print('检查是否x2<x1 / y2<y1')
-    return [x,y,w,h]
-
 def set_seed(seed=27):
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
@@ -129,23 +111,6 @@ def compute_iou(box_a, box_b):
 
     return inter / union
 
-def clear():
-    os.system('cls' if os.name == 'nt' else 'clear')
-
-def clean_folder(folder_path='runs', keep_last=5):
-    if not os.path.exists(folder_path):
-        print(f"{folder_path} 不存在")
-        return
-
-    subfolders = [os.path.join(folder_path, subfolder) for subfolder in os.listdir(folder_path)]
-    subfolders.sort(key=lambda x: os.path.getmtime(x), reverse=True)
-
-    # 保留最新 keep_last 个，其余都删
-    to_delete = subfolders[keep_last:]
-
-    for folder in to_delete:
-        shutil.rmtree(folder)
-
 class DynamicLr():
     '''
     主要传入optimizer和step_size
@@ -221,79 +186,6 @@ class DynamicLr():
             group['lr'] = new_lr
         self.run_step = 1
 
-class DynamicLambda():
-    '''
-    主要传入optimizer和step_size
-    说明：
-        - optimizer 优化器
-        - step_size 观察次数，每多少步观察一次 loss 均值
-        - lr 如果非None，则使用此学习率初始化优化器的学习率；否则沿用优化器原有学习率
-    实现：
-        - 每隔 step_size 步，观察 loss 均值
-        - 如果 loss 均值没有明显下降，则将学习率乘以 decay_factor
-        - 如果 loss 均值下降明显，则将学习率乘以 boost_factor
-    
-    '''
-    def __init__(self, step_size=5, init_lambda=None, max_lr=10, min_lr=0.05, decay_factor=0.95, boost_factor=1.05):
-        self.init_lambda = init_lambda
-        self.max_lr = max_lr
-        self.min_lr = min_lr
-        self.step_size = step_size  # 每多少步观察一次 loss 均值
-        self.decay_factor = decay_factor  # 降速因子
-        self.boost_factor = boost_factor  # 升速因子
-
-        self.run_step = 1
-        self.loss_history = []
-
-    def step(self, current_loss, lambda_size):
-        new_lambda = lambda_size
-        #===========================================#
-        #   Loss均值计数
-        #===========================================#
-        self.loss_history.append(current_loss.item())
-        loss_arr = np.array(self.loss_history[:-self.run_step])
-        if loss_arr.size == 0:
-            last_avg_loss = 0
-        else:
-            last_avg_loss = loss_arr.mean()
-        #===========================================#
-        #   判断step是否大于step_size，选择操作
-        #===========================================#
-        if self.run_step > self.step_size:
-            #===========================================#
-            #   实现：
-            #       - avg_loss：全局loss减去最新step_size个loss均值
-            #       - last_avg_loss：全局loss均值
-            #       - 目的是看最新加入step_size个loss的loss均值
-            #       - 如果loss没明显下降，则将学习率乘以 decay_factor
-            #       - 如果loss下降明显，则将学习率乘以 boost_factor
-            #===========================================#
-            avg_loss = np.array(self.loss_history).mean()
-            delta = avg_loss - last_avg_loss
-            # loss 没明显下降
-            if delta < 1e-4:
-                new_lambda = self._adjust_lr(lambda_size, boost=True)
-            # loss 下降明显
-            elif delta > 1e-2:
-                new_lambda = self._adjust_lr(lambda_size, decay=True)
-        #===========================================#
-        #   更新step
-        #===========================================#
-        self.run_step += 1
-
-        return new_lambda
-        
-    def _adjust_lr(self, lambda_size, decay=False, boost=False):
-        if decay:
-            new_lambda = max(lambda_size * self.decay_factor, self.min_lr)
-        elif boost:
-            new_lambda = min(lambda_size * self.boost_factor, self.max_lr)
-        else:
-            new_lambda = lambda_size
-        self.run_step = 1
-
-        return new_lambda
-
 def multi_class_nms(boxes, scores, labels, iou_threshold=0.5, score_threshold=0.01):
     """
     对多类别的框进行 NMS，返回保留索引。
@@ -338,6 +230,3 @@ def multi_class_nms(boxes, scores, labels, iou_threshold=0.5, score_threshold=0.
         return torch.cat(keep_boxes), torch.cat(keep_scores), torch.cat(keep_labels)
     else:
         return torch.empty((0, 4), device=boxes.device), torch.empty((0,), device=boxes.device), torch.empty((0,), dtype=torch.int64, device=boxes.device)
-
-def get_config():
-    pass

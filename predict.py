@@ -1,58 +1,71 @@
+import json
+
 import cv2 as cv
 import numpy as np
 import torch
-import json
 
 from nets.yolo import YoloBody
-from utils.tools import multi_class_nms, buildBox
+from utils.tools import buildBox, multi_class_nms
 
-with open("config/datasetParameter.json", 'r', encoding='utf-8')as f:
+with open("config/datasetParameter.json", "r", encoding="utf-8") as f:
     datasetConfig = json.load(f)
 
-class_name = datasetConfig['class_name']
+class_name = datasetConfig["class_name"]
 
-with open('config/modelParameter.json', 'r', encoding='utf-8')as f:
-    modelConfig = json.load(f)
-
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
+device = "cuda" if torch.cuda.is_available() else "cpu"
+stride = [32, 16, 8]
+anchors = [
+    [7, 9],
+    [16, 24],
+    [43, 26],
+    [29, 60],
+    [72, 56],
+    [63, 133],
+    [142, 96],
+    [166, 223],
+    [400, 342],
+]
+anchors_mask = [[6, 7, 8], [3, 4, 5], [0, 1, 2]]
 
 model = YoloBody().to(device)
-model.load_state_dict(torch.load("checkpoint.pth", map_location=device)['model'])
+model.load_state_dict(torch.load("checkpoint.pth", map_location=device)["model"])
 model.eval()
-
-class Abc():
-    def __init__(self):
-        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        self.stride       = [32, 16, 8]
-        self.anchors      = [[7, 9],[16, 24],[43, 26],[29, 60],[72, 56],[63, 133],[142, 96],[166, 223],[400, 342]]
-        self.anchors_mask = [[6, 7, 8],[3, 4, 5],[0, 1, 2]]
-        pass
-
-    def __call__(self, img):
-        pass
 
 
 def draw(img, boxes, scores, labels):
-    for i in range(len(boxes)):
+    for i, box in enumerate(boxes):
         x1, y1, x2, y2 = boxes[i]
-        cv.rectangle(img, (int(x1), int(y1)), (int(x2), int(y2)), (0, 0, 255), thickness=1)
-        cv.putText(img, f'{scores[i]:.2f} {class_name[labels[i]]}', (int(x1), int(y1)-5), cv.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), thickness=1)
+        cv.rectangle(
+            img, (int(x1), int(y1)), (int(x2), int(y2)), (0, 0, 255), thickness=1
+        )
+        cv.putText(
+            img,
+            f"{scores[i]:.2f} {class_name[labels[i]]}",
+            (int(x1), int(y1) - 5),
+            cv.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            (0, 0, 255),
+            thickness=1,
+        )
+
 
 def process(img, input):
     with torch.no_grad():
-        output = model(input)
+        outputs = model(input)
 
     all_boxes, all_scores, all_labels = [], [], []
 
-    for i in range(len(output)):
-        S = output[i].shape[2]
-        stride = modelConfig['stride'][i]
+    for i, output in enumerate(outputs):
+        S = output.shape[2]
+        _stride = stride[i]
 
-        prediction = output[i].view(-1, 3, 85, S, S).permute(0, 1, 3, 4, 2)
-        anchors = torch.tensor(modelConfig['anchor'], device=device)
+        prediction = output.view(-1, 3, 85, S, S).permute(0, 1, 3, 4, 2)
+        _anchors = torch.tensor(anchors, device=device)
 
-        boxes, scores, labels = buildBox(i, S, stride, prediction, anchors, modelConfig['anchor_mask'])
-        
+        boxes, scores, labels = buildBox(
+            i, S, _stride, prediction, _anchors, anchors_mask
+        )
+
         all_boxes.extend(boxes)
         all_scores.extend(scores)
         all_labels.extend(labels)
@@ -65,10 +78,13 @@ def process(img, input):
     labels = torch.cat(all_labels)
 
     # NMS 按类别分别处理
-    boxes, scores, labels = multi_class_nms(boxes, scores, labels=labels, iou_threshold=0.5)
+    boxes, scores, labels = multi_class_nms(
+        boxes, scores, labels=labels, iou_threshold=0.5
+    )
 
     # draw
     draw(img, boxes, scores, labels)
+
 
 def transport(img, to_tensor=True):
     if to_tensor:
@@ -78,7 +94,8 @@ def transport(img, to_tensor=True):
         input = torch.tensor(input).unsqueeze(0).to(torch.float32).to(device)
     return img, input
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     is_cap = False
 
     if is_cap:
@@ -86,13 +103,13 @@ if __name__ == '__main__':
         while True:
             ret, img = cap.read()
             if not ret:
-                    print("无法获取帧！")
-                    break
-            img, input = transport(img, to_tensor=True) # to tensor
-            process(img, input) # predict
-            cv.namedWindow('Camera', cv.WINDOW_NORMAL)
-            cv.imshow('Camera', img)
-            if cv.waitKey(1) == ord('q'):
+                print("无法获取帧！")
+                break
+            img, input = transport(img, to_tensor=True)  # to tensor
+            process(img, input)  # predict
+            cv.namedWindow("Camera", cv.WINDOW_NORMAL)
+            cv.imshow("Camera", img)
+            if cv.waitKey(1) == ord("q"):
                 break
         # 释放资源
         cap.release()
@@ -100,6 +117,6 @@ if __name__ == '__main__':
     else:
         test_img = r"img/street.jpg"
         img = cv.imread(test_img)
-        img, input = transport(img, to_tensor=True) # to tensor
-        process(img, input) # predict
-        cv.imwrite('output.jpg', img)
+        img, input = transport(img, to_tensor=True)  # to tensor
+        process(img, input)  # predict
+        cv.imwrite("output.jpg", img)
