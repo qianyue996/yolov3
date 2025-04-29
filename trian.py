@@ -19,6 +19,8 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 if __name__ == "__main__":
     train_type = "tiny"  # or normal
+    dataset_type = "voc"
+    continue_train = False
     set_seed(seed=27)
     batch_size = 4
     epochs = 100
@@ -27,8 +29,13 @@ if __name__ == "__main__":
     l_cls = 1
     l_obj = 1
     l_noo = 1
-    train_dataset = YOLODataset(dataset_type="voc")
-    num_classes = 20
+    train_dataset = YOLODataset(dataset_type=dataset_type)
+    if dataset_type == "voc":
+        num_classes = 20
+    elif dataset_type == "coco":
+        num_classes = 80
+    else:
+        raise ValueError("dataset_type must be voc or coco")
 
     dataloader = DataLoader(
         dataset=train_dataset,
@@ -47,7 +54,6 @@ if __name__ == "__main__":
         raise ValueError("train_type must be tiny or normal")
     optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=1e-4)
     lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.94)
-
     loss_fn = YOLOv3LOSS(
         device=device,
         l_loc=l_loc,
@@ -58,13 +64,16 @@ if __name__ == "__main__":
     )
     writer_path = "runs"
     writer = SummaryWriter(f"{writer_path}/{time.strftime('%Y-%m-%d-%H-%M-%S', time.localtime())}")
-    # checkpoint = torch.load("checkpoint.pth", map_location=device)
-    # model.load_state_dict(checkpoint["model"])
-    # optimizer.load_state_dict(checkpoint["optimizer"])
+    start_epoch = 0
+    if continue_train:
+        checkpoint = torch.load("checkpoint.pth", map_location=device)
+        model.load_state_dict(checkpoint["model"])
+        optimizer.load_state_dict(checkpoint["optimizer"])
+        start_epoch = checkpoint["epoch"] + 1
     # train
     losses = []
     global_step = 0
-    for epoch in range(epochs):
+    for epoch in range(start_epoch, epochs):
         model.train()
         epoch_loss = 0
         with tqdm.tqdm(dataloader) as pbar:

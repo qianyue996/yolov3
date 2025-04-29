@@ -1,7 +1,7 @@
 import os
 import random
 import shutil
-
+import torchvision.ops as ops
 import cv2 as cv
 import numpy as np
 import torch
@@ -21,68 +21,6 @@ def worker_init_fn(worker_id):
     seed = 27 + worker_id
     np.random.seed(seed)
     random.seed(seed)
-
-
-def buildBox(i, S, stride, pred, anchors, anchors_mask, score_thresh=0.45):
-    all_boxes, all_scores, all_labels = [], [], []
-
-    grid_x, grid_y = torch.meshgrid(
-        torch.arange(S, dtype=pred.dtype, device=pred.device),
-        torch.arange(S, dtype=pred.dtype, device=pred.device),
-        indexing="ij",
-    )
-    grid_xy = (
-        torch.stack([grid_x, grid_y], dim=-1)
-        .view(1, 1, S, S, 2)
-        .expand_as(pred[..., :2])
-    )
-    pred[..., :2] = (pred[..., :2].sigmoid() + grid_xy) * stride
-
-    pred[..., 2] = torch.exp(pred[..., 2]) * anchors[anchors_mask[i]][:, 0].view(
-        1, -1, 1, 1
-    )
-    pred[..., 3] = torch.exp(pred[..., 3]) * anchors[anchors_mask[i]][:, 1].view(
-        1, -1, 1, 1
-    )
-
-    boxes = torch.stack(
-        [
-            pred[..., 0] - pred[..., 2] / 2,
-            pred[..., 1] - pred[..., 3] / 2,
-            pred[..., 0] + pred[..., 2] / 2,
-            pred[..., 1] + pred[..., 3] / 2,
-        ],
-        dim=-1,
-    )
-    boxes = torch.clamp(boxes, min=0, max=416)
-    # ===========================================#
-    #   模型预测为正样本的输出
-    # ===========================================#
-    pos_conf = pred[..., 4].sigmoid()
-    # ===========================================#
-    #   模型预测的类别输出
-    # ===========================================#
-    cls_conf = pred[..., 5:].sigmoid()
-    # ===========================================#
-    #   模型预测所有位置的所有类别分数
-    #   shape: 3, 13, 13, 80
-    # ===========================================#
-    scores = pos_conf.unsqueeze(-1) * cls_conf
-    # 选出所有分数大于阈值的 box + 类别
-    for cls_id in range(20):
-        cls_scores = scores[..., cls_id]
-        keep = cls_scores > score_thresh
-        if keep.sum() == 0:
-            continue
-        cls_boxes = boxes[keep]
-        cls_scores = cls_scores[keep]
-        cls_labels = torch.full((cls_scores.shape[0],), cls_id).long()
-
-        all_boxes.append(cls_boxes)
-        all_scores.append(cls_scores)
-        all_labels.append(cls_labels)
-
-    return all_boxes, all_scores, all_labels
 
 
 def nms(boxes, scores, iou_threshold=0.45):
@@ -214,53 +152,19 @@ class DynamicLr:
         self.run_step = 1
 
 
-def multi_class_nms(boxes, scores, labels, iou_threshold=0.5, score_threshold=0.01):
-    """
-    对多类别的框进行 NMS，返回保留索引。
-
-    参数:
-    - boxes: Tensor[N, 4]，每个框是 (x1, y1, x2, y2)
-    - scores: Tensor[N]，每个框的置信度
-    - labels: Tensor[N]，每个框的类别索引
-    - iou_threshold: float，NMS 的 IoU 阈值
-    - score_threshold: float，过滤低置信度框
-
-    返回:
-    - keep_boxes: List[Tensor]，NMS后保留的框集合
-    - keep_scores: List[Tensor]，对应置信度
-    - keep_labels: List[Tensor]，对应类别
-    """
-    keep_boxes = []
-    keep_scores = []
-    keep_labels = []
-
+def multi_class_nms(boxes, scores, labels, iou_thres=0.5):
+    keep_boxes, keep_scores, keep_labels = [], [], []
     unique_labels = labels.unique()
     for cls in unique_labels:
         cls_mask = labels == cls
         cls_boxes = boxes[cls_mask]
         cls_scores = scores[cls_mask]
-
-        # 可以加入 score_threshold 过滤
-        score_mask = cls_scores > score_threshold
-        cls_boxes = cls_boxes[score_mask]
-        cls_scores = cls_scores[score_mask]
-
-        if cls_boxes.numel() == 0:
-            continue
-
-        # torchvision nms
-        keep = nms(cls_boxes, cls_scores, iou_threshold)
+        keep = ops.nms(cls_boxes, cls_scores, iou_thres)
         keep_boxes.append(cls_boxes[keep])
         keep_scores.append(cls_scores[keep])
-        keep_labels.append(
-            torch.full((len(keep),), cls, dtype=torch.int64, device=boxes.device)
-        )
-
-    if keep_boxes:
-        return torch.cat(keep_boxes), torch.cat(keep_scores), torch.cat(keep_labels)
-    else:
-        return (
-            torch.empty((0, 4), device=boxes.device),
-            torch.empty((0,), device=boxes.device),
-            torch.empty((0,), dtype=torch.int64, device=boxes.device),
-        )
+        keep_labels.append(labels[cls_mask][keep])
+    return (
+        torch.cat(keep_boxes),
+        torch.cat(keep_scores),
+        torch.cat(keep_labels),
+    )

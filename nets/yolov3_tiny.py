@@ -3,18 +3,18 @@ import torch.nn as nn
 
 
 class CBL(nn.Module):
-    def __init__(self, in_c, out_c, kernel=3, stride=1, padding=1):
+    def __init__(self, in_channels, out_channels, kernel=3, stride=1, padding=1):
         super(CBL, self).__init__()
         self.layers = nn.Sequential(
             nn.Conv2d(
-                in_c,
-                out_c,
+                in_channels,
+                out_channels,
                 kernel,
                 stride=stride,
                 padding=padding,
                 bias=False,
             ),
-            nn.BatchNorm2d(out_c),
+            nn.BatchNorm2d(out_channels),
             nn.LeakyReLU(0.1),
         )
 

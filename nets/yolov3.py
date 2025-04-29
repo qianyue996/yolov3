@@ -1,5 +1,3 @@
-from collections import OrderedDict
-
 import torch
 import torch.nn as nn
 
@@ -11,12 +9,12 @@ from nets.darknet import darknet53
 # ----------------------#
 class ConvBlock(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, include_activation=True):
-        super().__init__()
+        super(ConvBlock, self).__init__()
         padding = (kernel_size - 1) // 2
         self.conv = nn.Conv2d(
             in_channels,
             out_channels,
-            kernel_size=kernel_size,
+            kernel_size,
             padding=padding,
             bias=False,
         )
@@ -121,9 +119,7 @@ class YOLOv3(nn.Module):
         super().__init__()
         self.backbone = darknet53()
         if pretrained:
-            self.backbone.load_state_dict(
-                torch.load("model_data/darknet53_weights.pth")
-            )
+            self.backbone.load_state_dict(torch.load("model_data/darknet53_weights.pth"))
         self.neck = YOLONeck(self.backbone.layers_out_filters)
         self.head = YOLOHead(num_classes)
 
