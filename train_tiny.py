@@ -18,10 +18,11 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 
 if __name__ == "__main__":
+    train_type = "tiny"  # or normal
     set_seed(seed=27)
     batch_size = 4
     epochs = 30
-    lr = 0.08
+    lr = 0.01
     l_loc = 1
     l_cls = 1
     l_obj = 0.5
@@ -38,8 +39,12 @@ if __name__ == "__main__":
         worker_init_fn=worker_init_fn,
         collate_fn=yolo_collate_fn,
     )
-    # model = YOLOv3Tiny(num_classes=num_classes).to(device)
-    model = YOLOv3(num_classes=num_classes, pretrained=False).to(device)
+    if train_type == "tiny":
+        model = YOLOv3Tiny(num_classes=num_classes).to(device)
+    elif train_type == "normal":
+        model = YOLOv3(num_classes=num_classes, pretrained=False).to(device)
+    else:
+        raise ValueError("train_type must be tiny or normal")
     optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=1e-4)
     lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.1)
 
@@ -55,7 +60,7 @@ if __name__ == "__main__":
     writer = SummaryWriter(
         f'{writer_path}/{time.strftime("%Y-%m-%d-%H-%M-%S",time.localtime())}'
     )
-    checkpoint = torch.load("checkpoint.pth", map_location=device)
+    # checkpoint = torch.load("checkpoint.pth", map_location=device)
     # model.load_state_dict(checkpoint["model"])
     # optimizer.load_state_dict(checkpoint["optimizer"])
     # train
