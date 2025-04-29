@@ -7,6 +7,7 @@ data
 .venv
 .gradio
 flagged
+.ruff_cache
 
 checkpoint.pth
 tiny_checkpoint.pth
@@ -15,3 +16,4 @@ coco_train.txt
 coco_val.txt
 yolov3_env.tar.gz
 voc_train.txt
+output.jpg
