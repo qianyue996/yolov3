@@ -21,7 +21,7 @@ if __name__ == "__main__":
     train_type = "tiny"  # or normal
     set_seed(seed=27)
     batch_size = 4
-    epochs = 30
+    epochs = 100
     lr = 0.01
     l_loc = 1
     l_cls = 1
@@ -46,7 +46,7 @@ if __name__ == "__main__":
     else:
         raise ValueError("train_type must be tiny or normal")
     optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=1e-4)
-    lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.1)
+    lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.94)
 
     loss_fn = YOLOv3LOSS(
         device=device,
