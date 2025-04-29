@@ -4,21 +4,25 @@ from collections import OrderedDict
 import torch.nn as nn
 
 
-#---------------------------------------------------------------------#
+# ---------------------------------------------------------------------#
 #   残差结构
 #   利用一个1x1卷积下降通道数，然后利用一个3x3卷积提取特征并且上升通道数
 #   最后接上一个残差边
-#---------------------------------------------------------------------#
+# ---------------------------------------------------------------------#
 class BasicBlock(nn.Module):
     def __init__(self, inplanes, planes):
         super(BasicBlock, self).__init__()
-        self.conv1  = nn.Conv2d(inplanes, planes[0], kernel_size=1, stride=1, padding=0, bias=False)
-        self.bn1    = nn.BatchNorm2d(planes[0])
-        self.relu1  = nn.LeakyReLU(0.1)
-        
-        self.conv2  = nn.Conv2d(planes[0], planes[1], kernel_size=3, stride=1, padding=1, bias=False)
-        self.bn2    = nn.BatchNorm2d(planes[1])
-        self.relu2  = nn.LeakyReLU(0.1)
+        self.conv1 = nn.Conv2d(
+            inplanes, planes[0], kernel_size=1, stride=1, padding=0, bias=False
+        )
+        self.bn1 = nn.BatchNorm2d(planes[0])
+        self.relu1 = nn.LeakyReLU(0.1)
+
+        self.conv2 = nn.Conv2d(
+            planes[0], planes[1], kernel_size=3, stride=1, padding=1, bias=False
+        )
+        self.bn2 = nn.BatchNorm2d(planes[1])
+        self.relu2 = nn.LeakyReLU(0.1)
 
     def forward(self, x):
         residual = x
@@ -34,14 +38,17 @@ class BasicBlock(nn.Module):
         out += residual
         return out
 
+
 class DarkNet(nn.Module):
     def __init__(self, layers):
         super(DarkNet, self).__init__()
         self.inplanes = 32
         # 416,416,3 -> 416,416,32
-        self.conv1  = nn.Conv2d(3, self.inplanes, kernel_size=3, stride=1, padding=1, bias=False)
-        self.bn1    = nn.BatchNorm2d(self.inplanes)
-        self.relu1  = nn.LeakyReLU(0.1)
+        self.conv1 = nn.Conv2d(
+            3, self.inplanes, kernel_size=3, stride=1, padding=1, bias=False
+        )
+        self.bn1 = nn.BatchNorm2d(self.inplanes)
+        self.relu1 = nn.LeakyReLU(0.1)
 
         # 416,416,32 -> 208,208,64
         self.layer1 = self._make_layer([32, 64], layers[0])
@@ -60,19 +67,31 @@ class DarkNet(nn.Module):
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
                 n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
-                m.weight.data.normal_(0, math.sqrt(2. / n))
+                m.weight.data.normal_(0, math.sqrt(2.0 / n))
             elif isinstance(m, nn.BatchNorm2d):
                 m.weight.data.fill_(1)
                 m.bias.data.zero_()
 
-    #---------------------------------------------------------------------#
+    # ---------------------------------------------------------------------#
     #   在每一个layer里面，首先利用一个步长为2的3x3卷积进行下采样
     #   然后进行残差结构的堆叠
-    #---------------------------------------------------------------------#
+    # ---------------------------------------------------------------------#
     def _make_layer(self, planes, blocks):
         layers = []
         # 下采样，步长为2，卷积核大小为3
-        layers.append(("ds_conv", nn.Conv2d(self.inplanes, planes[1], kernel_size=3, stride=2, padding=1, bias=False)))
+        layers.append(
+            (
+                "ds_conv",
+                nn.Conv2d(
+                    self.inplanes,
+                    planes[1],
+                    kernel_size=3,
+                    stride=2,
+                    padding=1,
+                    bias=False,
+                ),
+            )
+        )
         layers.append(("ds_bn", nn.BatchNorm2d(planes[1])))
         layers.append(("ds_relu", nn.LeakyReLU(0.1)))
         # 加入残差结构
@@ -93,6 +112,7 @@ class DarkNet(nn.Module):
         out5 = self.layer5(out4)
 
         return out3, out4, out5
+
 
 def darknet53():
     model = DarkNet([1, 2, 8, 8, 4])

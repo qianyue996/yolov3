@@ -1,6 +1,7 @@
 import time
 from .tools import clear
 
+
 class Logger:
     def __init__(self, total_epochs=None, total_batches=None, auto_newline=False):
         self.total_epochs = total_epochs

@@ -1,0 +1,8 @@
+[tool.black]
+line-length = 12
+
+[tool.ruff]
+line-length = 50
+
+[tool.ruff.format]
+quote-style = "preserve"

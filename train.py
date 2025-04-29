@@ -20,7 +20,6 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 
 class Trainer:
-
     def __init__(self):
         set_seed(seed=27)
         self.batch_size = 6
@@ -54,7 +53,7 @@ class Trainer:
         )
         writer_path = "runs"
         self.writer = SummaryWriter(
-            f'{writer_path}/{time.strftime("%Y-%m-%d-%H-%M-%S",time.localtime())}'
+            f"{writer_path}/{time.strftime('%Y-%m-%d-%H-%M-%S', time.localtime())}"
         )
 
     def setup(self):

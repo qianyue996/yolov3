@@ -24,7 +24,6 @@ def worker_init_fn(worker_id):
 
 
 def buildBox(i, S, stride, pred, anchors, anchors_mask, score_thresh=0.45):
-
     all_boxes, all_scores, all_labels = [], [], []
 
     grid_x, grid_y = torch.meshgrid(

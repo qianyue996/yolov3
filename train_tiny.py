@@ -25,7 +25,7 @@ if __name__ == "__main__":
     lr = 0.01
     l_loc = 1
     l_cls = 1
-    l_obj = 0.5
+    l_obj = 1
     l_noo = 1
     train_dataset = YOLODataset(dataset_type="voc")
     num_classes = 20
@@ -57,9 +57,7 @@ if __name__ == "__main__":
         num_classes=num_classes,
     )
     writer_path = "runs"
-    writer = SummaryWriter(
-        f'{writer_path}/{time.strftime("%Y-%m-%d-%H-%M-%S",time.localtime())}'
-    )
+    writer = SummaryWriter(f"{writer_path}/{time.strftime('%Y-%m-%d-%H-%M-%S', time.localtime())}")
     # checkpoint = torch.load("checkpoint.pth", map_location=device)
     # model.load_state_dict(checkpoint["model"])
     # optimizer.load_state_dict(checkpoint["optimizer"])
@@ -83,9 +81,7 @@ if __name__ == "__main__":
                 epoch_loss += loss.item()
                 avg_loss = epoch_loss / (batch + 1)
                 lr = optimizer.param_groups[0]["lr"]
-                pbar.set_postfix(
-                    **{"epoch": epoch, "loss": f"{loss.item():.4f}", "lr": lr}
-                )
+                pbar.set_postfix(**{"epoch": epoch, "loss": f"{loss.item():.4f}", "lr": lr})
                 writer.add_scalars(
                     "loss",
                     {
