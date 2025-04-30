@@ -16,20 +16,112 @@ class YOLODataset(Dataset):
         elif dataset_type == "voc":
             with open("voc_train.txt", "r", encoding="utf-8") as f:
                 self.datas = f.readlines()
+        else:
+            raise ValueError("dataset_type must be coco or voc")
 
     def __len__(self):
         return len(self.datas)
 
     def __getitem__(self, index):
         image = cv.imread(self.datas[index].strip("\n").split(" ")[0])
-        labels = np.array(
-            [
-                list(map(float, item.split(",")))
-                for item in self.datas[index].strip("\n").split(" ")[1:]
-            ]
-        )
+        labels = np.array([list(map(float, item.split(","))) for item in self.datas[index].strip("\n").split(" ")[1:]])
 
         return image, labels
+
+
+def rand():
+    return np.random.random()
+
+
+def randomAug(image, label):
+    nImage = image.copy()
+    nLabel = label.copy()
+    h, w = nImage.shape[:2]
+
+    # 随机颜色增强
+    if rand() > 0.5:
+        # 随机亮度（加减一个值）
+        delta = np.random.uniform(-32, 32)
+        nImage = np.clip(nImage.astype(np.float32) + delta, 0, 255).astype(np.uint8)
+    if rand() > 0.5:
+        # 随机对比度
+        alpha = np.random.uniform(0.5, 1.5)
+        mean = np.mean(nImage, axis=(0, 1), keepdims=True)
+        nImage = np.clip((nImage - mean) * alpha + mean, 0, 255).astype(np.uint8)
+    if np.random.rand() > 0.5:
+        # 随机饱和度（转HSV改S通道）
+        hsv = cv.cvtColor(nImage, cv.COLOR_BGR2HSV).astype(np.float32)
+        hsv[..., 1] *= np.random.uniform(0.5, 1.5)
+        hsv[..., 1] = np.clip(hsv[..., 1], 0, 255)
+        nImage = cv.cvtColor(hsv.astype(np.uint8), cv.COLOR_HSV2BGR)
+
+    # 随机翻转
+    if rand() > 0.5:
+        flip_type = np.random.choice([0, 1, -1])
+        nImage = cv.flip(nImage, flip_type)
+        # bbox: [x1, y1, x2, y2]
+        if flip_type == 1:  # 水平翻转
+            nLabel[:, [0, 2]] = w - nLabel[:, [2, 0]]
+        elif flip_type == 0:  # 垂直翻转
+            nLabel[:, [1, 3]] = h - nLabel[:, [3, 1]]
+        elif flip_type == -1:  # 对角翻转（等于水平+垂直）
+            nLabel[:, [0, 2]] = w - nLabel[:, [2, 0]]
+            nLabel[:, [1, 3]] = h - nLabel[:, [3, 1]]
+
+    # 随机缩放（resize 到一个随机尺寸后再 resize 回原尺寸）
+    if rand() > 0.5:
+        scale = np.random.uniform(0.5, 0.9)  # 随机缩放比例
+        new_w = int(w * scale)
+        new_h = int(h * scale)
+        nImage = cv.resize(nImage, (new_w, new_h))
+
+        pad_w = imgSize - new_w
+        pad_h = imgSize - new_h
+        top = pad_h // 2
+        bottom = pad_h - top
+        left = pad_w // 2
+        right = pad_w - left
+        nImage = cv.copyMakeBorder(nImage, top, bottom, left, right, borderType=cv.BORDER_CONSTANT, value=(128, 128, 128))
+        if nLabel is not None:
+            nLabel[:, :4] *= scale
+            nLabel[:, [0, 2]] += left
+            nLabel[:, [1, 3]] += top
+    # 随机旋转
+    if rand() > 0.5:
+        angle = np.random.uniform(-15, 15)  # 在 -15 到 15 度之间随机转
+        M = cv.getRotationMatrix2D((w // 2, h // 2), angle, 1.0)
+        nImage = cv.warpAffine(nImage, M, (w, h), borderMode=cv.BORDER_REFLECT)
+
+        # 处理 bbox，同步旋转
+        for i, label in enumerate(nLabel):
+            x1, y1, x2, y2, _ = label
+
+            # 四个角点
+            corners = np.array([[x1, y1], [x2, y1], [x2, y2], [x1, y2]])
+
+            # 加上 1 维度，变成齐次坐标 [x, y, 1]
+            ones = np.ones((4, 1))
+            corners_hom = np.hstack([corners, ones])
+
+            # 旋转
+            rotated_corners = M @ corners_hom.T  # 2x4
+            rotated_corners = rotated_corners.T  # 4x2
+
+            # 获取新的 bbox：包围旋转后的角点
+            x_coords = rotated_corners[:, 0]
+            y_coords = rotated_corners[:, 1]
+            new_x1, new_y1 = x_coords.min(), y_coords.min()
+            new_x2, new_y2 = x_coords.max(), y_coords.max()
+
+            # 可选：限制在图像边界内
+            new_x1 = np.clip(new_x1, 0, w)
+            new_y1 = np.clip(new_y1, 0, h)
+            new_x2 = np.clip(new_x2, 0, w)
+            new_y2 = np.clip(new_y2, 0, h)
+
+            nLabel[i, :4] = new_x1, new_y1, new_x2, new_y2
+
+    return nImage, nLabel
 
 
 def normalizeData(images, labels):
@@ -52,17 +144,28 @@ def xyxy2xywh(labels: list[np.array]):
 
 
 def resizeCvt(image: np.array, labels: np.array):
-    im_h, im_w = image.shape[0], image.shape[1]
+    im_h, im_w = image.shape[:2]
     scale = min(imgSize / im_h, imgSize / im_w)
     nh, nw = int(im_h * scale), int(im_w * scale)
-    nx, ny = (imgSize - nw) // 2, (imgSize - nh) // 2
+
+    # 缩放图像
     image = cv.resize(image, (nw, nh), interpolation=cv.INTER_AREA)
-    nImage = np.full((imgSize, imgSize, 3), (128, 128, 128)).astype(np.uint8)
-    nImage[ny : ny + nh, nx : nx + nw] = image
 
-    labels[:, [0, 2]] = labels[:, [0, 2]] * scale + nx
-    labels[:, [1, 3]] = labels[:, [1, 3]] * scale + ny
+    # 计算 padding（上下左右）
+    top = (imgSize - nh) // 2
+    bottom = imgSize - nh - top
+    left = (imgSize - nw) // 2
+    right = imgSize - nw - left
 
+    # 灰色填充
+    nImage = cv.copyMakeBorder(image, top, bottom, left, right, borderType=cv.BORDER_CONSTANT, value=(128, 128, 128))
+
+    # 同步变换 bbox
+    labels = labels.astype(np.float32)
+    labels[:, [0, 2]] = labels[:, [0, 2]] * scale + left
+    labels[:, [1, 3]] = labels[:, [1, 3]] * scale + top
+
+    # 转为 RGB
     cvtImage = cv.cvtColor(nImage, cv.COLOR_BGR2RGB)
     return cvtImage, labels
 
@@ -73,11 +176,32 @@ def ToTensor(images, labels):
     return images, labels
 
 
-def chakan(image, labels):
-    labels = list(labels)
+def chakan(images, labels):
+    cv.namedWindow("show", cv.WINDOW_NORMAL)
+    for index, image in enumerate(images):
+        image = cv.cvtColor(image, cv.COLOR_RGB2BGR)
+        for i, label in enumerate(labels[index]):
+            x1, y1, x2, y2, _id = [int(i) for i in label]
+            cv.rectangle(image, (x1, y1), (x2, y2), (0, 0, 255), thickness=1)
+            cv.putText(
+                image,
+                f"{_id}",
+                (int(x1), int(y1) - 5),
+                cv.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                (0, 0, 255),
+                thickness=1,
+            )
+        cv.imshow("show", image)
+        cv.waitKey(0)
+        cv.destroyAllWindows()
+
+
+def single_chakan(image, label):
+    # 测试图像变换时使用
     cv.namedWindow("show", cv.WINDOW_NORMAL)
     image = cv.cvtColor(image, cv.COLOR_RGB2BGR)
-    for i, label in enumerate(labels):
+    for i, label in enumerate(label):
         x1, y1, x2, y2, _id = [int(i) for i in label]
         cv.rectangle(image, (x1, y1), (x2, y2), (0, 0, 255), thickness=1)
         cv.putText(
@@ -96,17 +220,13 @@ def chakan(image, labels):
 
 def yolo_collate_fn(batch):
     # resize + bgr -> rgb
-    images = []
-    labels = []
-    for image, label in batch:
-        r_image, r_label = resizeCvt(image, label)
-        images.append(r_image)
-        labels.append(r_label)
-    images = np.array(images)
+    images, labels = map(list, (zip(*[resizeCvt(image, label) for image, label in batch])))
     # 随机增强
-    # images, labels = randomAug(images, labels)
+    images, labels = zip(*[randomAug(image, label) for image, label in zip(images, labels)])
+    images = np.array(images)
+    labels = list(labels)
     #
-    # chakan(images[0], labels[0])
+    # chakan(images, labels)
     labels = xyxy2xywh(labels)
     images, labels = normalizeData(images, labels)
     images, labels = ToTensor(images, labels)
@@ -114,9 +234,7 @@ def yolo_collate_fn(batch):
 
 
 if __name__ == "__main__":
-    dataset = YOLODataset()
-    dataloader = DataLoader(
-        dataset, batch_size=8, shuffle=False, collate_fn=yolo_collate_fn
-    )
+    dataset = YOLODataset(dataset_type='voc')
+    dataloader = DataLoader(dataset, batch_size=64, shuffle=True, collate_fn=yolo_collate_fn)
     for i, (images, bboxes) in enumerate(dataloader):
         print(images.shape, bboxes[0].shape)

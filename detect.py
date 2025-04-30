@@ -21,13 +21,13 @@ nun_classes = datasetConfig["voc"]['length']
 class_name = datasetConfig["voc"]["class_name"]
 
 device = "cpu" if torch.cuda.is_available() else "cpu"
-imgSize = modelConfig['yolov3_tiny']['imgSize']
-stride = modelConfig['yolov3_tiny']['stride']
-anchor = torch.tensor(modelConfig['yolov3_tiny']['anchor']).to(device)
-anchor_mask = modelConfig['yolov3_tiny']['anchor_mask']
+imgSize = modelConfig['yolov3']['imgSize']
+stride = modelConfig['yolov3']['stride']
+anchor = torch.tensor(modelConfig['yolov3']['anchor']).to(device)
+anchor_mask = modelConfig['yolov3']['anchor_mask']
 
 model = YOLOv3Tiny(num_classes=nun_classes).to(device)
-model.load_state_dict(torch.load("tiny_checkpoint.pth", map_location=device)["model"])
+model.load_state_dict(torch.load("tiny_weight.pth", map_location=device)["model"])
 model.eval()
 
 

@@ -1,18 +1,14 @@
 import numpy as np
 from tqdm import tqdm
 
-from tools import *
 
-boxes = []
-
-
-def main(seed=1):
-    np.random.seed(seed)
-    with open("coco_train.txt", "r", encoding="utf-8") as f:
+def main():
+    boxes = []
+    with open("voc_train.txt", "r", encoding="utf-8") as f:
         for line in f.readlines():
             for box in line.strip("\n").split(" ")[1:]:
-                x1, y1, x2, y2, id = box.split(",")
-                x, y, w, h = xyxy2xywh([int(x1), int(y1), int(x2), int(y2)])
+                x1, y1, x2, y2, id = map(float, box.split(","))
+                w, h = x2 - x1, y2 - y1
                 boxes.append((w, h))
     kmeans(boxes)
 

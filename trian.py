@@ -18,13 +18,13 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 
 if __name__ == "__main__":
-    train_type = "tiny"  # or normal
+    train_type = "tiny"  # or yolov3
     dataset_type = "voc"
     continue_train = False
     set_seed(seed=27)
     batch_size = 4
-    epochs = 100
-    lr = 0.01
+    epochs = 160
+    lr = 0.005
     l_loc = 1
     l_cls = 1
     l_obj = 1
@@ -48,10 +48,10 @@ if __name__ == "__main__":
     )
     if train_type == "tiny":
         model = YOLOv3Tiny(num_classes=num_classes).to(device)
-    elif train_type == "normal":
+    elif train_type == "yolov3":
         model = YOLOv3(num_classes=num_classes, pretrained=False).to(device)
     else:
-        raise ValueError("train_type must be tiny or normal")
+        raise ValueError("train_type must be tiny or yolov3")
     optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=1e-4)
     lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.94)
     loss_fn = YOLOv3LOSS(
@@ -66,10 +66,10 @@ if __name__ == "__main__":
     writer = SummaryWriter(f"{writer_path}/{time.strftime('%Y-%m-%d-%H-%M-%S', time.localtime())}")
     start_epoch = 0
     if continue_train:
-        checkpoint = torch.load("checkpoint.pth", map_location=device)
+        checkpoint = torch.load(f"{train_type}_weight.pth", map_location=device)
         model.load_state_dict(checkpoint["model"])
-        optimizer.load_state_dict(checkpoint["optimizer"])
-        start_epoch = checkpoint["epoch"] + 1
+        # optimizer.load_state_dict(checkpoint["optimizer"])
+        # start_epoch = checkpoint["epoch"] + 1
     # train
     losses = []
     global_step = 0
@@ -114,7 +114,7 @@ if __name__ == "__main__":
                 "epoch": epoch,
             }
             torch.save(checkpoint, ".checkpoint.pth")
-            os.replace(".checkpoint.pth", "checkpoint.pth")
+            os.replace(".checkpoint.pth", f"{train_type}_weight.pth")
 
         EARLY_STOP_PATIENCE = 5  # 早停忍耐度
         if len(losses) >= EARLY_STOP_PATIENCE:

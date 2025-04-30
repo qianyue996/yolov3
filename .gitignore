@@ -17,3 +17,6 @@ coco_val.txt
 yolov3_env.tar.gz
 voc_train.txt
 output.jpg
+config/anchors.txt
+tiny_weight.pth
+normal_weight.pth

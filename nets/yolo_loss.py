@@ -1,26 +1,20 @@
 import torch
 import torch.nn as nn
+import json
 
-imgSize = 416
+
+with open('config/model.json', 'r', encoding="utf-8") as f:
+    modelConfig = json.load(f)
+imgSize = modelConfig['yolov3']['imgSize']
 
 
 class YOLOv3LOSS:
     def __init__(self, device, l_loc, l_cls, l_obj, l_noo, num_classes=None):
         self.device = device
         self.num_classes = num_classes
-        self.stride = [32, 16, 8]
-        self.anchors = [
-            [7, 9],
-            [16, 24],
-            [43, 26],
-            [29, 60],
-            [72, 56],
-            [63, 133],
-            [142, 96],
-            [166, 223],
-            [400, 342],
-        ]
-        self.anchors_mask = [[6, 7, 8], [3, 4, 5], [0, 1, 2]]
+        self.stride = modelConfig['yolov3']['stride']
+        self.anchors = modelConfig['yolov3']['anchor']
+        self.anchors_mask = modelConfig['yolov3']['anchor_mask']
 
         self.lambda_obj_layers = [1.0, 1.0, 1.0]
 
@@ -62,9 +56,7 @@ class YOLOv3LOSS:
             #   重构网络预测结果
             #   shape: (B, 3, S, S, 5+80) coco
             # ===========================================#
-            prediction = (
-                predict[i].view(B, 3, 5 + self.num_classes, S, S).permute(0, 1, 3, 4, 2)
-            )
+            prediction = predict[i].view(B, 3, 5 + self.num_classes, S, S).permute(0, 1, 3, 4, 2)
             # ===========================================#
             #   构建网络应有的预测结果y_true
             #   shape: (B, 3, S, S, 5+80)
@@ -94,9 +86,7 @@ class YOLOv3LOSS:
                 _cls = torch.sigmoid(prediction[..., 5:])[obj_mask]
                 t_cls = y_true[..., 5:][obj_mask]
 
-                giou = self.compute_giou(
-                    i, x, y, w, h, obj_mask, anchors, stride, y_true
-                )
+                giou = self.compute_giou(i, x, y, w, h, obj_mask, anchors, stride, y_true)
                 # ===========================================#
                 #   位置损失 GIoU损失
                 # ===========================================#
@@ -111,10 +101,6 @@ class YOLOv3LOSS:
             #   置信度损失
             # ===========================================#
             loss_conf = nn.BCELoss(reduction="none")(conf, t_conf)
-            # loss_conf = (
-            #     loss_conf[obj_mask | noobj_mask].mean() * self.lambda_obj_layers[i]
-            # )
-            # all_loss_obj += loss_conf
             # ===========================================#
             #   GroundTrue Postivez正样本置信度损失
             # ===========================================#
@@ -181,12 +167,8 @@ class YOLOv3LOSS:
 
                 y_true[bs, k, x, y, 0] = batch_target[index, 0] - x.float()
                 y_true[bs, k, x, y, 1] = batch_target[index, 1] - y.float()
-                y_true[bs, k, x, y, 2] = torch.log(
-                    batch_target[index, 2] / anchors[n_a][0]
-                )
-                y_true[bs, k, x, y, 3] = torch.log(
-                    batch_target[index, 3] / anchors[n_a][1]
-                )
+                y_true[bs, k, x, y, 2] = torch.log(batch_target[index, 2] / anchors[n_a][0])
+                y_true[bs, k, x, y, 3] = torch.log(batch_target[index, 3] / anchors[n_a][1])
                 y_true[bs, k, x, y, 4] = 1
                 y_true[bs, k, x, y, 5 + c] = 1
 
@@ -217,14 +199,8 @@ class YOLOv3LOSS:
 
         t_x = (y_true[obj_mask][:, 0] + grid_x) * stride
         t_y = (y_true[obj_mask][:, 1] + grid_y) * stride
-        t_w = (
-            torch.exp(y_true[obj_mask][:, 2])
-            * anchors[self.anchors_mask[i]][best_a][:, 0]
-        )
-        t_h = (
-            torch.exp(y_true[obj_mask][:, 3])
-            * anchors[self.anchors_mask[i]][best_a][:, 1]
-        )
+        t_w = torch.exp(y_true[obj_mask][:, 2]) * anchors[self.anchors_mask[i]][best_a][:, 0]
+        t_h = torch.exp(y_true[obj_mask][:, 3]) * anchors[self.anchors_mask[i]][best_a][:, 1]
 
         # xywh -> xyxy
         x1 = torch.clamp(x - w / 2, min=1e-6, max=imgSize)
