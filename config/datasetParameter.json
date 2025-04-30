@@ -1,6 +1,6 @@
 {
   "coco": {
-    "length": 80,
+    "num_class": 80,
     "class_name": [
       "airplane",
       "apple",
@@ -85,7 +85,7 @@
     ]
   },
   "voc": {
-    "length": 20,
+    "num_class": 20,
     "class_name": [
       "aeroplane",
       "bicycle",

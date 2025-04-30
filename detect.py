@@ -14,17 +14,17 @@ from utils.tools import multi_class_nms
 with open("config/datasetParameter.json", "r", encoding="utf-8") as f:
     datasetConfig = json.load(f)
 
-with open('config/model.json', 'r', encoding="utf-8") as f:
+with open("config/model.json", "r", encoding="utf-8") as f:
     modelConfig = json.load(f)
 
-nun_classes = datasetConfig["voc"]['length']
+nun_classes = datasetConfig["voc"]["num_class"]
 class_name = datasetConfig["voc"]["class_name"]
 
 device = "cpu" if torch.cuda.is_available() else "cpu"
-imgSize = modelConfig['yolov3']['imgSize']
-stride = modelConfig['yolov3']['stride']
-anchor = torch.tensor(modelConfig['yolov3']['anchor']).to(device)
-anchor_mask = modelConfig['yolov3']['anchor_mask']
+imgSize = modelConfig["yolov3"]["imgSize"]
+stride = modelConfig["yolov3"]["stride"]
+anchor = torch.tensor(modelConfig["yolov3"]["anchor"]).to(device)
+anchor_mask = modelConfig["yolov3"]["anchor_mask"]
 
 model = YOLOv3Tiny(num_classes=nun_classes).to(device)
 model.load_state_dict(torch.load("tiny_weight.pth", map_location=device)["model"])
