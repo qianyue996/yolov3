@@ -23,8 +23,8 @@ if __name__ == "__main__":
     continue_train = False
     set_seed(seed=27)
     batch_size = 4
-    epochs = 160
-    lr = 0.005
+    epochs = 300
+    lr = 0.01
     l_loc = 1
     l_cls = 1
     l_obj = 1

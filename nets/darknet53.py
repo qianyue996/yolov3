@@ -12,15 +12,11 @@ import torch.nn as nn
 class BasicBlock(nn.Module):
     def __init__(self, inplanes, planes):
         super(BasicBlock, self).__init__()
-        self.conv1 = nn.Conv2d(
-            inplanes, planes[0], kernel_size=1, stride=1, padding=0, bias=False
-        )
+        self.conv1 = nn.Conv2d(inplanes, planes[0], kernel_size=1, stride=1, padding=0, bias=False)
         self.bn1 = nn.BatchNorm2d(planes[0])
         self.relu1 = nn.LeakyReLU(0.1)
 
-        self.conv2 = nn.Conv2d(
-            planes[0], planes[1], kernel_size=3, stride=1, padding=1, bias=False
-        )
+        self.conv2 = nn.Conv2d(planes[0], planes[1], kernel_size=3, stride=1, padding=1, bias=False)
         self.bn2 = nn.BatchNorm2d(planes[1])
         self.relu2 = nn.LeakyReLU(0.1)
 
@@ -44,9 +40,7 @@ class DarkNet(nn.Module):
         super(DarkNet, self).__init__()
         self.inplanes = 32
         # 416,416,3 -> 416,416,32
-        self.conv1 = nn.Conv2d(
-            3, self.inplanes, kernel_size=3, stride=1, padding=1, bias=False
-        )
+        self.conv1 = nn.Conv2d(3, self.inplanes, kernel_size=3, stride=1, padding=1, bias=False)
         self.bn1 = nn.BatchNorm2d(self.inplanes)
         self.relu1 = nn.LeakyReLU(0.1)
 
@@ -79,19 +73,7 @@ class DarkNet(nn.Module):
     def _make_layer(self, planes, blocks):
         layers = []
         # 下采样，步长为2，卷积核大小为3
-        layers.append(
-            (
-                "ds_conv",
-                nn.Conv2d(
-                    self.inplanes,
-                    planes[1],
-                    kernel_size=3,
-                    stride=2,
-                    padding=1,
-                    bias=False,
-                ),
-            )
-        )
+        layers.append(("ds_conv", nn.Conv2d(self.inplanes, planes[1], kernel_size=3, stride=2, padding=1, bias=False)))
         layers.append(("ds_bn", nn.BatchNorm2d(planes[1])))
         layers.append(("ds_relu", nn.LeakyReLU(0.1)))
         # 加入残差结构

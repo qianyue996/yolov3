@@ -1,129 +1,113 @@
+from collections import OrderedDict
+
 import torch
 import torch.nn as nn
 
-from nets.darknet import darknet53
+from nets.darknet53 import darknet53
 
 
-# ----------------------#
-#   核心卷积模块（保持原样，正确无误）
-# ----------------------#
-class ConvBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size, include_activation=True):
-        super(ConvBlock, self).__init__()
-        padding = (kernel_size - 1) // 2
-        self.conv = nn.Conv2d(
-            in_channels,
-            out_channels,
-            kernel_size,
-            padding=padding,
-            bias=False,
-        )
-        self.bn = nn.BatchNorm2d(out_channels)
-        self.activation = nn.LeakyReLU(0.1) if include_activation else None
-
-    def forward(self, x):
-        x = self.conv(x)
-        x = self.bn(x)
-        if self.activation is not None:
-            x = self.activation(x)
-        return x
-
-
-# ----------------------#
-#   修正后的Neck模块（关键修正点）
-# ----------------------#
-class YOLONeck(nn.Module):
-    def __init__(self, backbone_channels):
-        super().__init__()
-
-        # 深层特征处理路径（修正卷积顺序）
-        self.process_1024 = nn.Sequential(
-            ConvBlock(1024, 512, 1),
-            ConvBlock(512, 1024, 3),
-            ConvBlock(1024, 512, 1),
-            ConvBlock(512, 1024, 3),
-            ConvBlock(1024, 512, 1),  # 官方标准结构：1x1->3x3->1x1->3x3->1x1
-        )
-
-        # 上采样与特征融合（保持原样，正确）
-        self.upsample_512 = nn.Sequential(
-            ConvBlock(512, 256, 1, include_activation=False),
-            nn.Upsample(scale_factor=2, mode="nearest"),
-        )
-
-        # 中层次特征处理（修正卷积顺序）
-        self.process_768 = nn.Sequential(
-            ConvBlock(768, 256, 1),
-            ConvBlock(256, 512, 3),
-            ConvBlock(512, 256, 1),
-            ConvBlock(256, 512, 3),
-            ConvBlock(512, 256, 1),  # 官方标准结构
-        )
-
-        self.upsample_256 = nn.Sequential(
-            ConvBlock(256, 128, 1, include_activation=False),
-            nn.Upsample(scale_factor=2, mode="nearest"),
-        )
-
-        # 浅层次特征处理（修正卷积顺序）
-        self.process_384 = nn.Sequential(
-            ConvBlock(384, 128, 1),
-            ConvBlock(128, 256, 3),
-            ConvBlock(256, 128, 1),
-            ConvBlock(128, 256, 3),
-            ConvBlock(256, 128, 1),  # 官方标准结构
-        )
-
-    def forward(self, features):
-        x2, x1, x0 = features  # 输入顺序为浅->深 [256, 512, 1024]
-
-        # 处理深层特征（1024通道）
-        p5 = self.process_1024(x0)
-
-        # 第一次上采样并与512通道特征融合
-        up5 = self.upsample_512(p5)
-        c4 = torch.cat([up5, x1], dim=1)  # 256+512=768
-        p4 = self.process_768(c4)
-
-        # 第二次上采样并与256通道特征融合
-        up4 = self.upsample_256(p4)
-        c3 = torch.cat([up4, x2], dim=1)  # 128+256=384
-        p3 = self.process_384(c3)
-
-        return p3, p4, p5  # 输出顺序：浅->深 [128, 256, 512]
-
-
-# ----------------------#
-#   Head模块（保持原样，正确无误）
-# ----------------------#
-class YOLOHead(nn.Module):
-    def __init__(self, num_classes):
-        super().__init__()
-        self.predictors = nn.ModuleList(
+def conv2d(filter_in, filter_out, kernel_size):
+    pad = (kernel_size - 1) // 2 if kernel_size else 0
+    return nn.Sequential(
+        OrderedDict(
             [
-                nn.Conv2d(128, 3 * (5 + num_classes), 1),  # 对应浅层特征（大尺寸）
-                nn.Conv2d(256, 3 * (5 + num_classes), 1),  # 中层特征
-                nn.Conv2d(512, 3 * (5 + num_classes), 1),  # 深层特征（小尺寸）
+                ("conv", nn.Conv2d(filter_in, filter_out, kernel_size=kernel_size, stride=1, padding=pad, bias=False)),
+                ("bn", nn.BatchNorm2d(filter_out)),
+                ("relu", nn.LeakyReLU(0.1)),
             ]
         )
-
-    def forward(self, p3, p4, p5):
-        return [self.predictors[2](p5), self.predictors[1](p4), self.predictors[0](p3)]
+    )
 
 
-# ----------------------#
-#   完整YOLOv3模型（保持原样，正确无误）
-# ----------------------#
+# ------------------------------------------------------------------------#
+#   make_last_layers里面一共有七个卷积，前五个用于提取特征。
+#   后两个用于获得yolo网络的预测结果
+# ------------------------------------------------------------------------#
+def make_last_layers(filters_list, in_filters, out_filter):
+    m = nn.Sequential(
+        conv2d(in_filters, filters_list[0], 1),
+        conv2d(filters_list[0], filters_list[1], 3),
+        conv2d(filters_list[1], filters_list[0], 1),
+        conv2d(filters_list[0], filters_list[1], 3),
+        conv2d(filters_list[1], filters_list[0], 1),
+        conv2d(filters_list[0], filters_list[1], 3),
+        nn.Conv2d(filters_list[1], out_filter, kernel_size=1, stride=1, padding=0, bias=True),
+    )
+    return m
+
+
 class YOLOv3(nn.Module):
-    def __init__(self, num_classes, pretrained=False):
-        super().__init__()
+    def __init__(self, num_classes, anchors_mask=[[6, 7, 8], [3, 4, 5], [0, 1, 2]], pretrained=False):
+        super(YOLOv3, self).__init__()
+        # ---------------------------------------------------#
+        #   生成darknet53的主干模型
+        #   获得三个有效特征层，他们的shape分别是：
+        #   52,52,256
+        #   26,26,512
+        #   13,13,1024
+        # ---------------------------------------------------#
         self.backbone = darknet53()
         if pretrained:
-            self.backbone.load_state_dict(torch.load("model_data/darknet53_weights.pth"))
-        self.neck = YOLONeck(self.backbone.layers_out_filters)
-        self.head = YOLOHead(num_classes)
+            self.backbone.load_state_dict(torch.load("model_data/darknet53_backbone_weights.pth"))
+
+        # ---------------------------------------------------#
+        #   out_filters : [64, 128, 256, 512, 1024]
+        # ---------------------------------------------------#
+        out_filters = self.backbone.layers_out_filters
+
+        # ------------------------------------------------------------------------#
+        #   计算yolo_head的输出通道数，对于voc数据集而言
+        #   final_out_filter0 = final_out_filter1 = final_out_filter2 = 75
+        # ------------------------------------------------------------------------#
+        self.last_layer0 = make_last_layers([512, 1024], out_filters[-1], len(anchors_mask[0]) * (num_classes + 5))
+
+        self.last_layer1_conv = conv2d(512, 256, 1)
+        self.last_layer1_upsample = nn.Upsample(scale_factor=2, mode='nearest')
+        self.last_layer1 = make_last_layers([256, 512], out_filters[-2] + 256, len(anchors_mask[1]) * (num_classes + 5))
+
+        self.last_layer2_conv = conv2d(256, 128, 1)
+        self.last_layer2_upsample = nn.Upsample(scale_factor=2, mode='nearest')
+        self.last_layer2 = make_last_layers([128, 256], out_filters[-3] + 128, len(anchors_mask[2]) * (num_classes + 5))
 
     def forward(self, x):
-        features = self.backbone(x)
-        neck_features = self.neck(features)
-        return self.head(*neck_features)
+        # ---------------------------------------------------#
+        #   获得三个有效特征层，他们的shape分别是：
+        #   52,52,256；26,26,512；13,13,1024
+        # ---------------------------------------------------#
+        x2, x1, x0 = self.backbone(x)
+
+        # ---------------------------------------------------#
+        #   第一个特征层
+        #   out0 = (batch_size,255,13,13)
+        # ---------------------------------------------------#
+        # 13,13,1024 -> 13,13,512 -> 13,13,1024 -> 13,13,512 -> 13,13,1024 -> 13,13,512
+        out0_branch = self.last_layer0[:5](x0)
+        out0 = self.last_layer0[5:](out0_branch)
+
+        # 13,13,512 -> 13,13,256 -> 26,26,256
+        x1_in = self.last_layer1_conv(out0_branch)
+        x1_in = self.last_layer1_upsample(x1_in)
+
+        # 26,26,256 + 26,26,512 -> 26,26,768
+        x1_in = torch.cat([x1_in, x1], 1)
+        # ---------------------------------------------------#
+        #   第二个特征层
+        #   out1 = (batch_size,255,26,26)
+        # ---------------------------------------------------#
+        # 26,26,768 -> 26,26,256 -> 26,26,512 -> 26,26,256 -> 26,26,512 -> 26,26,256
+        out1_branch = self.last_layer1[:5](x1_in)
+        out1 = self.last_layer1[5:](out1_branch)
+
+        # 26,26,256 -> 26,26,128 -> 52,52,128
+        x2_in = self.last_layer2_conv(out1_branch)
+        x2_in = self.last_layer2_upsample(x2_in)
+
+        # 52,52,128 + 52,52,256 -> 52,52,384
+        x2_in = torch.cat([x2_in, x2], 1)
+        # ---------------------------------------------------#
+        #   第一个特征层
+        #   out3 = (batch_size,255,52,52)
+        # ---------------------------------------------------#
+        # 52,52,384 -> 52,52,128 -> 52,52,256 -> 52,52,128 -> 52,52,256 -> 52,52,128
+        out2 = self.last_layer2(x2_in)
+        return out0, out1, out2

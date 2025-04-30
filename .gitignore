@@ -20,3 +20,5 @@ output.jpg
 config/anchors.txt
 tiny_weight.pth
 normal_weight.pth
+voc_val.txt
+hyperGUI.py
