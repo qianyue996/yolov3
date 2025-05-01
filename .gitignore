@@ -1,7 +1,6 @@
 .git
 .vscode
 __pycache__
-models
 runs
 data
 .venv
@@ -9,6 +8,8 @@ data
 flagged
 .ruff_cache
 
+*darknet53_backbone_weights.pth
+*yolo_weights.pth
 checkpoint.pth
 tiny_checkpoint.pth
 yolov3.ipynb
