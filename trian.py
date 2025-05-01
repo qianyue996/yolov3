@@ -1,12 +1,25 @@
 import os
 import sys
 import time
+from pathlib import Path
+import platform
 
 import torch
 import tqdm
+import yaml
 from torch import optim
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.tensorboard import SummaryWriter
+
+FILE = Path(__file__).resolve()
+ROOT = FILE.parents[1]  # YOLOv3 root directory
+if str(ROOT) not in sys.path:
+    sys.path.append(str(ROOT))  # add ROOT to PATH
+if platform.system() != "Windows":
+    ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
+
+from models.yolo import Model
+from utils.general import check_yaml
 
 from nets.yolo_loss import YOLOv3LOSS
 from nets.yolov3 import YOLOv3
@@ -18,6 +31,10 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 
 if __name__ == "__main__":
+    cfg = check_yaml("yolov3-tiny.yaml")
+    with open(cfg, encoding="ascii", errors="ignore") as f:
+        config = yaml.safe_load(f)
+
     train_type = "tiny"  # or yolov3
     dataset_type = "voc"
     continue_train = False
@@ -30,28 +47,16 @@ if __name__ == "__main__":
     l_obj = 1
     l_noo = 1
     train_dataset = YOLODataset(dataset_type=dataset_type)
-    if dataset_type == "voc":
-        num_classes = 20
-    elif dataset_type == "coco":
-        num_classes = 80
-    else:
-        raise ValueError("dataset_type must be voc or coco")
-
     dataloader = DataLoader(
         dataset=train_dataset,
         batch_size=batch_size,
         shuffle=True,
         drop_last=True,
-        num_workers=2,
+        num_workers=0,
         worker_init_fn=worker_init_fn,
         collate_fn=yolo_collate_fn,
     )
-    if train_type == "tiny":
-        model = YOLOv3Tiny(num_classes=num_classes).to(device)
-    elif train_type == "yolov3":
-        model = YOLOv3(num_classes=num_classes, pretrained=False).to(device)
-    else:
-        raise ValueError("train_type must be tiny or yolov3")
+    model = Model(cfg).to(device)
     optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=1e-4)
     lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.94)
     loss_fn = YOLOv3LOSS(
@@ -60,7 +65,7 @@ if __name__ == "__main__":
         l_cls=l_cls,
         l_obj=l_obj,
         l_noo=l_noo,
-        num_classes=num_classes,
+        num_classes=config['nc'],
     )
     writer_path = "runs"
     writer = SummaryWriter(f"{writer_path}/{time.strftime('%Y-%m-%d-%H-%M-%S', time.localtime())}")

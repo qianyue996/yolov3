@@ -6,5 +6,8 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = []
 
-[tool.ruff.format]
-quote-style = "preserve"
+[tool.black]
+line-length = 120  # 根据需要设置行长度
+skip-string-normalization = true  # 防止单引号转换为双引号
+
+[tool.ruff]

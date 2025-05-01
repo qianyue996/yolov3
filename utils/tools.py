@@ -2,6 +2,7 @@ import random
 import torchvision.ops as ops
 import numpy as np
 import torch
+import yaml
 
 
 def set_seed(seed=27):
@@ -18,6 +19,11 @@ def worker_init_fn(worker_id):
     seed = 27 + worker_id
     np.random.seed(seed)
     random.seed(seed)
+
+
+def load_yaml(path):
+    with open(path, 'r', encoding='utf-8') as f:
+        return yaml.safe_load(f)
 
 
 def nms(boxes, scores, iou_threshold=0.45):

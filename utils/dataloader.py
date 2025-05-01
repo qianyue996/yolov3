@@ -24,6 +24,8 @@ class YOLODataset(Dataset):
 
     def __getitem__(self, index):
         image = cv.imread(self.datas[index].strip("\n").split(" ")[0])
+        if image is None:  # 忽略无标签的图片
+            raise ValueError("没有读取到图片")
         labels = np.array([list(map(float, item.split(","))) for item in self.datas[index].strip("\n").split(" ")[1:]])
 
         return image, labels
