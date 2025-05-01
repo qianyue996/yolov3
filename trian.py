@@ -22,8 +22,6 @@ from models.yolo import Model
 from utils.general import check_yaml
 
 from nets.yolo_loss import YOLOv3LOSS
-from nets.yolov3 import YOLOv3
-from nets.yolov3_tiny import YOLOv3Tiny
 from utils.dataloader import YOLODataset, yolo_collate_fn
 from utils.tools import set_seed, worker_init_fn
 
@@ -88,7 +86,7 @@ if __name__ == "__main__":
                 batch_y = [i.to(device) for i in batch_y]
                 optimizer.zero_grad()
                 batch_output = model(batch_x)
-                loss_params = loss_fn(predict=batch_output, targets=batch_y)
+                loss_params = loss_fn(model, predict=batch_output, targets=batch_y)
                 loss = loss_params["loss"]
                 loss.backward()
                 optimizer.step()

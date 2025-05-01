@@ -12,7 +12,6 @@ class YOLOv3LOSS:
     def __init__(self, device, l_loc, l_cls, l_obj, l_noo, num_classes=None):
         self.device = device
         self.num_classes = num_classes
-        self.stride = modelConfig['yolov3']['stride']
         self.anchors = modelConfig['yolov3']['anchor']
         self.anchors_mask = modelConfig['yolov3']['anchor_mask']
 
@@ -23,7 +22,7 @@ class YOLOv3LOSS:
         self.lambda_obj = l_obj
         self.lambda_noo = l_noo
 
-    def __call__(self, predict, targets):
+    def __call__(self, model, predict, targets):
         num_feature = len(predict)
         all_loss_loc = torch.zeros(1).to(self.device)
         all_loss_cls = all_loss_loc.clone()
@@ -47,21 +46,21 @@ class YOLOv3LOSS:
             #   获取每个网格的步长
             #   13,26,52 ==> 32,16,8
             # ===========================================#
-            stride = self.stride[i]
+            stride = model.model[-1].stride[i]
             # ===========================================#
             #   加载anchors锚框
             # ===========================================#
-            anchors = torch.tensor(self.anchors, dtype=torch.float32).to(self.device)
+            anchors = model.model[-1].anchors[i]
             # ===========================================#
             #   重构网络预测结果
             #   shape: (B, 3, S, S, 5+80) coco
             # ===========================================#
-            prediction = predict[i].view(B, 3, 5 + self.num_classes, S, S).permute(0, 1, 3, 4, 2)
+            prediction = predict[i]
             # ===========================================#
             #   构建网络应有的预测结果y_true
             #   shape: (B, 3, S, S, 5+80)
             # ===========================================#
-            y_true = self.build_target(i, B, S, prediction, targets, anchors)
+            y_true = self.build_target(i, B, S, prediction, targets, anchors, stride)
 
             x = torch.sigmoid(prediction[..., 0])
 
@@ -86,7 +85,7 @@ class YOLOv3LOSS:
                 _cls = torch.sigmoid(prediction[..., 5:])[obj_mask]
                 t_cls = y_true[..., 5:][obj_mask]
 
-                giou = self.compute_giou(i, x, y, w, h, obj_mask, anchors, stride, y_true)
+                giou = self.compute_giou(i, x, y, w, h, obj_mask, anchors, stride, y_true, S)
                 # ===========================================#
                 #   位置损失 GIoU损失
                 # ===========================================#
@@ -141,7 +140,7 @@ class YOLOv3LOSS:
             "lambda_obj": self.lambda_obj,
         }
 
-    def build_target(self, i, B, S, prediction, targets, anchors):
+    def build_target(self, i, B, S, prediction, targets, anchors, stride):
         y_true = torch.zeros_like(prediction).to(self.device)
 
         for bs in range(B):
@@ -149,26 +148,22 @@ class YOLOv3LOSS:
                 continue
 
             batch_target = torch.zeros_like(targets[bs])
-            batch_target[:, 0:2] = targets[bs][:, 0:2] * S
-            batch_target[:, 2:4] = targets[bs][:, 2:4] * imgSize
+            batch_target[:, 0:4] = targets[bs][:, 0:4] * S
             batch_target[:, 4] = targets[bs][:, 4]
 
             gt_box = batch_target[:, 2:4]
             best_iou, best_na = torch.max(self.compute_iou(gt_box, anchors), dim=1)
 
             for index, n_a in enumerate(best_na.tolist()):
-                if n_a not in self.anchors_mask[i]:
-                    continue
-
-                k = self.anchors_mask[i].index(n_a)
+                k = n_a
                 x = torch.clamp(batch_target[index, 0].long(), 0, S - 1)
                 y = torch.clamp(batch_target[index, 1].long(), 0, S - 1)
                 c = batch_target[index, 4].long()
 
                 y_true[bs, k, x, y, 0] = batch_target[index, 0] - x.float()
                 y_true[bs, k, x, y, 1] = batch_target[index, 1] - y.float()
-                y_true[bs, k, x, y, 2] = torch.log(batch_target[index, 2] / anchors[n_a][0])
-                y_true[bs, k, x, y, 3] = torch.log(batch_target[index, 3] / anchors[n_a][1])
+                y_true[bs, k, x, y, 2] = torch.log(batch_target[index, 2] / anchors[k][0])
+                y_true[bs, k, x, y, 3] = torch.log(batch_target[index, 3] / anchors[k][1])
                 y_true[bs, k, x, y, 4] = 1
                 y_true[bs, k, x, y, 5 + c] = 1
 
@@ -187,20 +182,20 @@ class YOLOv3LOSS:
 
         return area / union
 
-    def compute_giou(self, i, x, y, w, h, obj_mask, anchors, stride, y_true):
+    def compute_giou(self, i, x, y, w, h, obj_mask, anchors, stride, y_true, S):
         best_a = obj_mask.nonzero()[:, 1]
-        grid_x = obj_mask.nonzero()[:, 2]
-        grid_y = obj_mask.nonzero()[:, 3]
+        # grid_x = obj_mask.nonzero()[:, 2]
+        # grid_y = obj_mask.nonzero()[:, 3]
 
-        x = (x[obj_mask] + grid_x) * stride
-        y = (y[obj_mask] + grid_y) * stride
-        w = torch.exp(w[obj_mask]) * anchors[self.anchors_mask[i]][best_a][:, 0]
-        h = torch.exp(h[obj_mask]) * anchors[self.anchors_mask[i]][best_a][:, 1]
+        x = x[obj_mask] * S
+        y = y[obj_mask] * S
+        w = torch.exp(w[obj_mask]) * anchors[best_a][:, 0]
+        h = torch.exp(h[obj_mask]) * anchors[best_a][:, 1]
 
-        t_x = (y_true[obj_mask][:, 0] + grid_x) * stride
-        t_y = (y_true[obj_mask][:, 1] + grid_y) * stride
-        t_w = torch.exp(y_true[obj_mask][:, 2]) * anchors[self.anchors_mask[i]][best_a][:, 0]
-        t_h = torch.exp(y_true[obj_mask][:, 3]) * anchors[self.anchors_mask[i]][best_a][:, 1]
+        t_x = y_true[obj_mask][:, 0] * S
+        t_y = y_true[obj_mask][:, 1] * S
+        t_w = torch.exp(y_true[obj_mask][:, 2]) * anchors[best_a][:, 0]
+        t_h = torch.exp(y_true[obj_mask][:, 3]) * anchors[best_a][:, 1]
 
         # xywh -> xyxy
         x1 = torch.clamp(x - w / 2, min=1e-6, max=imgSize)

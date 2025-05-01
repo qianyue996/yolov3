@@ -6,9 +6,7 @@ import numpy as np
 import torch
 
 from utils.boxTool import draw_box
-
-# from nets.yolov3 import YOLOv3
-from nets.yolov3_tiny import YOLOv3Tiny
+from models.yolo import Model
 from utils.tools import multi_class_nms
 
 with open("config/datasetParameter.json", "r", encoding="utf-8") as f:
@@ -16,6 +14,14 @@ with open("config/datasetParameter.json", "r", encoding="utf-8") as f:
 
 with open("config/model.json", "r", encoding="utf-8") as f:
     modelConfig = json.load(f)
+
+model = Model('models/yolov3-tiny.yaml')
+model.eval()
+detect = model.model[-1]
+
+with torch.no_grad():
+    im = torch.randn(1, 3, 416, 416)
+    output = model(im)[0]
 
 nun_classes = datasetConfig["voc"]["num_class"]
 class_name = datasetConfig["voc"]["class_name"]
