@@ -148,9 +148,25 @@ class YOLOv3LOSS:
             batch_target[:, 4] = targets[bs][:, 4]
 
             gt_box = batch_target[:, 2:4]
-            best_iou, best_na = torch.max(self.compute_iou(gt_box, anchors), dim=1)
-
+            iou_matrix = self.compute_iou(gt_box, anchors)
+            best_iou, best_na = torch.max(iou_matrix, dim=1)
+            
+            # 增加正样本数量：每个gt box匹配iou>0.5的anchor
             for index, n_a in enumerate(best_na.tolist()):
+                additional_anchors = (iou_matrix[index] > 0.5).nonzero().squeeze(1)
+                for a in additional_anchors.tolist():
+                    if a != n_a:
+                        k = a
+                        x = torch.clamp(batch_target[index, 0].long(), 0, S - 1)
+                        y = torch.clamp(batch_target[index, 1].long(), 0, S - 1)
+                        c = batch_target[index, 4].long()
+
+                        y_true[bs, k, x, y, 0] = batch_target[index, 0] - x.float()
+                        y_true[bs, k, x, y, 1] = batch_target[index, 1] - y.float()
+                        y_true[bs, k, x, y, 2] = torch.log(batch_target[index, 2] / anchors[k][0])
+                        y_true[bs, k, x, y, 3] = torch.log(batch_target[index, 3] / anchors[k][1])
+                        y_true[bs, k, x, y, 4] = 1
+                        y_true[bs, k, x, y, 5 + c] = 1
                 k = n_a
                 x = torch.clamp(batch_target[index, 0].long(), 0, S - 1)
                 y = torch.clamp(batch_target[index, 1].long(), 0, S - 1)
@@ -224,9 +240,9 @@ class YOLOv3LOSS:
         yc2 = torch.max(y2, t_y2)
         area_c = (xc2 - xc1) * (yc2 - yc1)
 
-        giou = iou - (area_c - union) / area_c.clamp(min=1e-6)
+        giou = iou - (area_c - union) / (area_c.clamp(min=1e-6) + 1e-16)
 
-        return giou
+        return giou.clamp(min=-1.0, max=1.0)
 
     def ignore_target(self, obj_mask):
         # ===========================================#
