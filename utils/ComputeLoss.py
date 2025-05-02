@@ -1,11 +1,5 @@
 import torch
 import torch.nn as nn
-import json
-
-
-with open('config/model.json', 'r', encoding="utf-8") as f:
-    modelConfig = json.load(f)
-imgSize = modelConfig['yolov3']['imgSize']
 
 
 class YOLOv3LOSS:
@@ -57,7 +51,7 @@ class YOLOv3LOSS:
             #   构建网络应有的预测结果y_true
             #   shape: (B, 3, S, S, 5+80)
             # ===========================================#
-            y_true = self.build_target(i, B, S, prediction, targets, anchors, stride)
+            y_true = self.build_target(B, S, prediction, targets, anchors)
 
             x = prediction[..., 0]
 
@@ -79,7 +73,7 @@ class YOLOv3LOSS:
                 _cls = torch.sigmoid(prediction[..., 5:])[obj_mask]
                 t_cls = y_true[..., 5:][obj_mask]
 
-                giou = self.compute_giou(i, x, y, w, h, obj_mask, anchors, stride, y_true, S)
+                giou = self.compute_giou(x, y, w, h, obj_mask, anchors, y_true, S)
                 # ===========================================#
                 #   位置损失 GIoU损失
                 # ===========================================#
@@ -145,7 +139,7 @@ class YOLOv3LOSS:
         y_true[bs, k, x, y, 5 + c] = 1
         return y_true
 
-    def build_target(self, i, B, S, prediction, targets, anchors, stride):
+    def build_target(self, B, S, prediction, targets, anchors):
         y_true = torch.zeros_like(prediction).to(self.device)
 
         for bs in range(B):
@@ -161,18 +155,18 @@ class YOLOv3LOSS:
             gt_box = batch_target[:, 2:4]
             iou_matrix = self.compute_iou(gt_box, anchors)
             best_iou, best_na = torch.max(iou_matrix, dim=1)
-            
+
             # 处理每个目标框
             for index, n_a in enumerate(best_na.tolist()):
                 # 获取坐标和类别
                 x = torch.clamp(batch_target[index, 0].long(), 0, S - 1)
                 y = torch.clamp(batch_target[index, 1].long(), 0, S - 1)
                 c = batch_target[index, 4].long()
-                
+
                 # 处理最佳匹配的anchor
                 k = n_a
                 y_true = self._fill_target(y_true, bs, k, x, y, batch_target, anchors, c, index)
-                
+
                 # 处理其他匹配的anchor
                 additional_anchors = (iou_matrix[index] > 0.5).nonzero().squeeze(1)
                 for a in additional_anchors.tolist():
@@ -195,7 +189,7 @@ class YOLOv3LOSS:
 
         return area / union
 
-    def compute_giou(self, i, x, y, w, h, obj_mask, anchors, stride, y_true, S):
+    def compute_giou(self, x, y, w, h, obj_mask, anchors, y_true, S):
         best_a = obj_mask.nonzero()[:, 1]
         # grid_x = obj_mask.nonzero()[:, 2]
         # grid_y = obj_mask.nonzero()[:, 3]

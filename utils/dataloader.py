@@ -40,23 +40,6 @@ def randomAug(image, label):
     nLabel = label.copy()
     h, w = nImage.shape[:2]
 
-    # 随机颜色增强
-    if rand() > 0.5:
-        # 随机亮度（加减一个值）
-        delta = np.random.uniform(-32, 32)
-        nImage = np.clip(nImage.astype(np.float32) + delta, 0, 255).astype(np.uint8)
-    if rand() > 0.5:
-        # 随机对比度
-        alpha = np.random.uniform(0.5, 1.5)
-        mean = np.mean(nImage, axis=(0, 1), keepdims=True)
-        nImage = np.clip((nImage - mean) * alpha + mean, 0, 255).astype(np.uint8)
-    if np.random.rand() > 0.5:
-        # 随机饱和度（转HSV改S通道）
-        hsv = cv.cvtColor(nImage, cv.COLOR_BGR2HSV).astype(np.float32)
-        hsv[..., 1] *= np.random.uniform(0.5, 1.5)
-        hsv[..., 1] = np.clip(hsv[..., 1], 0, 255)
-        nImage = cv.cvtColor(hsv.astype(np.uint8), cv.COLOR_HSV2BGR)
-
     # 随机翻转
     if rand() > 0.5:
         flip_type = np.random.choice([0, 1, -1])
@@ -123,6 +106,23 @@ def randomAug(image, label):
 
             nLabel[i, :4] = new_x1, new_y1, new_x2, new_y2
 
+    # 随机颜色增强
+    if rand() > 0.5:
+        # 随机亮度（加减一个值）
+        delta = np.random.uniform(-32, 32)
+        nImage = np.clip(nImage.astype(np.float32) + delta, 0, 255).astype(np.uint8)
+    if rand() > 0.5:
+        # 随机对比度
+        alpha = np.random.uniform(0.5, 1.5)
+        mean = np.mean(nImage, axis=(0, 1), keepdims=True)
+        nImage = np.clip((nImage - mean) * alpha + mean, 0, 255).astype(np.uint8)
+    if rand() > 0.5:
+        # 随机饱和度（转HSV改S通道）
+        hsv = cv.cvtColor(nImage, cv.COLOR_BGR2HSV).astype(np.float32)
+        hsv[..., 1] *= np.random.uniform(0.5, 1.5)
+        hsv[..., 1] = np.clip(hsv[..., 1], 0, 255)
+        nImage = cv.cvtColor(hsv.astype(np.uint8), cv.COLOR_HSV2BGR)
+
     return nImage, nLabel
 
 
@@ -179,8 +179,8 @@ def ToTensor(images, labels):
 
 
 def chakan(images, labels):
-    cv.namedWindow("show", cv.WINDOW_NORMAL)
     for index, image in enumerate(images):
+        cv.namedWindow("show", cv.WINDOW_NORMAL)
         image = cv.cvtColor(image, cv.COLOR_RGB2BGR)
         for i, label in enumerate(labels[index]):
             x1, y1, x2, y2, _id = [int(i) for i in label]
@@ -228,7 +228,7 @@ def yolo_collate_fn(batch):
     images = np.array(images)
     labels = list(labels)
     #
-    # chakan(images, labels)
+    chakan(images, labels)
     labels = xyxy2xywh(labels)
     images, labels = normalizeData(images, labels)
     images, labels = ToTensor(images, labels)

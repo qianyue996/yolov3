@@ -25,7 +25,6 @@ from utils.torch_utils import (
 )
 
 
-
 class Detect(nn.Module):
     """YOLOv3 Detect head for processing detection model outputs, including grid and anchor grid generation."""
 
@@ -83,6 +82,7 @@ class Detect(nn.Module):
         anchor_grid = (self.anchors[i] * self.stride[i]).view((1, self.na, 1, 1, 2)).expand(shape)
         return grid, anchor_grid
 
+
 class BaseModel(nn.Module):
     """Implements the base YOLOv3 model architecture for object detection tasks."""
 
@@ -114,6 +114,7 @@ class BaseModel(nn.Module):
             if isinstance(m.anchor_grid, list):
                 m.anchor_grid = list(map(fn, m.anchor_grid))
         return self
+
 
 class DetectionModel(BaseModel):
     """YOLOv3 detection model class for initializing and processing detection models with configurable parameters."""
@@ -222,6 +223,7 @@ class DetectionModel(BaseModel):
 
 Model = DetectionModel  # retain YOLOv3 'Model' class for backwards compatibility
 
+
 def parse_model(d, ch):  # model_dict, input_channels(3)
     anchors, nc, gd, gw, act = d["anchors"], d["nc"], d["depth_multiple"], d["width_multiple"], d.get("activation")
     if act:
@@ -286,5 +288,5 @@ if __name__ == "__main__":
     # Create model
     im = torch.rand(opt.batch_size, 3, 640, 640).to(device)
     model = Model(opt.cfg).to(device)
-    
+
     io = model(im)
