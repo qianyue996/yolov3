@@ -12,8 +12,6 @@ def autopad(k, p=None):  # kernel, padding, dilation
 class Conv(nn.Module):
     """A standard Conv2D layer with batch normalization and optional activation for neural networks."""
 
-    default_act = nn.LeakyReLU(0.1)  # default activation
-
     def __init__(self, c1, c2, k=1, s=1, p=None):
         """Initializes a standard Conv2D layer with batch normalization and optional activation; args are channel_in,
         channel_out, kernel_size, stride, padding, groups, dilation, and activation.
@@ -21,7 +19,7 @@ class Conv(nn.Module):
         super().__init__()
         self.conv = nn.Conv2d(c1, c2, k, s, autopad(k, p), bias=False)
         self.bn = nn.BatchNorm2d(c2)
-        self.act = self.default_act
+        self.act = nn.LeakyReLU(0.1)
 
     def forward(self, x):
         """Applies convolution, batch normalization, and activation to input `x`; `x` shape: [N, C_in, H, W] -> [N,

@@ -127,7 +127,7 @@ def randomAug(image, label):
 
 
 def normalizeData(images, labels):
-    images = (images.astype(np.float32) / 255.0).transpose(0, 3, 1, 2)
+    images = (images / 255.0).transpose(0, 3, 1, 2)
     for i, label in enumerate(labels):
         labels[i][:, :4] = label[:, :4] / imgSize
     return images, labels
@@ -228,7 +228,7 @@ def yolo_collate_fn(batch):
     images = np.array(images)
     labels = list(labels)
     #
-    # chakan(images, labels)
+    chakan(images, labels)
     labels = xyxy2xywh(labels)
     images, labels = normalizeData(images, labels)
     images, labels = ToTensor(images, labels)
