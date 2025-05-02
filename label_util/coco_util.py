@@ -36,8 +36,8 @@ if __name__ == '__main__':
             for info in box_infos:
                 x_min = int(info[0][0])
                 y_min = int(info[0][1])
-                x_max = x_min + int(info[0][2])
-                y_max = y_min + int(info[0][3])
+                x_max = int(info[0][2])
+                y_max = int(info[0][3])
                 box_info = f" {x_min},{y_min},{x_max},{y_max},{int(info[1])}"
                 f.write(box_info)
             f.write("\n")
@@ -60,8 +60,8 @@ if __name__ == '__main__':
             for info in box_infos:
                 x_min = int(info[0][0])
                 y_min = int(info[0][1])
-                x_max = x_min + int(info[0][2])
-                y_max = y_min + int(info[0][3])
+                x_max = int(info[0][2])
+                y_max = int(info[0][3])
                 box_info = f" {x_min},{y_min},{x_max},{y_max},{int(info[1])}"
                 f.write(box_info)
             f.write("\n")

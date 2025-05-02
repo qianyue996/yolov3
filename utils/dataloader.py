@@ -199,11 +199,11 @@ def chakan(images, labels):
         cv.destroyAllWindows()
 
 
-def single_chakan(image, label):
+def single_chakan(image, labels):
     # 测试图像变换时使用
     cv.namedWindow("show", cv.WINDOW_NORMAL)
     image = cv.cvtColor(image, cv.COLOR_RGB2BGR)
-    for i, label in enumerate(label):
+    for i, label in enumerate(labels):
         x1, y1, x2, y2, _id = [int(i) for i in label]
         cv.rectangle(image, (x1, y1), (x2, y2), (0, 0, 255), thickness=1)
         cv.putText(
@@ -237,6 +237,6 @@ def yolo_collate_fn(batch):
 
 if __name__ == "__main__":
     dataset = YOLODataset(dataset_type='voc')
-    dataloader = DataLoader(dataset, batch_size=64, shuffle=True, collate_fn=yolo_collate_fn)
+    dataloader = DataLoader(dataset, batch_size=32, shuffle=True, collate_fn=yolo_collate_fn)
     for i, (images, bboxes) in enumerate(dataloader):
         print(images.shape, bboxes[0].shape)

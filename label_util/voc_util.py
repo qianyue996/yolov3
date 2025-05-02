@@ -12,8 +12,8 @@ with open("config/datasetParameter.json", "r", encoding="utf-8") as f:
 # 划分训练集和验证集
 split_ratio = 0.8
 
-annotation_path_2007 = r"/mnt/nfs/ai_models/my_voc/VOCdevkit/VOC2007/Annotations"
-annotation_path_2012 = r"/mnt/nfs/ai_models/my_voc/VOCdevkit/VOC2012/Annotations"
+annotation_path_2007 = r"D:\Python\datasets\voc07+12\VOCdevkit\VOC2007\Annotations"
+annotation_path_2012 = r"D:\Python\datasets\voc07+12\VOCdevkit\VOC2012\Annotations"
 
 output_train_path = 'voc_train.txt'
 output_val_path = 'voc_val.txt'
@@ -21,10 +21,10 @@ output_val_path = 'voc_val.txt'
 if __name__ == "__main__":
     name_box_id = defaultdict(list)
 
-    for annotation_path in [annotation_path_2007, annotation_path_2012]:
-        for i, name in enumerate(tqdm.tqdm(os.listdir(annotation_path))):
-            xml_path = os.path.join(annotation_path, name)
-            img_path = os.path.join(annotation_path.replace('Annotations', 'JPEGImages'), name.split(".")[0] + ".jpg")
+    for annotation_path in [annotation_path_2012]:
+        for i, _id in enumerate(tqdm.tqdm(os.listdir(annotation_path))):
+            xml_path = os.path.join(annotation_path, _id)
+            img_path = os.path.join(annotation_path.replace('Annotations', 'JPEGImages'), _id.split(".")[0] + ".jpg")
             tree = ET.parse(xml_path)
             root = tree.getroot()
             for _object in root.findall("object"):
@@ -51,8 +51,8 @@ if __name__ == "__main__":
             for info in box_infos:
                 x_min = int(info[0][0])
                 y_min = int(info[0][1])
-                x_max = x_min + int(info[0][2])
-                y_max = y_min + int(info[0][3])
+                x_max = int(info[0][2])
+                y_max = int(info[0][3])
                 box_info = f" {x_min},{y_min},{x_max},{y_max},{int(info[1])}"
                 f.write(box_info)
             f.write("\n")
@@ -64,8 +64,8 @@ if __name__ == "__main__":
             for info in box_infos:
                 x_min = int(info[0][0])
                 y_min = int(info[0][1])
-                x_max = x_min + int(info[0][2])
-                y_max = y_min + int(info[0][3])
+                x_max = int(info[0][2])
+                y_max = int(info[0][3])
                 box_info = f" {x_min},{y_min},{x_max},{y_max},{int(info[1])}"
                 f.write(box_info)
             f.write("\n")
