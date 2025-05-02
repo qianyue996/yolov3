@@ -6,14 +6,14 @@ class YOLOv3LOSS:
     def __init__(self, device, l_loc, l_cls, l_obj, l_noo):
         self.device = device
 
-        self.lambda_obj_layers = [1.0, 1.0, 1.0]
+        self.lambda_obj_layers = [4.0, 1.0, 0.4]
 
         self.lambda_loc = l_loc
         self.lambda_cls = l_cls
         self.lambda_obj = l_obj
         self.lambda_noo = l_noo
 
-    def __call__(self, model, predict, targets, compute_giou=True):
+    def __call__(self, model, predict, targets):
         nl = len(predict)
         all_loss_loc = torch.zeros(1).to(self.device)
         all_loss_cls = all_loss_loc.clone()
@@ -52,18 +52,20 @@ class YOLOv3LOSS:
             #   shape: (B, 3, S, S, 5+80)
             # ===========================================#
             y_true = self.build_target(B, S, prediction, targets, anchors)
-
-            x = prediction[..., 0].sigmoid()
-
-            y = prediction[..., 1].sigmoid()
-
-            w = torch.exp(prediction[..., 2])
-
-            h = torch.exp(prediction[..., 3])
             # ===========================================#
             #   正样本mask
             # ===========================================#
             obj_mask = y_true[..., 4] == 1
+
+            x = prediction[obj_mask][:, 0].sigmoid() * S
+
+            y = prediction[obj_mask][:, 1].sigmoid() * S
+
+            best_a = obj_mask.nonzero()[:, 1]
+
+            w = torch.exp(prediction[obj_mask][:, 2]) * anchors[best_a][:, 0] / stride
+
+            h = torch.exp(prediction[obj_mask][:, 3]) * anchors[best_a][:, 1] / stride
             # ===========================================#
             #   负样本mask
             # ===========================================#
@@ -75,16 +77,9 @@ class YOLOv3LOSS:
                 # ===========================================#
                 #   位置损失 GIoU损失
                 # ===========================================#
-                if compute_giou:
-                    giou = self.compute_giou(x, y, w, h, obj_mask, anchors, y_true, S)
-                    loss_loc = (1 - giou).mean()
-                else:
-                    loss_x = (((x[obj_mask] - y_true[obj_mask][..., 0]) * S) ** 2).sum()
-                    loss_y = (((y[obj_mask] - y_true[obj_mask][..., 1]) * S) ** 2).sum()
-                    best_a = obj_mask.nonzero()[:, 1]
-                    loss_w = (((w[obj_mask] - y_true[obj_mask][:, 2]) * anchors[best_a][:, 0]) ** 2).sum()
-                    loss_h = (((h[obj_mask] - y_true[obj_mask][:, 3]) * anchors[best_a][:, 1]) ** 2).sum()
-                    loss_loc = loss_x + loss_y + loss_w + loss_h
+                giou = self.compute_giou(x, y, w, h, obj_mask, anchors, y_true, S)
+                loss_loc = (1 - giou).mean()
+                # self.compute_mseloss(x, y, w, h, y_true, obj_mask, S, anchors, stride)
                 all_loss_loc += loss_loc
                 # ===========================================#
                 #   分类损失
@@ -197,17 +192,13 @@ class YOLOv3LOSS:
         return area / union
 
     def compute_giou(self, x, y, w, h, obj_mask, anchors, y_true, S):
-        best_a = obj_mask.nonzero()[:, 1]
-
-        x = x[obj_mask] * S
-        y = y[obj_mask] * S
-        w = w[obj_mask] * anchors[best_a][:, 0]
-        h = h[obj_mask] * anchors[best_a][:, 1]
+        b, a, gj, gi = obj_mask.nonzero(as_tuple=True)
+        anchor = anchors[a]
 
         t_x = torch.sigmoid(y_true[obj_mask])[:, 0] * S
         t_y = torch.sigmoid(y_true[obj_mask])[:, 1] * S
-        t_w = torch.exp(y_true[obj_mask][:, 2]) * anchors[best_a][:, 0]
-        t_h = torch.exp(y_true[obj_mask][:, 3]) * anchors[best_a][:, 1]
+        t_w = torch.exp(y_true[obj_mask][:, 2]) * anchor[:, 0]
+        t_h = torch.exp(y_true[obj_mask][:, 3]) * anchor[:, 1]
 
         # xywh -> xyxy
         x1 = torch.clamp(x - w / 2, min=1e-6, max=S)
@@ -242,7 +233,7 @@ class YOLOv3LOSS:
 
         giou = iou - (area_c - union) / (area_c.clamp(min=1e-6) + 1e-16)
 
-        return giou.clamp(min=-1.0, max=1.0)
+        return giou
 
     def ignore_target(self, obj_mask):
         # ===========================================#
@@ -277,3 +268,11 @@ class YOLOv3LOSS:
                 noobj_mask[bs, :, x, y] = False
 
         return noobj_mask
+
+    def compute_mseloss(self, x, y, w, h, y_true, obj_mask, S, anchors, stride):
+        best_a = obj_mask.nonzero()[:, 1]
+        x_loss = ((x - y_true[obj_mask][:, 0] * S) ** 2).sum()
+        y_loss = ((y - y_true[obj_mask][:, 1] * S) ** 2).sum()
+        w_loss = ((w - torch.exp(y_true[obj_mask][:, 2]) * anchors[best_a][:, 1] / stride) ** 2).sum()
+        h_loss = ((h - torch.exp(y_true[obj_mask][:, 3]) * anchors[best_a][:, 0] / stride) ** 2).sum()
+        return x_loss + y_loss + w_loss + h_loss

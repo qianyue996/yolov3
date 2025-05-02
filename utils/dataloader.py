@@ -236,7 +236,7 @@ def yolo_collate_fn(batch):
     # resize + bgr -> rgb
     images, labels = map(list, (zip(*[resizeCvt(image, label) for image, label in batch])))
     # 随机增强
-    # images, labels = zip(*[randomAug(image, label) for image, label in zip(images, labels)])
+    images, labels = zip(*[randomAug(image, label) for image, label in zip(images, labels)])
     images = np.array(images)
     labels = list(labels)
     #

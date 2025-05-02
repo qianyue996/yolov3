@@ -40,7 +40,7 @@ if __name__ == "__main__":
     batch_size = 4
     epochs = 300
     lr = 0.01
-    l_loc = 1
+    l_loc = 5
     l_cls = 1
     l_obj = 1
     l_noo = 1
@@ -86,10 +86,7 @@ if __name__ == "__main__":
                 batch_y = [i.to(device) for i in batch_y]
                 optimizer.zero_grad()
                 batch_output = model(batch_x)
-                if epoch < 10:
-                    loss_params = loss_fn(model, predict=batch_output, targets=batch_y, compute_giou=False)
-                else:
-                    loss_params = loss_fn(model, predict=batch_output, targets=batch_y, compute_giou=True)
+                loss_params = loss_fn(model, predict=batch_output, targets=batch_y)
                 loss = loss_params["loss"]
                 loss.backward()
                 optimizer.step()
