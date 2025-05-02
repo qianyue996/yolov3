@@ -35,7 +35,7 @@ if __name__ == "__main__":
 
     train_type = "tiny"  # or yolov3
     dataset_type = "voc"
-    continue_train = False
+    continue_train = True
     set_seed(seed=27)
     batch_size = 4
     epochs = 300
@@ -50,14 +50,14 @@ if __name__ == "__main__":
         batch_size=batch_size,
         shuffle=True,
         drop_last=True,
-        num_workers=0,
+        num_workers=4,
         worker_init_fn=worker_init_fn,
         collate_fn=yolo_collate_fn,
     )
     model = Model(cfg).to(device)
     optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=1e-4)
-    # lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.94)
-    lr_scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=100, eta_min=1e-6)
+    lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.91)
+    # lr_scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=100, eta_min=1e-6)
     loss_fn = YOLOv3LOSS(
         device=device,
         l_loc=l_loc,
@@ -86,7 +86,10 @@ if __name__ == "__main__":
                 batch_y = [i.to(device) for i in batch_y]
                 optimizer.zero_grad()
                 batch_output = model(batch_x)
-                loss_params = loss_fn(model, predict=batch_output, targets=batch_y)
+                if epoch < 10:
+                    loss_params = loss_fn(model, predict=batch_output, targets=batch_y, compute_giou=False)
+                else:
+                    loss_params = loss_fn(model, predict=batch_output, targets=batch_y, compute_giou=True)
                 loss = loss_params["loss"]
                 loss.backward()
                 optimizer.step()

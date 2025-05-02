@@ -8,14 +8,22 @@ imgSize = 416
 
 
 class YOLODataset(Dataset):
-    def __init__(self, dataset_type=None):
+    def __init__(self, dataset_type=None, Train=True):
         super(YOLODataset, self).__init__()
         if dataset_type == "coco":
-            with open("coco_train.txt", "r", encoding="utf-8") as f:
-                self.datas = f.readlines()
+            if Train:
+                with open("coco_train.txt", "r", encoding="utf-8") as f:
+                    self.datas = f.readlines()
+            else:
+                with open("coco_val.txt", "r", encoding="utf-8") as f:
+                    self.datas = f.readlines()
         elif dataset_type == "voc":
-            with open("voc_train.txt", "r", encoding="utf-8") as f:
-                self.datas = f.readlines()
+            if Train:
+                with open("voc_train.txt", "r", encoding="utf-8") as f:
+                    self.datas = f.readlines()
+            else:
+                with open("voc_val.txt", "r", encoding="utf-8") as f:
+                    self.datas = f.readlines()
         else:
             raise ValueError("dataset_type must be coco or voc")
 
@@ -145,7 +153,9 @@ def xyxy2xywh(labels: list[np.array]):
     return labels
 
 
-def resizeCvt(image: np.array, labels: np.array):
+def resizeCvt(image=None, labels=None, cvt=True):
+    if image is None:
+        raise ValueError('image is None')
     im_h, im_w = image.shape[:2]
     scale = min(imgSize / im_h, imgSize / im_w)
     nh, nw = int(im_h * scale), int(im_w * scale)
@@ -163,13 +173,15 @@ def resizeCvt(image: np.array, labels: np.array):
     nImage = cv.copyMakeBorder(image, top, bottom, left, right, borderType=cv.BORDER_CONSTANT, value=(128, 128, 128))
 
     # 同步变换 bbox
-    labels = labels.astype(np.float32)
-    labels[:, [0, 2]] = labels[:, [0, 2]] * scale + left
-    labels[:, [1, 3]] = labels[:, [1, 3]] * scale + top
+    if labels is not None:
+        # labels = labels.astype(np.float32)
+        labels[:, [0, 2]] = labels[:, [0, 2]] * scale + left
+        labels[:, [1, 3]] = labels[:, [1, 3]] * scale + top
 
     # 转为 RGB
-    cvtImage = cv.cvtColor(nImage, cv.COLOR_BGR2RGB)
-    return cvtImage, labels
+    if cvt:
+        nImage = cv.cvtColor(nImage, cv.COLOR_BGR2RGB)
+    return nImage, labels
 
 
 def ToTensor(images, labels):
@@ -224,11 +236,11 @@ def yolo_collate_fn(batch):
     # resize + bgr -> rgb
     images, labels = map(list, (zip(*[resizeCvt(image, label) for image, label in batch])))
     # 随机增强
-    images, labels = zip(*[randomAug(image, label) for image, label in zip(images, labels)])
+    # images, labels = zip(*[randomAug(image, label) for image, label in zip(images, labels)])
     images = np.array(images)
     labels = list(labels)
     #
-    chakan(images, labels)
+    # chakan(images, labels)
     labels = xyxy2xywh(labels)
     images, labels = normalizeData(images, labels)
     images, labels = ToTensor(images, labels)

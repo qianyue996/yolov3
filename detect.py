@@ -5,6 +5,7 @@ import mss
 import numpy as np
 import torch
 
+from utils.general import check_yaml
 from utils.boxTool import draw_box
 from models.yolo import Model
 from utils.tools import multi_class_nms
@@ -12,71 +13,36 @@ from utils.tools import multi_class_nms
 with open("config/datasetParameter.json", "r", encoding="utf-8") as f:
     datasetConfig = json.load(f)
 
-with open("config/model.json", "r", encoding="utf-8") as f:
-    modelConfig = json.load(f)
 
-model = Model('models/yolov3-tiny.yaml')
+model = Model(check_yaml('yolov3-tiny.yaml'))
+model.load_state_dict(torch.load('tiny_weight.pth', map_location=torch.device('cpu'))['model'])
 model.eval()
-detect = model.model[-1]
-
-with torch.no_grad():
-    im = torch.randn(1, 3, 416, 416)
-    output = model(im)[0]
 
 nun_classes = datasetConfig["voc"]["num_class"]
 class_name = datasetConfig["voc"]["class_name"]
 
 device = "cpu" if torch.cuda.is_available() else "cpu"
-imgSize = modelConfig["yolov3"]["imgSize"]
-stride = modelConfig["yolov3"]["stride"]
-anchor = torch.tensor(modelConfig["yolov3"]["anchor"]).to(device)
-anchor_mask = modelConfig["yolov3"]["anchor_mask"]
-
-model = YOLOv3Tiny(num_classes=nun_classes).to(device)
-model.load_state_dict(torch.load("tiny_weight.pth", map_location=device)["model"])
-model.eval()
+imgSize = 416
 
 
 def get_result(outputs, score_thresh=0.3, iou_thresh=0.45):
     boxes, scores, labels = [], [], []
-    for i, output in enumerate(outputs):
-        S = output.shape[2]
-        layer_stride = stride[i]
-        output = output.view(-1, 3, 5 + nun_classes, S, S).permute(0, 1, 3, 4, 2)
+    outputs = outputs.squeeze(0)
+    bboxes = outputs[..., :4]
 
-        grid_x, grid_y = torch.meshgrid(
-            torch.arange(S).to(device),
-            torch.arange(S).to(device),
-            indexing="ij",
-        )
-        output[..., 0] = (output[..., 0].sigmoid() + grid_x) * layer_stride
-        output[..., 1] = (output[..., 1].sigmoid() + grid_y) * layer_stride
-        output[..., 2] = torch.exp(output[..., 2]) * anchor[anchor_mask[i]][:, 0].view(1, -1, 1, 1)
-        output[..., 3] = torch.exp(output[..., 3]) * anchor[anchor_mask[i]][:, 1].view(1, -1, 1, 1)
-        bboxes = torch.stack(
-            [
-                output[..., 0] - output[..., 2] / 2,
-                output[..., 1] - output[..., 3] / 2,
-                output[..., 0] + output[..., 2] / 2,
-                output[..., 1] + output[..., 3] / 2,
-            ],
-            dim=-1,
-        )
-        pos_conf = output[..., 4].sigmoid()
-        cls_conf = output[..., 5:].sigmoid()
-        layer_scores = pos_conf.unsqueeze(-1) * cls_conf
-        for cls_id in range(nun_classes):
-            cls_scores = layer_scores[..., cls_id]
-            keep = cls_scores > score_thresh
-            if keep.sum() == 0:
-                continue
-            cls_boxes = bboxes[keep]
-            cls_scores = cls_scores[keep]
-            cls_labels = torch.full((cls_scores.shape[0],), cls_id).to(device).long()
+    _scores = outputs[..., 4].unsqueeze(-1) * outputs[..., 5:]
+    for cls_id in range(nun_classes):
+        cls_scores = _scores[..., cls_id]
+        keep = cls_scores > score_thresh
+        if keep.sum() == 0:
+            continue
+        cls_boxes = bboxes[keep]
+        cls_scores = cls_scores[keep]
+        cls_labels = torch.full((cls_scores.shape[0],), cls_id).to(device).long()
 
-            boxes.append(cls_boxes)
-            scores.append(cls_scores)
-            labels.append(cls_labels)
+        boxes.append(cls_boxes)
+        scores.append(cls_scores)
+        labels.append(cls_labels)
     # 拼接所有层输出
     if not boxes:
         return None, None, None
@@ -111,8 +77,7 @@ def transport(image):
 
 
 def detect(image, x):
-    outputs = model(x)
-
+    outputs = model(x)[0]
     boxes, scores, labels = get_result(outputs)
     draw_box(image, boxes, scores, labels)
 
