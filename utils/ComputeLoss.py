@@ -136,6 +136,16 @@ class YOLOv3LOSS:
             "lambda_obj": self.lambda_obj,
         }
 
+    def _fill_target(self, y_true, bs, k, x, y, batch_target, anchors, c, index):
+        """辅助函数：填充目标值"""
+        y_true[bs, k, x, y, 0] = batch_target[index, 0] - x.float()
+        y_true[bs, k, x, y, 1] = batch_target[index, 1] - y.float()
+        y_true[bs, k, x, y, 2] = torch.log(batch_target[index, 2] / anchors[k][0])
+        y_true[bs, k, x, y, 3] = torch.log(batch_target[index, 3] / anchors[k][1])
+        y_true[bs, k, x, y, 4] = 1
+        y_true[bs, k, x, y, 5 + c] = 1
+        return y_true
+
     def build_target(self, i, B, S, prediction, targets, anchors, stride):
         y_true = torch.zeros_like(prediction).to(self.device)
 
@@ -143,41 +153,33 @@ class YOLOv3LOSS:
             if targets[bs].shape[0] == 0:  # 处理无目标的情况
                 continue
 
+            # 预处理目标框
             batch_target = torch.zeros_like(targets[bs])
             batch_target[:, 0:4] = targets[bs][:, 0:4] * S
             batch_target[:, 4] = targets[bs][:, 4]
 
+            # 计算IOU矩阵
             gt_box = batch_target[:, 2:4]
             iou_matrix = self.compute_iou(gt_box, anchors)
             best_iou, best_na = torch.max(iou_matrix, dim=1)
             
-            # 增加正样本数量：每个gt box匹配iou>0.5的anchor
+            # 处理每个目标框
             for index, n_a in enumerate(best_na.tolist()):
+                # 获取坐标和类别
+                x = torch.clamp(batch_target[index, 0].long(), 0, S - 1)
+                y = torch.clamp(batch_target[index, 1].long(), 0, S - 1)
+                c = batch_target[index, 4].long()
+                
+                # 处理最佳匹配的anchor
+                k = n_a
+                y_true = self._fill_target(y_true, bs, k, x, y, batch_target, anchors, c, index)
+                
+                # 处理其他匹配的anchor
                 additional_anchors = (iou_matrix[index] > 0.5).nonzero().squeeze(1)
                 for a in additional_anchors.tolist():
                     if a != n_a:
                         k = a
-                        x = torch.clamp(batch_target[index, 0].long(), 0, S - 1)
-                        y = torch.clamp(batch_target[index, 1].long(), 0, S - 1)
-                        c = batch_target[index, 4].long()
-
-                        y_true[bs, k, x, y, 0] = batch_target[index, 0] - x.float()
-                        y_true[bs, k, x, y, 1] = batch_target[index, 1] - y.float()
-                        y_true[bs, k, x, y, 2] = torch.log(batch_target[index, 2] / anchors[k][0])
-                        y_true[bs, k, x, y, 3] = torch.log(batch_target[index, 3] / anchors[k][1])
-                        y_true[bs, k, x, y, 4] = 1
-                        y_true[bs, k, x, y, 5 + c] = 1
-                k = n_a
-                x = torch.clamp(batch_target[index, 0].long(), 0, S - 1)
-                y = torch.clamp(batch_target[index, 1].long(), 0, S - 1)
-                c = batch_target[index, 4].long()
-
-                y_true[bs, k, x, y, 0] = batch_target[index, 0] - x.float()
-                y_true[bs, k, x, y, 1] = batch_target[index, 1] - y.float()
-                y_true[bs, k, x, y, 2] = torch.log(batch_target[index, 2] / anchors[k][0])
-                y_true[bs, k, x, y, 3] = torch.log(batch_target[index, 3] / anchors[k][1])
-                y_true[bs, k, x, y, 4] = 1
-                y_true[bs, k, x, y, 5 + c] = 1
+                        y_true = self._fill_target(y_true, bs, k, x, y, batch_target, anchors, c, index)
 
         return y_true
 
