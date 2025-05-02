@@ -75,7 +75,7 @@ class YOLOv3LOSS:
             # ===========================================#
             noobj_mask = self.ignore_target(obj_mask)
 
-            if obj_mask.sum() != 0:
+            if obj_mask.sum().item() != 0:
                 _cls = torch.sigmoid(prediction[..., 5:])[obj_mask]
                 t_cls = y_true[..., 5:][obj_mask]
 
@@ -130,7 +130,6 @@ class YOLOv3LOSS:
             "loss_cls": original_loss_cls,
             "loss_obj": original_loss_obj,
             "loss_noo": original_loss_noo,
-            "positive_num": obj_mask.sum(),
             "lambda_loc": self.lambda_loc,
             "lambda_cls": self.lambda_cls,
             "lambda_obj": self.lambda_obj,
