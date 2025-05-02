@@ -21,7 +21,7 @@ if platform.system() != "Windows":
 from models.yolo import Model
 from utils.general import check_yaml
 
-from nets.yolo_loss import YOLOv3LOSS
+from utils.ComputeLoss import YOLOv3LOSS
 from utils.dataloader import YOLODataset, yolo_collate_fn
 from utils.tools import set_seed, worker_init_fn
 
@@ -63,7 +63,6 @@ if __name__ == "__main__":
         l_cls=l_cls,
         l_obj=l_obj,
         l_noo=l_noo,
-        num_classes=config['nc'],
     )
     writer_path = "runs"
     writer = SummaryWriter(f"{writer_path}/{time.strftime('%Y-%m-%d-%H-%M-%S', time.localtime())}")

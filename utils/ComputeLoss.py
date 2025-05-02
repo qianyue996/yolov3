@@ -9,11 +9,8 @@ imgSize = modelConfig['yolov3']['imgSize']
 
 
 class YOLOv3LOSS:
-    def __init__(self, device, l_loc, l_cls, l_obj, l_noo, num_classes=None):
+    def __init__(self, device, l_loc, l_cls, l_obj, l_noo):
         self.device = device
-        self.num_classes = num_classes
-        self.anchors = modelConfig['yolov3']['anchor']
-        self.anchors_mask = modelConfig['yolov3']['anchor_mask']
 
         self.lambda_obj_layers = [1.0, 1.0, 1.0]
 
@@ -23,7 +20,7 @@ class YOLOv3LOSS:
         self.lambda_noo = l_noo
 
     def __call__(self, model, predict, targets):
-        num_feature = len(predict)
+        nl = len(predict)
         all_loss_loc = torch.zeros(1).to(self.device)
         all_loss_cls = all_loss_loc.clone()
         all_loss_obj = all_loss_loc.clone()
@@ -31,7 +28,7 @@ class YOLOv3LOSS:
         # ===========================================#
         #
         # ===========================================#
-        for i in range(num_feature):
+        for i in range(nl):
             # ===========================================#
             #   参数
             # ===========================================#
@@ -62,16 +59,13 @@ class YOLOv3LOSS:
             # ===========================================#
             y_true = self.build_target(i, B, S, prediction, targets, anchors, stride)
 
-            x = torch.sigmoid(prediction[..., 0])
+            x = prediction[..., 0]
 
-            y = torch.sigmoid(prediction[..., 1])
+            y = prediction[..., 1]
 
             w = prediction[..., 2]
 
             h = prediction[..., 3]
-
-            conf = torch.sigmoid(prediction[..., 4])
-            t_conf = y_true[..., 4]
             # ===========================================#
             #   正样本mask
             # ===========================================#
@@ -99,6 +93,8 @@ class YOLOv3LOSS:
             # ===========================================#
             #   置信度损失
             # ===========================================#
+            conf = torch.sigmoid(prediction[..., 4])
+            t_conf = y_true[..., 4]
             loss_conf = nn.BCELoss(reduction="none")(conf, t_conf)
             # ===========================================#
             #   GroundTrue Postivez正样本置信度损失
@@ -187,26 +183,26 @@ class YOLOv3LOSS:
         # grid_x = obj_mask.nonzero()[:, 2]
         # grid_y = obj_mask.nonzero()[:, 3]
 
-        x = x[obj_mask] * S
-        y = y[obj_mask] * S
+        x = torch.sigmoid(x[obj_mask]) * S
+        y = torch.sigmoid(y[obj_mask]) * S
         w = torch.exp(w[obj_mask]) * anchors[best_a][:, 0]
         h = torch.exp(h[obj_mask]) * anchors[best_a][:, 1]
 
-        t_x = y_true[obj_mask][:, 0] * S
-        t_y = y_true[obj_mask][:, 1] * S
+        t_x = torch.sigmoid(y_true[obj_mask])[:, 0] * S
+        t_y = torch.sigmoid(y_true[obj_mask])[:, 1] * S
         t_w = torch.exp(y_true[obj_mask][:, 2]) * anchors[best_a][:, 0]
         t_h = torch.exp(y_true[obj_mask][:, 3]) * anchors[best_a][:, 1]
 
         # xywh -> xyxy
-        x1 = torch.clamp(x - w / 2, min=1e-6, max=imgSize)
-        y1 = torch.clamp(y - h / 2, min=1e-6, max=imgSize)
-        x2 = torch.clamp(x + w / 2, min=1e-6, max=imgSize)
-        y2 = torch.clamp(y + h / 2, min=1e-6, max=imgSize)
+        x1 = torch.clamp(x - w / 2, min=1e-6, max=S)
+        y1 = torch.clamp(y - h / 2, min=1e-6, max=S)
+        x2 = torch.clamp(x + w / 2, min=1e-6, max=S)
+        y2 = torch.clamp(y + h / 2, min=1e-6, max=S)
 
-        t_x1 = torch.clamp(t_x - t_w / 2, min=1e-6, max=imgSize)
-        t_y1 = torch.clamp(t_y - t_h / 2, min=1e-6, max=imgSize)
-        t_x2 = torch.clamp(t_x + t_w / 2, min=1e-6, max=imgSize)
-        t_y2 = torch.clamp(t_y + t_h / 2, min=1e-6, max=imgSize)
+        t_x1 = torch.clamp(t_x - t_w / 2, min=1e-6, max=S)
+        t_y1 = torch.clamp(t_y - t_h / 2, min=1e-6, max=S)
+        t_x2 = torch.clamp(t_x + t_w / 2, min=1e-6, max=S)
+        t_y2 = torch.clamp(t_y + t_h / 2, min=1e-6, max=S)
 
         # 计算交集区域面积
         area_x1 = torch.max(x1, t_x1)

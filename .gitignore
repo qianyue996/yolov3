@@ -7,6 +7,7 @@ data
 .gradio
 flagged
 .ruff_cache
+nets
 
 *darknet53_backbone_weights.pth
 *yolo_weights.pth
