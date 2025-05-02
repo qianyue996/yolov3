@@ -71,7 +71,7 @@ if __name__ == "__main__":
     if continue_train:
         checkpoint = torch.load(f"{train_type}_weight.pth", map_location=device)
         model.load_state_dict(checkpoint["model"])
-        # optimizer.load_state_dict(checkpoint["optimizer"])
+        optimizer.load_state_dict(checkpoint["optimizer"])
         # start_epoch = checkpoint["epoch"] + 1
     # train
     losses = []

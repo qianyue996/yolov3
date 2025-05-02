@@ -228,7 +228,7 @@ def yolo_collate_fn(batch):
     images = np.array(images)
     labels = list(labels)
     #
-    chakan(images, labels)
+    # chakan(images, labels)
     labels = xyxy2xywh(labels)
     images, labels = normalizeData(images, labels)
     images, labels = ToTensor(images, labels)
