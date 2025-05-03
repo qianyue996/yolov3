@@ -54,7 +54,7 @@ class YOLOv3LOSS:
                 #============================================#
                 #   位置损失 GIoU损失
                 #============================================#
-                giou = self.compute_iou(pred_box, targ_box, iou=False, giou=True)
+                giou = self.compute_iou(pred_box, targ_box, iou_type='diou')
                 loss_loc = (1 - giou).mean()
                 # self.compute_mseloss(x, y, w, h, y_true, obj_mask, S, anchors, stride)
                 all_loss_loc += loss_loc
@@ -134,7 +134,7 @@ class YOLOv3LOSS:
 
             # 计算IOU矩阵
             gt_box = batch_target[:, 2:4]
-            iou_matrix = self.compute_iou(gt_box, self.anchors[i], iou=True, giou=False)
+            iou_matrix = self.compute_iou(gt_box, self.anchors[i], iou_type='iou')
             best_iou, best_na = torch.max(iou_matrix, dim=1)
             if best_iou.max() < 0.3:
                 continue
@@ -227,8 +227,8 @@ class YOLOv3LOSS:
 
         return noobj_mask, pred_box, targ_box
 
-    def compute_iou(self, box_1, box_2, iou=True, giou=False):
-        if iou:
+    def compute_iou(self, box_1, box_2, iou_type='iou'):
+        if iou_type=='iou':
             gt_wh = box_1.unsqueeze(1)  # [N, 1, 2]
             anchors_wh = box_2.unsqueeze(0)  # [1, A, 2]
 
@@ -248,8 +248,8 @@ class YOLOv3LOSS:
 
             iou = intersection / union
             return iou
-        elif giou:
-            # xywh -> xyxy
+        
+        elif iou_type=='giou':
             p_x1 = box_1[:, 0]
             p_y1 = box_1[:, 1]
             p_x2 = box_1[:, 2]
@@ -281,3 +281,45 @@ class YOLOv3LOSS:
 
             giou = iou - (area_c - union) / (area_c)
             return giou
+        
+        elif iou_type=='diou':
+            p_x1 = box_1[:, 0]
+            p_y1 = box_1[:, 1]
+            p_x2 = box_1[:, 2]
+            p_y2 = box_1[:, 3]
+
+            t_x1 = box_2[:, 0]
+            t_y1 = box_2[:, 1]
+            t_x2 = box_2[:, 2]
+            t_y2 = box_2[:, 3]
+            # 计算交集区域面积
+            area_x1 = torch.max(p_x1, t_x1)
+            area_y1 = torch.max(p_y1, t_y1)
+            area_x2 = torch.min(p_x2, t_x2)
+            area_y2 = torch.min(p_y2, t_y2)
+
+            inter = (area_x2 - area_x1).clamp(min=0) * (area_y2 - area_y1).clamp(min=0)
+            area_1 = (p_x2 - p_x1) * (p_y2 - p_y1)
+            area_2 = (t_x2 - t_x1) * (t_y2 - t_y1)
+            union = (area_1 + area_2 - inter).clamp(min=1e-9)
+
+            iou = inter / union
+
+            # 中心点
+            b1_center_x = (p_x1 + p_x2) / 2
+            b1_center_y = (p_y1 + p_y2) / 2
+            b2_center_x = (t_x1 + t_x2) / 2
+            b2_center_y = (t_y1 + t_y2) / 2
+
+            center_dist_sq = (b1_center_x - b2_center_x) ** 2 + (b1_center_y - b2_center_y) ** 2
+
+            # 包裹框的对角线距离
+            enclose_x1 = torch.min(p_x1, t_x1)
+            enclose_y1 = torch.min(p_y1, t_y1)
+            enclose_x2 = torch.max(p_x2, t_x2)
+            enclose_y2 = torch.max(p_y2, p_y2)
+            enclose_diag_sq = (enclose_x2 - enclose_x1) ** 2 + (enclose_y2 - enclose_y1) ** 2 + 1e-7
+
+            diou = iou - center_dist_sq / enclose_diag_sq
+
+            return diou
