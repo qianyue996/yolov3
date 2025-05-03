@@ -30,15 +30,13 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 class CustomLR:
     def __init__(self, optimizer, T_max, eta_min=1e-6, step=1):
         self.optimizer = optimizer
-        T_max = T_max * step
         self.steper = step
         self.count = 0
         self.lr_scheduler = optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=T_max, eta_min=eta_min)
     def step(self):
         self.count += 1
-        if self.count >= self.steper:
+        if self.count % self.steper == 0:
             self.lr_scheduler.step()
-            self.count = 0
 
     def get_lr(self):
         lr = self.optimizer.param_groups[0]["lr"]
