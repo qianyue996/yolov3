@@ -27,6 +27,22 @@ from utils.tools import set_seed, worker_init_fn
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
+class CustomLR:
+    def __init__(self, optimizer, T_max, eta_min=1e-6, step=1):
+        self.optimizer = optimizer
+        T_max = T_max * step
+        self.steper = step
+        self.count = 0
+        self.lr_scheduler = optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=T_max, eta_min=eta_min)
+    def step(self):
+        self.count += 1
+        if self.count >= self.steper:
+            self.lr_scheduler.step()
+            self.count = 0
+
+    def get_lr(self):
+        lr = self.optimizer.param_groups[0]["lr"]
+        return lr
 
 if __name__ == "__main__":
     cfg = check_yaml("yolov3-tiny.yaml")
@@ -37,9 +53,9 @@ if __name__ == "__main__":
     dataset_type = "voc"
     continue_train = True
     set_seed(seed=27)
-    batch_size = 1
-    epochs = 300
-    lr = 0.01
+    batch_size = 2
+    epochs = 150
+    lr = 0.001
     l_loc = 5
     l_cls = 1
     l_obj = 1
@@ -56,8 +72,9 @@ if __name__ == "__main__":
     )
     model = Model(cfg).to(device)
     optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=1e-4)
-    lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.91)
-    # lr_scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=100, eta_min=1e-6)
+    # lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.94)
+    # lr_scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs, eta_min=1e-6)
+    lr_scheduler = CustomLR(optimizer, T_max=epochs, eta_min=1e-6, step=2)
     loss_fn = YOLOv3LOSS(
         model=model,
         device=device,
@@ -72,7 +89,7 @@ if __name__ == "__main__":
     if continue_train:
         checkpoint = torch.load(f"{train_type}_weight.pth", map_location=device)
         model.load_state_dict(checkpoint["model"])
-        optimizer.load_state_dict(checkpoint["optimizer"])
+        # optimizer.load_state_dict(checkpoint["optimizer"])
         # start_epoch = checkpoint["epoch"] + 1
     # train
     losses = []
@@ -87,13 +104,13 @@ if __name__ == "__main__":
                 batch_y = [i.to(device) for i in batch_y]
                 optimizer.zero_grad()
                 batch_output = model(batch_x)
-                loss_params = loss_fn(batch_output, batch_y, [train_dataset[i] for i in idx])
+                loss_params = loss_fn(batch_output, batch_y)
                 loss = loss_params["loss"]
                 loss.backward()
                 optimizer.step()
                 epoch_loss += loss.item()
                 avg_loss = epoch_loss / (batch + 1)
-                lr = optimizer.param_groups[0]["lr"]
+                lr = lr_scheduler.get_lr()
                 pbar.set_postfix(**{"epoch": epoch, "loss": f"{loss.item():.4f}", "lr": lr})
                 writer.add_scalars(
                     "loss",
