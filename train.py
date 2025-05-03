@@ -74,7 +74,7 @@ if __name__ == "__main__":
     optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=1e-4)
     # lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.94)
     # lr_scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs, eta_min=1e-6)
-    lr_scheduler = CustomLR(optimizer, T_max=epochs, eta_min=1e-6, step=2)
+    lr_scheduler = CustomLR(optimizer, T_max=epochs, eta_min=5e-4, step=2)
     loss_fn = YOLOv3LOSS(
         model=model,
         device=device,
