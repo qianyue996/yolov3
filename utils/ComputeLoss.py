@@ -5,7 +5,6 @@ import torch.nn as nn
 class YOLOv3LOSS:
     def __init__(self, model, device, l_loc, l_cls, l_obj, l_noo):
         self.device = device
-        self.stride = model.model[-1].stride
         self.anchors = model.model[-1].anchors
 
         self.lambda_obj_layers = [1.0, 1.0, 1.0]
@@ -24,16 +23,6 @@ class YOLOv3LOSS:
         #   
         #============================================#
         for i, prediction in enumerate(predictions):
-            #============================================#
-            #   参数
-            #============================================#
-            B = prediction.shape[0]
-            #============================================#
-            #   获取feature map的宽高
-            #   将图像分割为SxS个网格
-            #   13,26,52
-            #============================================#
-            S = prediction.shape[2]
             #============================================#
             #   构建网络应有的预测结果y_true
             #   shape: (B, 3, S, S, 5+80)
@@ -157,6 +146,38 @@ class YOLOv3LOSS:
                         k = a
                         y_true = self._fill_target(y_true, b, k, x, y, c, batch_target, self.anchors[i], index)
 
+                # 设置 IOU 阈值和位置偏移限制
+                iou_threshold = 0.2
+                max_offset = 1  # 最大偏移为 1 格
+
+                # 计算偏移方向
+                offsets = []
+                if batch_target[index, 0] % 1 > 0.5:  # x > 0.5时右扩展
+                    offsets.append((1, 0))  # 向右扩展
+                elif batch_target[index, 0] % 1 < 0.5:  # x < 0.5时左扩展
+                    offsets.append((-1, 0))  # 向左扩展
+
+                if batch_target[index, 1] % 1 > 0.5:  # y > 0.5时下扩展
+                    offsets.append((0, 1))  # 向下扩展
+                elif batch_target[index, 1] % 1 < 0.5:  # y < 0.5时上扩展
+                    offsets.append((0, -1))  # 向上扩展
+
+                for dx, dy in offsets:
+                    nx = torch.clamp(x + dx, 0, S - 1)
+                    ny = torch.clamp(y + dy, 0, S - 1)
+
+                    # 计算当前邻近格子的 IOU
+                    iou = iou_matrix[index, n_a]
+
+                    # 确定该邻近格子是否也匹配到同样的 anchor（根据 IOU 阈值）
+                    if iou >= iou_threshold and abs(dx) <= max_offset and abs(dy) <= max_offset:
+                        for a in additional_anchors.tolist():
+                            if a != n_a:
+                                k = a
+                                y_true[b, k, nx, ny, 0] = 1 - batch_target[index, 0] % 1
+                                y_true[b, k, nx, ny, 1] = 1 - batch_target[index, 1] % 1
+                                y_true[b, k, nx, ny, 2] = torch.log(batch_target[index, 2] / self.anchors[i][k][0])
+                                y_true[b, k, nx, ny, 3] = torch.log(batch_target[index, 3] / self.anchors[i][k][1])
         return y_true
 
     def ignore_target(self, i, prediction, y_true, obj_mask):

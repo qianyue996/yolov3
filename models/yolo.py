@@ -61,9 +61,9 @@ class Detect(nn.Module):
                 if self.dynamic or self.grid[i].shape[2:4] != x[i].shape[2:4]:
                     self.grid[i], self.anchor_grid[i] = self._make_grid(nx, ny, i)
 
-                xy, wh, conf = x[i].sigmoid().split((2, 2, self.nc + 1), 4)
-                xy = (xy * 2 + self.grid[i]) * self.stride[i]  # xy
-                wh = (wh * 2) ** 2 * self.anchor_grid[i]  # wh
+                xy, wh, conf = x[i].split((2, 2, self.nc + 1), 4)  # 不再对wh做sigmoid
+                xy = (xy * 2 - 0.5 + self.grid[i]) * self.stride[i]  # xy: 使用 2 * x - 0.5 公式
+                wh = torch.exp(wh) * self.anchor_grid[i]  # 对wh应用exp
                 y = torch.cat((xy, wh, conf), 4)
                 z.append(y.view(bs, self.na * nx * ny, self.no))
 
@@ -241,6 +241,7 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
         n = n_ = max(round(n * gd), 1) if n > 1 else n  # depth gain
         if m in {
             Conv,
+            Bottleneck,
         }:
             c1, c2 = ch[f], args[0]
             if c2 != no:  # if not output
@@ -271,7 +272,7 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--cfg", type=str, default="yolov3-tiny.yaml", help="model.yaml")
+    parser.add_argument("--cfg", type=str, default="yolov3.yaml", help="model.yaml")
     parser.add_argument("--batch-size", type=int, default=1, help="total batch size for all GPUs")
     parser.add_argument("--device", default="", help="cuda device, i.e. 0 or 0,1,2,3 or cpu")
     opt = parser.parse_args()

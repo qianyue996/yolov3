@@ -27,6 +27,25 @@ class Conv(nn.Module):
         """
         return self.act(self.bn(self.conv(x)))
 
+class Bottleneck(nn.Module):
+    """Implements a bottleneck layer with optional shortcut for efficient feature extraction in neural networks."""
+
+    def __init__(self, c1, c2, shortcut=True, g=1, e=0.5):  # ch_in, ch_out, shortcut, groups, expansion
+        """Initializes a standard bottleneck layer with optional shortcut; args: input channels (c1), output channels
+        (c2), shortcut (bool), groups (g), expansion factor (e).
+        """
+        super().__init__()
+        c_ = int(c2 * e)  # hidden channels
+        self.cv1 = Conv(c1, c_, 1, 1)
+        self.cv2 = Conv(c_, c2, 3, 1)
+        self.add = shortcut and c1 == c2
+
+    def forward(self, x):
+        """Executes forward pass, performing convolutional ops and optional shortcut addition; expects input tensor
+        x.
+        """
+        return x + self.cv2(self.cv1(x)) if self.add else self.cv2(self.cv1(x))
+
 
 class Concat(nn.Module):
     """Concatenates a list of tensors along a specified dimension for efficient feature aggregation."""
