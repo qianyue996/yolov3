@@ -37,7 +37,7 @@ if __name__ == "__main__":
     dataset_type = "voc"
     continue_train = True
     set_seed(seed=27)
-    batch_size = 4
+    batch_size = 1
     epochs = 300
     lr = 0.01
     l_loc = 5
@@ -59,6 +59,7 @@ if __name__ == "__main__":
     lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.91)
     # lr_scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=100, eta_min=1e-6)
     loss_fn = YOLOv3LOSS(
+        model=model,
         device=device,
         l_loc=l_loc,
         l_cls=l_cls,
@@ -81,12 +82,12 @@ if __name__ == "__main__":
         epoch_loss = 0
         with tqdm.tqdm(dataloader) as pbar:
             for batch, item in enumerate(pbar):
-                batch_x, batch_y = item
+                batch_x, batch_y, idx = item
                 batch_x = batch_x.to(device)
                 batch_y = [i.to(device) for i in batch_y]
                 optimizer.zero_grad()
                 batch_output = model(batch_x)
-                loss_params = loss_fn(model, predict=batch_output, targets=batch_y)
+                loss_params = loss_fn(batch_output, batch_y, [train_dataset[i] for i in idx])
                 loss = loss_params["loss"]
                 loss.backward()
                 optimizer.step()

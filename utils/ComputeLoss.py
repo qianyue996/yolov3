@@ -3,18 +3,19 @@ import torch.nn as nn
 
 
 class YOLOv3LOSS:
-    def __init__(self, device, l_loc, l_cls, l_obj, l_noo):
+    def __init__(self, model, device, l_loc, l_cls, l_obj, l_noo):
         self.device = device
+        self.stride = model.model[-1].stride
+        self.anchors = model.model[-1].anchors
 
-        self.lambda_obj_layers = [4.0, 1.0, 0.4]
+        self.lambda_obj_layers = [1.0, 1.0, 1.0]
 
         self.lambda_loc = l_loc
         self.lambda_cls = l_cls
         self.lambda_obj = l_obj
         self.lambda_noo = l_noo
 
-    def __call__(self, model, predict, targets):
-        nl = len(predict)
+    def __call__(self, predictions, targets, item):
         all_loss_loc = torch.zeros(1).to(self.device)
         all_loss_cls = all_loss_loc.clone()
         all_loss_obj = all_loss_loc.clone()
@@ -22,50 +23,65 @@ class YOLOv3LOSS:
         # ===========================================#
         #
         # ===========================================#
-        for i in range(nl):
+        for i, prediction in enumerate(predictions):
             # ===========================================#
             #   参数
             # ===========================================#
-            B = predict[i].shape[0]
+            B = prediction.shape[0]
             # ===========================================#
             #   获取feature map的宽高
             #   将图像分割为SxS个网格
             #   13,26,52
             # ===========================================#
-            S = predict[i].shape[2]
-            # ===========================================#
-            #   获取每个网格的步长
-            #   13,26,52 ==> 32,16,8
-            # ===========================================#
-            stride = model.model[-1].stride[i]
-            # ===========================================#
-            #   加载anchors锚框
-            # ===========================================#
-            anchors = model.model[-1].anchors[i]
-            # ===========================================#
-            #   重构网络预测结果
-            #   shape: (B, 3, S, S, 5+80) coco
-            # ===========================================#
-            prediction = predict[i]
+            S = prediction.shape[2]
             # ===========================================#
             #   构建网络应有的预测结果y_true
             #   shape: (B, 3, S, S, 5+80)
             # ===========================================#
-            y_true = self.build_target(B, S, prediction, targets, anchors)
+            y_true = self.build_target(i, prediction, targets)
             # ===========================================#
             #   正样本mask
             # ===========================================#
             obj_mask = y_true[..., 4] == 1
+            # if obj_mask.sum().item() > 0:
+            #     boxes, scores, labels = [], [], []
+            #     output = self._detect(i, y_true).squeeze()
+            #     x1 = output[..., :4][:, 0] - output[..., :4][:, 2] / 2
+            #     y1 = output[..., :4][:, 1] - output[..., :4][:, 3] / 2
+            #     x2 = output[..., :4][:, 0] + output[..., :4][:, 2] / 2
+            #     y2 = output[..., :4][:, 1] + output[..., :4][:, 3] / 2
+            #     bboxes = torch.stack([x1, y1, x2, y2], dim=-1)
+            #     _scores = (output[..., 4].unsqueeze(-1) * output[..., 5:])
+            #     for cls_id in range(20):
+            #         cls_scores = _scores[..., cls_id]
+            #         keep = cls_scores > 0.45
+            #         if keep.sum() == 0:
+            #             continue
+            #         cls_boxes = bboxes[keep]
+            #         cls_scores = cls_scores[keep]
+            #         cls_labels = torch.full((cls_scores.shape[0],), cls_id).long()
 
-            x = prediction[obj_mask][:, 0].sigmoid() * S
+            #         boxes.extend(cls_boxes)
+            #         scores.append(cls_scores)
+            #         labels.append(cls_labels)
+            #     image = item[0][0]
+            #     from utils.boxTool import draw_box
+            #     from detect import transport
+            #     import cv2 as cv
+            #     image = transport(image)[0]
+            #     draw_box(image, boxes, scores, labels)
+            #     cv.imshow("image", image)
+            #     cv.waitKey(0)
+            #     cv.destroyAllWindows()
+            # x = prediction[obj_mask][:, 0].sigmoid() * S
 
-            y = prediction[obj_mask][:, 1].sigmoid() * S
+            # y = prediction[obj_mask][:, 1].sigmoid() * S
 
-            best_a = obj_mask.nonzero()[:, 1]
+            # best_a = obj_mask.nonzero()[:, 1]
 
-            w = torch.exp(prediction[obj_mask][:, 2]) * anchors[best_a][:, 0] / stride
+            # w = torch.exp(prediction[obj_mask][:, 2]) * anchors[best_a][:, 0] / stride
 
-            h = torch.exp(prediction[obj_mask][:, 3]) * anchors[best_a][:, 1] / stride
+            # h = torch.exp(prediction[obj_mask][:, 3]) * anchors[best_a][:, 1] / stride
             # ===========================================#
             #   负样本mask
             # ===========================================#
@@ -77,7 +93,7 @@ class YOLOv3LOSS:
                 # ===========================================#
                 #   位置损失 GIoU损失
                 # ===========================================#
-                giou = self.compute_giou(x, y, w, h, obj_mask, anchors, y_true, S)
+                giou = self.compute_giou(i, S, prediction, y_true , obj_mask)
                 loss_loc = (1 - giou).mean()
                 # self.compute_mseloss(x, y, w, h, y_true, obj_mask, S, anchors, stride)
                 all_loss_loc += loss_loc
@@ -131,32 +147,36 @@ class YOLOv3LOSS:
             "lambda_obj": self.lambda_obj,
         }
 
-    def _fill_target(self, y_true, bs, k, x, y, batch_target, anchors, c, index):
+    def _fill_target(self, y_true, b, k, x, y, c, batch_target, anchors, index):
         """辅助函数：填充目标值"""
-        y_true[bs, k, x, y, 0] = batch_target[index, 0] - x.float()
-        y_true[bs, k, x, y, 1] = batch_target[index, 1] - y.float()
-        y_true[bs, k, x, y, 2] = torch.log(batch_target[index, 2] / anchors[k][0])
-        y_true[bs, k, x, y, 3] = torch.log(batch_target[index, 3] / anchors[k][1])
-        y_true[bs, k, x, y, 4] = 1
-        y_true[bs, k, x, y, 5 + c] = 1
+        y_true[b, k, x, y, 0] = batch_target[index, 0] - x.float()
+        y_true[b, k, x, y, 1] = batch_target[index, 1] - y.float()
+        y_true[b, k, x, y, 2] = torch.log(batch_target[index, 2] / anchors[k][0])
+        y_true[b, k, x, y, 3] = torch.log(batch_target[index, 3] / anchors[k][1])
+        y_true[b, k, x, y, 4] = 1
+        y_true[b, k, x, y, 5 + c] = 1
         return y_true
 
-    def build_target(self, B, S, prediction, targets, anchors):
-        y_true = torch.zeros_like(prediction).to(self.device)
+    def build_target(self, i, prediction, targets):
+        B = prediction.shape[0]
+        S = prediction.shape[2]
+        y_true = torch.zeros_like(prediction)
 
-        for bs in range(B):
-            if targets[bs].shape[0] == 0:  # 处理无目标的情况
+        for b in range(B):
+            if targets[b].shape[0] == 0:  # 处理无目标的情况
                 continue
 
             # 预处理目标框
-            batch_target = torch.zeros_like(targets[bs])
-            batch_target[:, 0:4] = targets[bs][:, 0:4] * S
-            batch_target[:, 4] = targets[bs][:, 4]
+            batch_target = torch.zeros_like(targets[b])
+            batch_target[:, 0:4] = targets[b][:, 0:4] * S
+            batch_target[:, 4] = targets[b][:, 4]
 
             # 计算IOU矩阵
             gt_box = batch_target[:, 2:4]
-            iou_matrix = self.compute_iou(gt_box, anchors)
+            iou_matrix = self.compute_iou(gt_box, self.anchors[i])
             best_iou, best_na = torch.max(iou_matrix, dim=1)
+            if best_iou.max() < 0.3:
+                continue
 
             # 处理每个目标框
             for index, n_a in enumerate(best_na.tolist()):
@@ -167,71 +187,84 @@ class YOLOv3LOSS:
 
                 # 处理最佳匹配的anchor
                 k = n_a
-                y_true = self._fill_target(y_true, bs, k, x, y, batch_target, anchors, c, index)
+                y_true = self._fill_target(y_true, b, k, x, y, c, batch_target, self.anchors[i], index)
 
                 # 处理其他匹配的anchor
                 additional_anchors = (iou_matrix[index] > 0.5).nonzero().squeeze(1)
                 for a in additional_anchors.tolist():
                     if a != n_a:
                         k = a
-                        y_true = self._fill_target(y_true, bs, k, x, y, batch_target, anchors, c, index)
+                        y_true = self._fill_target(y_true, b, k, x, y, c, batch_target, self.anchors[i], index)
 
         return y_true
 
     def compute_iou(self, gt_box, anchors):
-        gt_box = gt_box.unsqueeze(1)
-        anchors = anchors.unsqueeze(0)
+        gt_wh = gt_box.unsqueeze(1)  # [N, 1, 2]
+        anchors_wh = anchors.unsqueeze(0)  # [1, A, 2]
 
-        min_wh = torch.min(gt_box, anchors)
-        area = min_wh[..., 0] * min_wh[..., 1]
+        # 计算交集的宽和高
+        inter_w = torch.min(gt_wh[..., 0], anchors_wh[..., 0])  # 交集宽度
+        inter_h = torch.min(gt_wh[..., 1], anchors_wh[..., 1])  # 交集高度
 
-        area_a = (gt_box[..., 0] * gt_box[..., 1]).expand_as(area)
-        area_b = (anchors[..., 0] * anchors[..., 1]).expand_as(area)
-        union = area_a + area_b - area
+        # 计算交集面积
+        intersection = inter_w * inter_h
 
-        return area / union
+        # 计算每个框的面积
+        gt_area = gt_wh[..., 0] * gt_wh[..., 1]  # [N, 1]的面积
+        anchor_area = anchors_wh[..., 0] * anchors_wh[..., 1]  # [1, A]的面积
 
-    def compute_giou(self, x, y, w, h, obj_mask, anchors, y_true, S):
+        # 计算并集面积
+        union = gt_area + anchor_area - intersection
+
+        iou = intersection / union
+        return iou
+
+    def compute_giou(self, i, S, prediction, y_true , obj_mask):
         b, a, gj, gi = obj_mask.nonzero(as_tuple=True)
-        anchor = anchors[a]
+        anchors = self.anchors[i][a]
 
-        t_x = torch.sigmoid(y_true[obj_mask])[:, 0] * S
-        t_y = torch.sigmoid(y_true[obj_mask])[:, 1] * S
-        t_w = torch.exp(y_true[obj_mask][:, 2]) * anchor[:, 0]
-        t_h = torch.exp(y_true[obj_mask][:, 3]) * anchor[:, 1]
+        p_x = prediction[obj_mask][:, 0].sigmoid() * S
+        p_y = prediction[obj_mask][:, 1].sigmoid() * S
+        p_w = prediction[obj_mask][:, 2].exp() * anchors[:, 0]
+        p_h = prediction[obj_mask][:, 3].exp() * anchors[:, 1]
+
+        t_x = y_true[obj_mask][:, 0] * S
+        t_y = y_true[obj_mask][:, 1] * S
+        t_w = y_true[obj_mask][:, 2].exp() * anchors[:, 0]
+        t_h = y_true[obj_mask][:, 3].exp() * anchors[:, 1]
 
         # xywh -> xyxy
-        x1 = torch.clamp(x - w / 2, min=1e-6, max=S)
-        y1 = torch.clamp(y - h / 2, min=1e-6, max=S)
-        x2 = torch.clamp(x + w / 2, min=1e-6, max=S)
-        y2 = torch.clamp(y + h / 2, min=1e-6, max=S)
+        p_x1 = p_x - p_w / 2
+        p_y1 = p_y - p_h / 2
+        p_x2 = p_x + p_w / 2
+        p_y2 = p_y + p_h / 2
 
-        t_x1 = torch.clamp(t_x - t_w / 2, min=1e-6, max=S)
-        t_y1 = torch.clamp(t_y - t_h / 2, min=1e-6, max=S)
-        t_x2 = torch.clamp(t_x + t_w / 2, min=1e-6, max=S)
-        t_y2 = torch.clamp(t_y + t_h / 2, min=1e-6, max=S)
+        t_x1 = t_x - t_w / 2
+        t_y1 = t_y - t_h / 2
+        t_x2 = t_x + t_w / 2
+        t_y2 = t_y + t_h / 2
 
         # 计算交集区域面积
-        area_x1 = torch.max(x1, t_x1)
-        area_y1 = torch.max(y1, t_y1)
-        area_x2 = torch.min(x2, t_x2)
-        area_y2 = torch.min(y2, t_y2)
+        area_x1 = torch.max(p_x1, t_x1)
+        area_y1 = torch.max(p_y1, t_y1)
+        area_x2 = torch.min(p_x2, t_x2)
+        area_y2 = torch.min(p_y2, t_y2)
 
         inter = (area_x2 - area_x1).clamp(min=0) * (area_y2 - area_y1).clamp(min=0)
-        area_1 = (x2 - x1) * (y2 - y1)
+        area_1 = (p_x2 - p_x1) * (p_y2 - p_y1)
         area_2 = (t_x2 - t_x1) * (t_y2 - t_y1)
-        union = area_1 + area_2 - inter
+        union = (area_1 + area_2 - inter).clamp(min=1e-9)
 
-        iou = inter / union.clamp(min=1e-6)
+        iou = inter / union
 
         # 最小包围框
-        xc1 = torch.min(x1, t_x1)
-        yc1 = torch.min(y1, t_y1)
-        xc2 = torch.max(x2, t_x2)
-        yc2 = torch.max(y2, t_y2)
-        area_c = (xc2 - xc1) * (yc2 - yc1)
+        xc1 = torch.min(p_x1, t_x1)
+        yc1 = torch.min(p_y1, t_y1)
+        xc2 = torch.max(p_x2, t_x2)
+        yc2 = torch.max(p_y2, t_y2)
+        area_c = ((xc2 - xc1) * (yc2 - yc1)).clamp(min=1e-6) + 1e-16
 
-        giou = iou - (area_c - union) / (area_c.clamp(min=1e-6) + 1e-16)
+        giou = iou - (area_c - union) / (area_c)
 
         return giou
 
@@ -269,10 +302,34 @@ class YOLOv3LOSS:
 
         return noobj_mask
 
-    def compute_mseloss(self, x, y, w, h, y_true, obj_mask, S, anchors, stride):
-        best_a = obj_mask.nonzero()[:, 1]
-        x_loss = ((x - y_true[obj_mask][:, 0] * S) ** 2).sum()
-        y_loss = ((y - y_true[obj_mask][:, 1] * S) ** 2).sum()
-        w_loss = ((w - torch.exp(y_true[obj_mask][:, 2]) * anchors[best_a][:, 1] / stride) ** 2).sum()
-        h_loss = ((h - torch.exp(y_true[obj_mask][:, 3]) * anchors[best_a][:, 0] / stride) ** 2).sum()
-        return x_loss + y_loss + w_loss + h_loss
+    # def compute_mseloss(self, x, y, w, h, y_true, obj_mask, S, anchors, stride):
+    #     best_a = obj_mask.nonzero()[:, 1]
+    #     x_loss = ((x - y_true[obj_mask][:, 0] * S) ** 2).sum()
+    #     y_loss = ((y - y_true[obj_mask][:, 1] * S) ** 2).sum()
+    #     w_loss = ((w - torch.exp(y_true[obj_mask][:, 2]) * anchors[best_a][:, 1] / stride) ** 2).sum()
+    #     h_loss = ((h - torch.exp(y_true[obj_mask][:, 3]) * anchors[best_a][:, 0] / stride) ** 2).sum()
+    #     return x_loss + y_loss + w_loss + h_loss
+    
+    # def _detect(self, i, y_true):
+    #     bs, _, ny, nx, _ = y_true.shape
+
+    #     grid, anchor_grid = self._make_grid(nx, ny, i)
+
+    #     xy, wh, conf = y_true.split((2, 2, 20 + 1), 4)
+    #     xy = (xy + grid) * self.stride[i]  # xy
+    #     wh = torch.exp(wh) * anchor_grid  # wh
+    #     y = torch.cat((xy, wh, conf), 4)
+
+    #     return y.view(bs, 3 * nx * ny, 25)
+    # def _make_grid(self, nx=20, ny=20, i=0):
+    #     """Generates a grid and corresponding anchor grid with shape `(1, num_anchors, ny, nx, 2)` for indexing
+    #     anchors.
+    #     """
+    #     d = self.anchors[i].device
+    #     t = self.anchors[i].dtype
+    #     shape = 1, 3, ny, nx, 2  # grid shape
+    #     y, x = torch.arange(ny, device=d, dtype=t), torch.arange(nx, device=d, dtype=t)
+    #     yv, xv = torch.meshgrid(y, x, indexing="ij")  # torch>=0.7 compatibility
+    #     grid = torch.stack((xv, yv), 2).expand(shape)  # add grid offset, i.e. y = 2.0 * x - 0.5
+    #     anchor_grid = (self.anchors[i] * self.stride[i]).view((1, 3, 1, 1, 2)).expand(shape)
+    #     return grid, anchor_grid

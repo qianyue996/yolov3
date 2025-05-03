@@ -16,7 +16,7 @@ def set_seed(seed=27):
 
 
 def worker_init_fn(worker_id):
-    seed = 27 + worker_id
+    seed = torch.initial_seed() % 2**32 + worker_id
     np.random.seed(seed)
     random.seed(seed)
 

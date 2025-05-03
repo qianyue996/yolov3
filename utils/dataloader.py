@@ -36,7 +36,7 @@ class YOLODataset(Dataset):
             raise ValueError("没有读取到图片")
         labels = np.array([list(map(float, item.split(","))) for item in self.datas[index].strip("\n").split(" ")[1:]])
 
-        return image, labels
+        return image, labels, index
 
 
 def rand():
@@ -233,18 +233,20 @@ def single_chakan(image, labels):
 
 
 def yolo_collate_fn(batch):
+    images, labels, idx = zip(*batch)
     # resize + bgr -> rgb
-    images, labels = map(list, (zip(*[resizeCvt(image, label) for image, label in batch])))
+    images, labels = map(list, zip(*[resizeCvt(image, label) for image, label in zip(images, labels)]))
+    # images, labels = map(list, (zip(*[resizeCvt(image, labels) for image, labels in batch])))
     # 随机增强
-    images, labels = zip(*[randomAug(image, label) for image, label in zip(images, labels)])
+    # images, labels = zip(*[randomAug(image, label) for image, label in zip(images, labels)])
     images = np.array(images)
-    labels = list(labels)
+    # labels = list(labels)
     #
     # chakan(images, labels)
     labels = xyxy2xywh(labels)
     images, labels = normalizeData(images, labels)
     images, labels = ToTensor(images, labels)
-    return images, labels
+    return images, labels, idx
 
 
 if __name__ == "__main__":
