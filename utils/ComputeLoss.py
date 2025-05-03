@@ -136,14 +136,14 @@ class YOLOv3LOSS:
             gt_box = batch_target[:, 2:4]
             iou_matrix = self.compute_iou(gt_box, self.anchors[i], iou_type='iou')
             best_iou, best_na = torch.max(iou_matrix, dim=1)
-            if best_iou.max() < 0.3:
+            if best_iou.max() < 0.2:
                 continue
 
             # 处理每个目标框
             for index, n_a in enumerate(best_na.tolist()):
                 # 获取坐标和类别
-                x = torch.clamp(batch_target[index, 0].long(), 0, S - 1)
-                y = torch.clamp(batch_target[index, 1].long(), 0, S - 1)
+                x = batch_target[index, 0].long().clamp(0, S - 1)
+                y = batch_target[index, 1].long().clamp(0, S - 1)
                 c = batch_target[index, 4].long()
 
                 # 处理最佳匹配的anchor
@@ -151,7 +151,7 @@ class YOLOv3LOSS:
                 y_true = self._fill_target(y_true, b, k, x, y, c, batch_target, self.anchors[i], index)
 
                 # 处理其他匹配的anchor
-                additional_anchors = (iou_matrix[index] > 0.5).nonzero().squeeze(1)
+                additional_anchors = (iou_matrix[index] >= 0.2).nonzero().squeeze(1)
                 for a in additional_anchors.tolist():
                     if a != n_a:
                         k = a
@@ -160,6 +160,7 @@ class YOLOv3LOSS:
         return y_true
 
     def ignore_target(self, i, prediction, y_true, obj_mask):
+        pred_box, targ_box = None, None
         #============================================#
         #   batch size
         #============================================#
@@ -168,36 +169,6 @@ class YOLOv3LOSS:
         #   特征图大小
         #============================================#
         S = prediction.shape[2]
-        #============================================#
-        #   获取best anchor index
-        #============================================#
-        b, a, gj, gi = obj_mask.nonzero(as_tuple=True)
-        anchors = self.anchors[i][a]
-        #============================================#
-        #   xywh 转 xyxy
-        #=============================================#
-        p_x = prediction[obj_mask][:, 0].sigmoid() * S
-        p_y = prediction[obj_mask][:, 1].sigmoid() * S
-        p_w = prediction[obj_mask][:, 2].exp() * anchors[:, 0]
-        p_h = prediction[obj_mask][:, 3].exp() * anchors[:, 1]
-
-        t_x = y_true[obj_mask][:, 0] * S
-        t_y = y_true[obj_mask][:, 1] * S
-        t_w = y_true[obj_mask][:, 2].exp() * anchors[:, 0]
-        t_h = y_true[obj_mask][:, 3].exp() * anchors[:, 1]
-
-        p_x1 = p_x - p_w / 2
-        p_y1 = p_y - p_h / 2
-        p_x2 = p_x + p_w / 2
-        p_y2 = p_y + p_h / 2
-
-        t_x1 = t_x - t_w / 2
-        t_y1 = t_y - t_h / 2
-        t_x2 = t_x + t_w / 2
-        t_y2 = t_y + t_h / 2
-
-        pred_box = torch.stack([p_x1, p_y1, p_x2, p_y2], dim=-1)
-        targ_box = torch.stack([t_x1, t_y1, t_x2, t_y2], dim=-1)
         #============================================#
         #   构建noobj mask
         #============================================#
@@ -224,6 +195,37 @@ class YOLOv3LOSS:
                 y = obj_mask[bs].nonzero()[n][-2:][1].item()
 
                 noobj_mask[bs, :, x, y] = False
+        if obj_mask.sum().item() != 0:
+            #============================================#
+            #   获取best anchor index
+            #============================================#
+            b, a, gj, gi = obj_mask.nonzero(as_tuple=True)
+            anchors = self.anchors[i][a]
+            #============================================#
+            #   xywh 转 xyxy
+            #=============================================#
+            p_x = (prediction[obj_mask][:, 0].sigmoid() * 2 - 0.5) * S
+            p_y = (prediction[obj_mask][:, 1].sigmoid() * 2 - 0.5) * S
+            p_w = prediction[obj_mask][:, 2].exp() * anchors[:, 0]
+            p_h = prediction[obj_mask][:, 3].exp() * anchors[:, 1]
+
+            t_x = y_true[obj_mask][:, 0] * S
+            t_y = y_true[obj_mask][:, 1] * S
+            t_w = y_true[obj_mask][:, 2].exp() * anchors[:, 0]
+            t_h = y_true[obj_mask][:, 3].exp() * anchors[:, 1]
+
+            p_x1 = p_x - p_w / 2
+            p_y1 = p_y - p_h / 2
+            p_x2 = p_x + p_w / 2
+            p_y2 = p_y + p_h / 2
+
+            t_x1 = t_x - t_w / 2
+            t_y1 = t_y - t_h / 2
+            t_x2 = t_x + t_w / 2
+            t_y2 = t_y + t_h / 2
+
+            pred_box = torch.stack([p_x1, p_y1, p_x2, p_y2], dim=-1)
+            targ_box = torch.stack([t_x1, t_y1, t_x2, t_y2], dim=-1)
 
         return noobj_mask, pred_box, targ_box
 
@@ -250,135 +252,92 @@ class YOLOv3LOSS:
 
             return iou
         
-        elif iou_type=='giou':
-            p_x1 = box_1[:, 0]
-            p_y1 = box_1[:, 1]
-            p_x2 = box_1[:, 2]
-            p_y2 = box_1[:, 3]
-
-            t_x1 = box_2[:, 0]
-            t_y1 = box_2[:, 1]
-            t_x2 = box_2[:, 2]
-            t_y2 = box_2[:, 3]
-            # 计算交集区域面积
-            area_x1 = torch.max(p_x1, t_x1)
-            area_y1 = torch.max(p_y1, t_y1)
-            area_x2 = torch.min(p_x2, t_x2)
-            area_y2 = torch.min(p_y2, t_y2)
-
-            inter = (area_x2 - area_x1).clamp(min=0) * (area_y2 - area_y1).clamp(min=0)
-            area_1 = (p_x2 - p_x1) * (p_y2 - p_y1)
-            area_2 = (t_x2 - t_x1) * (t_y2 - t_y1)
-            union = (area_1 + area_2 - inter).clamp(min=1e-9)
-
-            iou = inter / union
-
-            # 最小包围框
-            xc1 = torch.min(p_x1, t_x1)
-            yc1 = torch.min(p_y1, t_y1)
-            xc2 = torch.max(p_x2, t_x2)
-            yc2 = torch.max(p_y2, t_y2)
-            area_c = ((xc2 - xc1) * (yc2 - yc1)).clamp(min=1e-6) + 1e-16
-
-            giou = iou - (area_c - union) / (area_c)
-
-            return giou
-        
-        elif iou_type=='diou':
-            p_x1 = box_1[:, 0]
-            p_y1 = box_1[:, 1]
-            p_x2 = box_1[:, 2]
-            p_y2 = box_1[:, 3]
-
-            t_x1 = box_2[:, 0]
-            t_y1 = box_2[:, 1]
-            t_x2 = box_2[:, 2]
-            t_y2 = box_2[:, 3]
-            # 计算交集区域面积
-            area_x1 = torch.max(p_x1, t_x1)
-            area_y1 = torch.max(p_y1, t_y1)
-            area_x2 = torch.min(p_x2, t_x2)
-            area_y2 = torch.min(p_y2, t_y2)
-
-            inter = (area_x2 - area_x1).clamp(min=0) * (area_y2 - area_y1).clamp(min=0)
-            area_1 = (p_x2 - p_x1) * (p_y2 - p_y1)
-            area_2 = (t_x2 - t_x1) * (t_y2 - t_y1)
-            union = (area_1 + area_2 - inter).clamp(min=1e-9)
-
-            iou = inter / union
-
-            # 中心点
-            b1_center_x = (p_x1 + p_x2) / 2
-            b1_center_y = (p_y1 + p_y2) / 2
-            b2_center_x = (t_x1 + t_x2) / 2
-            b2_center_y = (t_y1 + t_y2) / 2
-
-            center_dist_sq = (b1_center_x - b2_center_x) ** 2 + (b1_center_y - b2_center_y) ** 2
-
-            # 包裹框的对角线距离
-            enclose_x1 = torch.min(p_x1, t_x1)
-            enclose_y1 = torch.min(p_y1, t_y1)
-            enclose_x2 = torch.max(p_x2, t_x2)
-            enclose_y2 = torch.max(p_y2, p_y2)
-            enclose_diag_sq = (enclose_x2 - enclose_x1) ** 2 + (enclose_y2 - enclose_y1) ** 2 + 1e-7
-
-            diou = iou - center_dist_sq / enclose_diag_sq
-
-            return diou
-        
-        elif iou_type=='ciou':
-            p_x1 = box_1[:, 0]
-            p_y1 = box_1[:, 1]
-            p_x2 = box_1[:, 2]
-            p_y2 = box_1[:, 3]
-
-            t_x1 = box_2[:, 0]
-            t_y1 = box_2[:, 1]
-            t_x2 = box_2[:, 2]
-            t_y2 = box_2[:, 3]
-            # 计算交集区域面积
-            area_x1 = torch.max(p_x1, t_x1)
-            area_y1 = torch.max(p_y1, t_y1)
-            area_x2 = torch.min(p_x2, t_x2)
-            area_y2 = torch.min(p_y2, t_y2)
-
-            inter = (area_x2 - area_x1).clamp(min=0) * (area_y2 - area_y1).clamp(min=0)
-            area_1 = (p_x2 - p_x1) * (p_y2 - p_y1)
-            area_2 = (t_x2 - t_x1) * (t_y2 - t_y1)
-            union = (area_1 + area_2 - inter).clamp(min=1e-9)
-
-            iou = inter / union
-
-            # 中心点坐标
-            p_cx = (p_x1 + p_x2) / 2
-            p_cy = (p_y1 + p_y2) / 2
-            t_cx = (t_x1 + t_x2) / 2
-            t_cy = (t_y1 + t_y2) / 2
-
-            # 中心点距离的平方
-            center_dist = (p_cx - t_cx) ** 2 + (p_cy - t_cy) ** 2
-
-            # 包裹框的对角线平方
-            enclose_x1 = torch.min(p_x1, t_x1)
-            enclose_y1 = torch.min(p_y1, t_y1)
-            enclose_x2 = torch.max(p_x2, t_x2)
-            enclose_y2 = torch.max(p_y2, t_y2)
-            enclose_diag = (enclose_x2 - enclose_x1) ** 2 + (enclose_y2 - enclose_y1) ** 2 + 1e-7
-
-            # 宽高
-            p_w = (p_x2 - p_x1).clamp(min=1e-9)
-            p_h = (p_y2 - p_y1).clamp(min=1e-9)
-            t_w = (t_x2 - t_x1).clamp(min=1e-9)
-            t_h = (t_y2 - t_y1).clamp(min=1e-9)
-
-            # 宽高比项 v 和权重 alpha
-            v = (4 / (torch.pi ** 2)) * torch.pow(torch.atan(t_w / t_h) - torch.atan(p_w / p_h), 2)
-            with torch.no_grad():
-                alpha = v / (1 - iou + v + 1e-7)
-
-            # CIoU
-            ciou = iou - center_dist / enclose_diag - alpha * v
-
-            return ciou
         else:
-            raise ValueError(f'Invalid iou_type: {iou_type}')
+            p_x1 = box_1[:, 0]
+            p_y1 = box_1[:, 1]
+            p_x2 = box_1[:, 2]
+            p_y2 = box_1[:, 3]
+
+            t_x1 = box_2[:, 0]
+            t_y1 = box_2[:, 1]
+            t_x2 = box_2[:, 2]
+            t_y2 = box_2[:, 3]
+            # 计算交集区域面积
+            area_x1 = torch.max(p_x1, t_x1)
+            area_y1 = torch.max(p_y1, t_y1)
+            area_x2 = torch.min(p_x2, t_x2)
+            area_y2 = torch.min(p_y2, t_y2)
+
+            inter = (area_x2 - area_x1).clamp(min=0) * (area_y2 - area_y1).clamp(min=0)
+            area_1 = (p_x2 - p_x1) * (p_y2 - p_y1)
+            area_2 = (t_x2 - t_x1) * (t_y2 - t_y1)
+            union = (area_1 + area_2 - inter).clamp(min=1e-9)
+
+            iou = inter / union
+
+            if iou_type == 'giou':
+                # 最小包围框
+                xc1 = torch.min(p_x1, t_x1)
+                yc1 = torch.min(p_y1, t_y1)
+                xc2 = torch.max(p_x2, t_x2)
+                yc2 = torch.max(p_y2, t_y2)
+                area_c = ((xc2 - xc1) * (yc2 - yc1)).clamp(min=1e-6) + 1e-16
+
+                giou = iou - (area_c - union) / (area_c)
+
+                return giou
+        
+            elif iou_type=='diou':
+                # 中心点
+                b1_center_x = (p_x1 + p_x2) / 2
+                b1_center_y = (p_y1 + p_y2) / 2
+                b2_center_x = (t_x1 + t_x2) / 2
+                b2_center_y = (t_y1 + t_y2) / 2
+
+                center_dist_sq = (b1_center_x - b2_center_x) ** 2 + (b1_center_y - b2_center_y) ** 2
+
+                # 包裹框的对角线距离
+                enclose_x1 = torch.min(p_x1, t_x1)
+                enclose_y1 = torch.min(p_y1, t_y1)
+                enclose_x2 = torch.max(p_x2, t_x2)
+                enclose_y2 = torch.max(p_y2, p_y2)
+                enclose_diag_sq = (enclose_x2 - enclose_x1) ** 2 + (enclose_y2 - enclose_y1) ** 2 + 1e-7
+
+                diou = iou - center_dist_sq / enclose_diag_sq
+
+                return diou
+        
+            elif iou_type=='ciou':
+                # 中心点坐标
+                p_cx = (p_x1 + p_x2) / 2
+                p_cy = (p_y1 + p_y2) / 2
+                t_cx = (t_x1 + t_x2) / 2
+                t_cy = (t_y1 + t_y2) / 2
+
+                # 中心点距离的平方
+                center_dist = (p_cx - t_cx) ** 2 + (p_cy - t_cy) ** 2
+
+                # 包裹框的对角线平方
+                enclose_x1 = torch.min(p_x1, t_x1)
+                enclose_y1 = torch.min(p_y1, t_y1)
+                enclose_x2 = torch.max(p_x2, t_x2)
+                enclose_y2 = torch.max(p_y2, t_y2)
+                enclose_diag = (enclose_x2 - enclose_x1) ** 2 + (enclose_y2 - enclose_y1) ** 2 + 1e-7
+
+                # 宽高
+                p_w = (p_x2 - p_x1).clamp(min=1e-9)
+                p_h = (p_y2 - p_y1).clamp(min=1e-9)
+                t_w = (t_x2 - t_x1).clamp(min=1e-9)
+                t_h = (t_y2 - t_y1).clamp(min=1e-9)
+
+                # 宽高比项 v 和权重 alpha
+                v = (4 / (torch.pi ** 2)) * torch.pow(torch.atan(t_w / t_h) - torch.atan(p_w / p_h), 2)
+                with torch.no_grad():
+                    alpha = v / (1 - iou + v + 1e-7)
+
+                # CIoU
+                ciou = iou - center_dist / enclose_diag - alpha * v
+
+                return ciou
+            else:
+                raise ValueError(f'Invalid iou_type: {iou_type}')
