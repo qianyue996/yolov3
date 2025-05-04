@@ -55,8 +55,8 @@ class YOLOv3LOSS:
             #============================================#
             #   置信度损失
             #============================================#
-            conf = prediction[..., 4]
-            t_conf = y_true[..., 4]
+            conf = prediction[..., 4][obj_mask | noobj_mask]
+            t_conf = y_true[..., 4][obj_mask | noobj_mask]
             loss_conf = focal_loss(conf, t_conf)
             all_loss_obj += loss_conf
             # loss_conf = nn.BCELoss(reduction="none")(conf, t_conf)

@@ -4,8 +4,6 @@ import torch
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.data.dataset import Dataset
 
-imgSize = 416
-
 
 class YOLODataset(Dataset):
     def __init__(self, dataset_type=None, Train=True):
@@ -36,7 +34,7 @@ class YOLODataset(Dataset):
             raise ValueError("没有读取到图片")
         labels = np.array([list(map(float, item.split(","))) for item in self.datas[index].strip("\n").split(" ")[1:]])
 
-        return image, labels, index
+        return image, labels
 
 
 def rand():
@@ -44,6 +42,7 @@ def rand():
 
 
 def randomAug(image, label):
+    imgSize = image.shape[0]
     nImage = image.copy()
     nLabel = label.copy()
     h, w = nImage.shape[:2]
@@ -74,7 +73,9 @@ def randomAug(image, label):
         bottom = pad_h - top
         left = pad_w // 2
         right = pad_w - left
-        nImage = cv.copyMakeBorder(nImage, top, bottom, left, right, borderType=cv.BORDER_CONSTANT, value=(128, 128, 128))
+        nImage = cv.copyMakeBorder(
+            nImage, top, bottom, left, right, borderType=cv.BORDER_CONSTANT, value=(128, 128, 128)
+        )
         if nLabel is not None:
             nLabel[:, :4] *= scale
             nLabel[:, [0, 2]] += left
@@ -134,14 +135,8 @@ def randomAug(image, label):
     return nImage, nLabel
 
 
-def normalizeData(images, labels):
-    images = (images / 255.0).transpose(0, 3, 1, 2)
-    for i, label in enumerate(labels):
-        labels[i][:, :4] = label[:, :4] / imgSize
-    return images, labels
-
-
-def xyxy2xywh(labels: list[np.array]):
+def xyxy2xywh(labels):
+    labels = list(labels)
     for i, label in enumerate(labels):
         cx = (label[:, 0] + label[:, 2]) / 2
         cy = (label[:, 1] + label[:, 3]) / 2
@@ -153,7 +148,7 @@ def xyxy2xywh(labels: list[np.array]):
     return labels
 
 
-def resizeCvt(image=None, labels=None, cvt=True):
+def resizeCvt(image=None, labels=None, imgSize=416):
     if image is None:
         raise ValueError('image is None')
     im_h, im_w = image.shape[:2]
@@ -179,9 +174,17 @@ def resizeCvt(image=None, labels=None, cvt=True):
         labels[:, [1, 3]] = labels[:, [1, 3]] * scale + top
 
     # 转为 RGB
-    if cvt:
-        nImage = cv.cvtColor(nImage, cv.COLOR_BGR2RGB)
+    nImage = cv.cvtColor(nImage, cv.COLOR_BGR2RGB)
     return nImage, labels
+
+
+def normalizeData(images, labels):
+    images = np.array(images)
+    imgSize = images.shape[1]
+    images = (images / 255.0).transpose(0, 3, 1, 2)
+    for i, label in enumerate(labels):
+        labels[i][:, :4] = label[:, :4] / imgSize
+    return images, labels
 
 
 def ToTensor(images, labels):
@@ -233,20 +236,18 @@ def single_chakan(image, labels):
 
 
 def yolo_collate_fn(batch):
-    images, labels, idx = zip(*batch)
+    imgSize = np.random.choice([320, 416, 512, 608])
+    images, labels = zip(*batch)
     # resize + bgr -> rgb
-    images, labels = map(list, zip(*[resizeCvt(image, label) for image, label in zip(images, labels)]))
-    # images, labels = map(list, (zip(*[resizeCvt(image, labels) for image, labels in batch])))
+    images, labels = map(list, zip(*[resizeCvt(image, label, imgSize) for image, label in zip(images, labels)]))
     # 随机增强
-    # images, labels = zip(*[randomAug(image, label) for image, label in zip(images, labels)])
-    images = np.array(images)
-    # labels = list(labels)
+    images, labels = zip(*[randomAug(image, label) for image, label in zip(images, labels)])
     #
     # chakan(images, labels)
     labels = xyxy2xywh(labels)
     images, labels = normalizeData(images, labels)
     images, labels = ToTensor(images, labels)
-    return images, labels, idx
+    return images, labels
 
 
 if __name__ == "__main__":

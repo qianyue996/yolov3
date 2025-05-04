@@ -30,11 +30,11 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 
 class CustomLR:
-    def __init__(self, optimizer, T_max, eta_min=1e-6, step=1):
+    def __init__(self, optimizer, T_0=10, eta_min=1e-6, step=1):
         self.optimizer = optimizer
         self.steper = step
         self.count = 0
-        self.lr_scheduler = optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=T_max, eta_min=eta_min)
+        self.lr_scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(self.optimizer, T_0=T_0, T_mult=2, eta_min=eta_min)
 
     def step(self):
         self.count += 1
@@ -75,8 +75,8 @@ if __name__ == "__main__":
     dataset_type = "voc"
     continue_train = False
     set_seed(seed=27)
-    batch_size = 2
-    epochs = 100
+    batch_size = 4
+    epochs = 200
     lr = 0.001
     l_loc = 5
     l_cls = 1
@@ -102,7 +102,7 @@ if __name__ == "__main__":
     optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
     # lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.94)
     # lr_scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs, eta_min=1e-6)
-    lr_scheduler = CustomLR(optimizer, T_max=epochs, eta_min=1e-5)
+    lr_scheduler = CustomLR(optimizer, T_0=10, eta_min=1e-5)
     loss_fn = YOLOv3LOSS(
         model=model,
         device=device,
@@ -123,7 +123,7 @@ if __name__ == "__main__":
     losses = []
     global_step = 0
     for epoch in range(start_epoch, epochs):
-        if epoch > -1:
+        if epoch > 29:
             for layer in model.model[:13]:
                 for param in layer.parameters():
                     param.requires_grad = True
@@ -132,7 +132,7 @@ if __name__ == "__main__":
         epoch_loss = 0
         with tqdm.tqdm(dataloader) as pbar:
             for batch, item in enumerate(pbar):
-                batch_x, batch_y, idx = item
+                batch_x, batch_y = item
                 batch_x = batch_x.to(device)
                 batch_y = [i.to(device) for i in batch_y]
                 optimizer.zero_grad()
