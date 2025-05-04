@@ -221,13 +221,13 @@ class YOLOv3LOSS:
             #============================================#
             #   获取best anchor index
             #============================================#
-            b, a, gj, gi = obj_mask.nonzero(as_tuple=True)
+            b, a, gx, gy = obj_mask.nonzero(as_tuple=True)
             anchors = self.anchors[i][a]
             #============================================#
             #   xywh 转 xyxy
-            #=============================================#
-            p_x = (prediction[obj_mask][:, 0].sigmoid() * 2 - 0.5) * S
-            p_y = (prediction[obj_mask][:, 1].sigmoid() * 2 - 0.5) * S
+            #============================================#
+            p_x = prediction[obj_mask][:, 0].sigmoid() * 2 - 0.5 + gx
+            p_y = prediction[obj_mask][:, 1].sigmoid() * 2 - 0.5 + gy
             p_w = prediction[obj_mask][:, 2].exp() * anchors[:, 0]
             p_h = prediction[obj_mask][:, 3].exp() * anchors[:, 1]
 
@@ -365,17 +365,23 @@ class YOLOv3LOSS:
                 raise ValueError(f'Invalid iou_type: {iou_type}')
             
 
-def focal_loss(pred, target, alpha=0.25, gamma=2.0, reduction='mean'):
+def focal_loss(pred, target, alpha=0.75, gamma=2.0, reduction='mean'):
     # 计算交叉熵
     bce_loss = nn.BCEWithLogitsLoss(reduction='none')(pred, target)
     
-    # 计算焦点因子
-    p_t = target * pred + (1 - target) * (1 - pred)
+    # 2) 计算 p_t（模型对当前标签的置信度）
+    p = torch.sigmoid(pred)
+    p_t = target * p + (1 - target) * (1 - p)
+
+    # 3) 计算 α_t（正负样本不同权重）
+    alpha_t = target * alpha + (1 - target) * (1 - alpha)
+    
+    # 4) 焦点因子
     focal_factor = (1 - p_t) ** gamma
     
-    # Focal Loss公式
-    loss = alpha * focal_factor * bce_loss
-    
+    # 5) 最终 Focal Loss
+    loss = alpha_t * focal_factor * bce_loss
+
     # 返回平均损失
     if reduction == 'mean':
         return loss.mean()

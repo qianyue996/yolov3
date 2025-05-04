@@ -77,10 +77,10 @@ if __name__ == "__main__":
     set_seed(seed=27)
     batch_size = 4
     epochs = 200
-    lr = 0.001
-    l_loc = 5
-    l_cls = 1
-    l_obj = 1
+    lr = 0.01
+    l_loc = 1
+    l_cls = 10
+    l_obj = 100
     l_noo = 1
     train_dataset = YOLODataset(dataset_type=dataset_type)
     dataloader = DataLoader(
@@ -123,7 +123,7 @@ if __name__ == "__main__":
     losses = []
     global_step = 0
     for epoch in range(start_epoch, epochs):
-        if epoch > 29:
+        if epoch > 50:
             for layer in model.model[:13]:
                 for param in layer.parameters():
                     param.requires_grad = True
