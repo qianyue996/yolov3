@@ -105,8 +105,8 @@ class YOLOv3LOSS:
         """辅助函数：填充目标值"""
         y_true[b, k, x, y, 0] = batch_target[index, 0] - x.float()
         y_true[b, k, x, y, 1] = batch_target[index, 1] - y.float()
-        y_true[b, k, x, y, 2] = torch.log(batch_target[index, 2] / anchors[k][0])
-        y_true[b, k, x, y, 3] = torch.log(batch_target[index, 3] / anchors[k][1])
+        y_true[b, k, x, y, 2] = batch_target[index, 2]
+        y_true[b, k, x, y, 3] = batch_target[index, 3]
         y_true[b, k, x, y, 4] = 1
         y_true[b, k, x, y, 5 + c] = 1
         return y_true
@@ -180,8 +180,8 @@ class YOLOv3LOSS:
                                 k = a
                                 y_true[b, k, nx, ny, 0] = 1 - batch_target[index, 0] % 1
                                 y_true[b, k, nx, ny, 1] = 1 - batch_target[index, 1] % 1
-                                y_true[b, k, nx, ny, 2] = torch.log(batch_target[index, 2] / self.anchors[i][k][0])
-                                y_true[b, k, nx, ny, 3] = torch.log(batch_target[index, 3] / self.anchors[i][k][1])
+                                y_true[b, k, nx, ny, 2] = batch_target[index, 2]
+                                y_true[b, k, nx, ny, 3] = batch_target[index, 3]
                                 y_true[b, k, nx, ny, 4] = 1
                                 y_true[b, k, nx, ny, 5 + c] = 1
         return y_true
@@ -238,8 +238,8 @@ class YOLOv3LOSS:
 
             t_x = y_true[obj_mask][:, 0] * S
             t_y = y_true[obj_mask][:, 1] * S
-            t_w = y_true[obj_mask][:, 2].exp() * anchors[:, 0]
-            t_h = y_true[obj_mask][:, 3].exp() * anchors[:, 1]
+            t_w = y_true[obj_mask][:, 2]
+            t_h = y_true[obj_mask][:, 3]
 
             p_x1 = p_x - p_w / 2
             p_y1 = p_y - p_h / 2
