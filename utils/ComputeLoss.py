@@ -38,8 +38,6 @@ class YOLOv3LOSS:
             noobj_mask, pred_box, targ_box = self.ignore_target(i, prediction, y_true, obj_mask)
 
             if obj_mask.sum().item() != 0:
-                _cls = torch.sigmoid(prediction[..., 5:])[obj_mask]
-                t_cls = y_true[..., 5:][obj_mask]
                 #============================================#
                 #   位置损失 GIoU损失
                 #============================================#
@@ -50,18 +48,22 @@ class YOLOv3LOSS:
                 #============================================#
                 #   分类损失
                 #============================================#
-                loss_cls = nn.BCELoss(reduction="mean")(_cls, t_cls)
+                _cls = prediction[..., 5:][obj_mask]
+                t_cls = y_true[..., 5:][obj_mask]
+                loss_cls = nn.BCEWithLogitsLoss(reduction='mean')(_cls, t_cls)
                 all_loss_cls += loss_cls
             #============================================#
             #   置信度损失
             #============================================#
-            conf = torch.sigmoid(prediction[..., 4])
+            conf = prediction[..., 4]
             t_conf = y_true[..., 4]
-            loss_conf = nn.BCELoss(reduction="none")(conf, t_conf)
+            loss_conf = focal_loss(conf, t_conf)
+            all_loss_obj += loss_conf
+            # loss_conf = nn.BCELoss(reduction="none")(conf, t_conf)
             #============================================#
             #   置信度放一起计算
             #============================================#
-            all_loss_obj += loss_conf[obj_mask | noobj_mask].mean()
+            # all_loss_obj += loss_conf[obj_mask | noobj_mask].mean()
             #============================================#
             #   GroundTrue Postivez正样本置信度损失
             #============================================#
@@ -132,7 +134,7 @@ class YOLOv3LOSS:
             if best_iou.max() < 0.2:
                 continue
 
-            # 处理每个目标框
+            # 处理每个物体
             for index, n_a in enumerate(best_na.tolist()):
                 # 获取坐标和类别
                 x = batch_target[index, 0].long().clamp(0, S - 1)
@@ -150,10 +152,10 @@ class YOLOv3LOSS:
                         k = a
                         y_true = self._fill_target(y_true, b, k, x, y, c, batch_target, self.anchors[i], index)
 
-                # 设置 IOU 阈值和位置偏移限制
-                iou_threshold = 0.2
-                max_offset = 1  # 最大偏移为 1 格
-
+                if best_iou[index] < 0.5:
+                    continue
+                
+                k = n_a
                 # 计算偏移方向
                 offsets = []
                 if batch_target[index, 0] % 1 > 0.5:  # x > 0.5时右扩展
@@ -170,20 +172,13 @@ class YOLOv3LOSS:
                     nx = torch.clamp(x + dx, 0, S - 1)
                     ny = torch.clamp(y + dy, 0, S - 1)
 
-                    # 计算当前邻近格子的 IOU
-                    iou = iou_matrix[index, n_a]
-
-                    # 确定该邻近格子是否也匹配到同样的 anchor（根据 IOU 阈值）
-                    if iou >= iou_threshold and abs(dx) <= max_offset and abs(dy) <= max_offset:
-                        for a in additional_anchors.tolist():
-                            if a != n_a:
-                                k = a
-                                y_true[b, k, nx, ny, 0] = 1 - batch_target[index, 0] % 1
-                                y_true[b, k, nx, ny, 1] = 1 - batch_target[index, 1] % 1
-                                y_true[b, k, nx, ny, 2] = batch_target[index, 2]
-                                y_true[b, k, nx, ny, 3] = batch_target[index, 3]
-                                y_true[b, k, nx, ny, 4] = 1
-                                y_true[b, k, nx, ny, 5 + c] = 1
+                # 确定该邻近格子是否也匹配到同样的 anchor（根据 IOU 阈值）
+                    y_true[b, k, nx, ny, 0] = batch_target[index, 0] - nx.float()
+                    y_true[b, k, nx, ny, 1] = batch_target[index, 1] - ny.float()
+                    y_true[b, k, nx, ny, 2] = batch_target[index, 2]
+                    y_true[b, k, nx, ny, 3] = batch_target[index, 3]
+                    y_true[b, k, nx, ny, 4] = 1
+                    y_true[b, k, nx, ny, 5 + c] = 1
         return y_true
 
     def ignore_target(self, i, prediction, y_true, obj_mask):
@@ -368,3 +363,23 @@ class YOLOv3LOSS:
                 return ciou
             else:
                 raise ValueError(f'Invalid iou_type: {iou_type}')
+            
+
+def focal_loss(pred, target, alpha=0.25, gamma=2.0, reduction='mean'):
+    # 计算交叉熵
+    bce_loss = nn.BCEWithLogitsLoss(reduction='none')(pred, target)
+    
+    # 计算焦点因子
+    p_t = target * pred + (1 - target) * (1 - pred)
+    focal_factor = (1 - p_t) ** gamma
+    
+    # Focal Loss公式
+    loss = alpha * focal_factor * bce_loss
+    
+    # 返回平均损失
+    if reduction == 'mean':
+        return loss.mean()
+    elif reduction == 'sum':
+        return loss.sum()
+    else:
+        return loss

@@ -76,8 +76,8 @@ if __name__ == "__main__":
     continue_train = False
     set_seed(seed=27)
     batch_size = 2
-    epochs = 50
-    lr = 0.01
+    epochs = 100
+    lr = 0.001
     l_loc = 5
     l_cls = 1
     l_obj = 1
@@ -97,7 +97,7 @@ if __name__ == "__main__":
         for param in layer.parameters():
             param.requires_grad = False
     for name, param in model.model.named_parameters():
-        print(f"{name}: {param.requires_grad}")
+        print(f"{name}: {param.requires_grad}", end=' ')
     # optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=1e-4)
     optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
     # lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.94)
@@ -123,7 +123,7 @@ if __name__ == "__main__":
     losses = []
     global_step = 0
     for epoch in range(start_epoch, epochs):
-        if epoch > 30:
+        if epoch > -1:
             for layer in model.model[:13]:
                 for param in layer.parameters():
                     param.requires_grad = True
