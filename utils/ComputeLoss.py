@@ -59,23 +59,27 @@ class YOLOv3LOSS:
             t_conf = y_true[..., 4]
             loss_conf = nn.BCELoss(reduction="none")(conf, t_conf)
             #============================================#
+            #   置信度放一起计算
+            #============================================#
+            all_loss_obj += loss_conf[obj_mask | noobj_mask].mean()
+            #============================================#
             #   GroundTrue Postivez正样本置信度损失
             #============================================#
-            if obj_mask.sum() != 0:
-                obj_conf = loss_conf[obj_mask].mean() * self.lambda_obj_layers[i]
-                all_loss_obj += obj_conf
+            # if obj_mask.sum() != 0:
+            #     obj_conf = loss_conf[obj_mask].mean() * self.lambda_obj_layers[i]
+            #     all_loss_obj += obj_conf
             #============================================#
             #   Background Negative负样本置信度损失
             #============================================#
-            noobj_conf = loss_conf[noobj_mask].mean() * self.lambda_obj_layers[i]
-            all_loss_noo += noobj_conf
+            # noobj_conf = loss_conf[noobj_mask].mean() * self.lambda_obj_layers[i]
+            # all_loss_noo += noobj_conf
         #============================================#
         #   没加lambda系数的loss，方便观察loss下降情况
         #============================================#
-        original_loss_loc = all_loss_loc
-        original_loss_cls = all_loss_cls
-        original_loss_obj = all_loss_obj
-        original_loss_noo = all_loss_noo
+        original_loss_loc = all_loss_loc.clone()
+        original_loss_cls = all_loss_cls.clone()
+        original_loss_obj = all_loss_obj.clone()
+        original_loss_noo = all_loss_noo.clone()
         #============================================#
         #   计算总loss
         #============================================#
@@ -178,6 +182,8 @@ class YOLOv3LOSS:
                                 y_true[b, k, nx, ny, 1] = 1 - batch_target[index, 1] % 1
                                 y_true[b, k, nx, ny, 2] = torch.log(batch_target[index, 2] / self.anchors[i][k][0])
                                 y_true[b, k, nx, ny, 3] = torch.log(batch_target[index, 3] / self.anchors[i][k][1])
+                                y_true[b, k, nx, ny, 4] = 1
+                                y_true[b, k, nx, ny, 5 + c] = 1
         return y_true
 
     def ignore_target(self, i, prediction, y_true, obj_mask):

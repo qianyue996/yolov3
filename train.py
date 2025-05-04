@@ -1,15 +1,15 @@
 import os
-import sys
 import time
-from pathlib import Path
-import platform
-
 import torch
 import tqdm
 import yaml
 from torch import optim
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.tensorboard import SummaryWriter
+
+import sys
+from pathlib import Path
+import platform
 
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[1]  # YOLOv3 root directory
@@ -24,8 +24,10 @@ from utils.general import check_yaml
 from utils.ComputeLoss import YOLOv3LOSS
 from utils.dataloader import YOLODataset, yolo_collate_fn
 from utils.tools import set_seed, worker_init_fn
+from utils.torch_utils import load_checkpoint
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
+
 
 class CustomLR:
     def __init__(self, optimizer, T_max, eta_min=1e-6, step=1):
@@ -33,6 +35,7 @@ class CustomLR:
         self.steper = step
         self.count = 0
         self.lr_scheduler = optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=T_max, eta_min=eta_min)
+
     def step(self):
         self.count += 1
         if self.count % self.steper == 0:
@@ -42,6 +45,27 @@ class CustomLR:
         lr = self.optimizer.param_groups[0]["lr"]
         return lr
 
+def save_bestmodel(model, optimizer, epoch, losses, train_type):
+    if len(losses) == 1 or losses[-1] < min(losses):  # 保存更优的model
+        checkpoint = {
+            "model": model.state_dict(),
+            "optimizer": optimizer.state_dict(),
+            "epoch": epoch,
+        }
+        torch.save(checkpoint, ".checkpoint.pth")
+        os.replace(".checkpoint.pth", f"{train_type}_weight.pth")
+
+    EARLY_STOP_PATIENCE = 5  # 早停忍耐度
+    if len(losses) >= EARLY_STOP_PATIENCE:
+        early_stop = True
+        for i in range(1, EARLY_STOP_PATIENCE):
+            if losses[-i] < losses[-i - 1]:
+                early_stop = False
+                break
+        if early_stop:
+            print(f"early stop, final loss={losses[-1]}")
+            sys.exit()
+
 if __name__ == "__main__":
     cfg = check_yaml("yolov3-tiny.yaml")
     with open(cfg, encoding="ascii", errors="ignore") as f:
@@ -49,11 +73,11 @@ if __name__ == "__main__":
 
     train_type = "tiny"  # or yolov3
     dataset_type = "voc"
-    continue_train = True
+    continue_train = False
     set_seed(seed=27)
     batch_size = 2
-    epochs = 150
-    lr = 0.001
+    epochs = 50
+    lr = 0.01
     l_loc = 5
     l_cls = 1
     l_obj = 1
@@ -63,13 +87,19 @@ if __name__ == "__main__":
         dataset=train_dataset,
         batch_size=batch_size,
         shuffle=True,
-        drop_last=True,
         num_workers=4,
         worker_init_fn=worker_init_fn,
         collate_fn=yolo_collate_fn,
     )
     model = Model(cfg).to(device)
-    optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=1e-4)
+    load_checkpoint(device, 'models/tiny_weight.pth', model)
+    for layer in model.model[:13]:
+        for param in layer.parameters():
+            param.requires_grad = False
+    for name, param in model.model.named_parameters():
+        print(f"{name}: {param.requires_grad}")
+    # optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=1e-4)
+    optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
     # lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.94)
     # lr_scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs, eta_min=1e-6)
     lr_scheduler = CustomLR(optimizer, T_max=epochs, eta_min=1e-5)
@@ -93,7 +123,12 @@ if __name__ == "__main__":
     losses = []
     global_step = 0
     for epoch in range(start_epoch, epochs):
+        if epoch > 30:
+            for layer in model.model[:13]:
+                for param in layer.parameters():
+                    param.requires_grad = True
         model.train()
+        total_samples = 0
         epoch_loss = 0
         with tqdm.tqdm(dataloader) as pbar:
             for batch, item in enumerate(pbar):
@@ -106,8 +141,12 @@ if __name__ == "__main__":
                 loss = loss_params["loss"]
                 loss.backward()
                 optimizer.step()
-                epoch_loss += loss.item()
-                avg_loss = epoch_loss / (batch + 1)
+                # loss compute
+                batch_size = batch_x.size(0)
+                epoch_loss += loss.item() * batch_size
+                total_samples += batch_size
+                avg_loss = epoch_loss / total_samples
+                # loss compute
                 lr = lr_scheduler.get_lr()
                 pbar.set_postfix(**{"epoch": epoch, "loss": f"{loss.item():.4f}", "lr": lr})
                 writer.add_scalars(
@@ -126,22 +165,4 @@ if __name__ == "__main__":
 
         lr_scheduler.step()
         losses.append(avg_loss)
-        if len(losses) == 1 or losses[-1] < losses[-2]:  # 保存更优的model
-            checkpoint = {
-                "model": model.state_dict(),
-                "optimizer": optimizer.state_dict(),
-                "epoch": epoch,
-            }
-            torch.save(checkpoint, ".checkpoint.pth")
-            os.replace(".checkpoint.pth", f"{train_type}_weight.pth")
-
-        EARLY_STOP_PATIENCE = 5  # 早停忍耐度
-        if len(losses) >= EARLY_STOP_PATIENCE:
-            early_stop = True
-            for i in range(1, EARLY_STOP_PATIENCE):
-                if losses[-i] < losses[-i - 1]:
-                    early_stop = False
-                    break
-            if early_stop:
-                print(f"early stop, final loss={losses[-1]}")
-                sys.exit()
+        save_bestmodel(model, optimizer, epoch, losses, train_type)

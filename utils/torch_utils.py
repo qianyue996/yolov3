@@ -1,5 +1,6 @@
 import torch.nn as nn
 import math
+import torch
 import torch.nn.functional as F
 
 def initialize_weights(model):
@@ -28,3 +29,25 @@ def scale_img(img, ratio=1.0, same_shape=False, gs=32):  # img(16,3,256,416)
     if not same_shape:  # pad/crop img
         h, w = (math.ceil(x * ratio / gs) * gs for x in (h, w))
     return F.pad(img, [0, w - s[1], 0, h - s[0]], value=0.447)  # value = imagenet mean
+
+def load_checkpoint(device, check_path, original_model):
+    my_model_dict = torch.load(check_path, map_location=device)['model']
+    original_model_dict = original_model.model.state_dict()
+
+    my_backbone_dict = {k: v for k, v in my_model_dict.items() if k.startswith("backbone.")}
+
+    for key, my_param in my_backbone_dict.items():
+        # 去掉原模型中的 "backbone." 前缀
+        original_key = key.replace("backbone.", "")
+        
+        if original_key in original_model_dict and original_model_dict[original_key].shape == my_param.shape:
+            # 如果形状一致，拷贝参数
+            print(f"复制：{original_key}")
+            original_model_dict[original_key].data.copy_(my_param.data)
+        else:
+            print(f"跳过：{original_key}（形状不匹配或没有找到相应层）")
+
+    # 5. 更新原始模型的参数
+    original_model_dict.update(original_model_dict)
+    original_model.model.load_state_dict(original_model_dict)
+    print("load checkpoint successfully！")
