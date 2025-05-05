@@ -48,7 +48,7 @@ def randomAug(image, label):
     h, w = nImage.shape[:2]
 
     # 随机翻转
-    if rand() > 0.5:
+    if rand() > 0.7:
         flip_type = np.random.choice([0, 1, -1])
         nImage = cv.flip(nImage, flip_type)
         # bbox: [x1, y1, x2, y2]
@@ -61,74 +61,76 @@ def randomAug(image, label):
             nLabel[:, [1, 3]] = h - nLabel[:, [3, 1]]
 
     # 随机缩放（resize 到一个随机尺寸后再 resize 回原尺寸）
-    if rand() > 0.5:
-        scale = np.random.uniform(0.5, 0.9)  # 随机缩放比例
-        new_w = int(w * scale)
-        new_h = int(h * scale)
-        nImage = cv.resize(nImage, (new_w, new_h))
+    # if rand() > 0.5:
+    #     scale = np.random.uniform(0.5, 0.9)  # 随机缩放比例
+    #     new_w = int(w * scale)
+    #     new_h = int(h * scale)
+    #     nImage = cv.resize(nImage, (new_w, new_h))
 
-        pad_w = imgSize - new_w
-        pad_h = imgSize - new_h
-        top = pad_h // 2
-        bottom = pad_h - top
-        left = pad_w // 2
-        right = pad_w - left
-        nImage = cv.copyMakeBorder(
-            nImage, top, bottom, left, right, borderType=cv.BORDER_CONSTANT, value=(128, 128, 128)
-        )
-        if nLabel is not None:
-            nLabel[:, :4] *= scale
-            nLabel[:, [0, 2]] += left
-            nLabel[:, [1, 3]] += top
+    #     pad_w = imgSize - new_w
+    #     pad_h = imgSize - new_h
+    #     top = pad_h // 2
+    #     bottom = pad_h - top
+    #     left = pad_w // 2
+    #     right = pad_w - left
+    #     nImage = cv.copyMakeBorder(
+    #         nImage, top, bottom, left, right, borderType=cv.BORDER_CONSTANT, value=(128, 128, 128)
+    #     )
+    #     if nLabel is not None:
+    #         nLabel[:, :4] *= scale
+    #         nLabel[:, [0, 2]] += left
+    #         nLabel[:, [1, 3]] += top
     # 随机旋转
-    if rand() > 0.5:
-        angle = np.random.uniform(-15, 15)  # 在 -15 到 15 度之间随机转
-        M = cv.getRotationMatrix2D((w // 2, h // 2), angle, 1.0)
-        nImage = cv.warpAffine(nImage, M, (w, h), borderMode=cv.BORDER_REFLECT)
+    # if rand() > 0.3:
+    #     angle = np.random.uniform(-15, 15)  # 在 -15 到 15 度之间随机转
+    #     M = cv.getRotationMatrix2D((w // 2, h // 2), angle, 1.0)
+    #     nImage = cv.warpAffine(nImage, M, (w, h), borderMode=cv.BORDER_REFLECT)
 
-        # 处理 bbox，同步旋转
-        for i, label in enumerate(nLabel):
-            x1, y1, x2, y2, _ = label
+    #     # 处理 bbox，同步旋转
+    #     for i, label in enumerate(nLabel):
+    #         x1, y1, x2, y2, _ = label
 
-            # 四个角点
-            corners = np.array([[x1, y1], [x2, y1], [x2, y2], [x1, y2]])
+    #         # 四个角点
+    #         corners = np.array([[x1, y1], [x2, y1], [x2, y2], [x1, y2]])
 
-            # 加上 1 维度，变成齐次坐标 [x, y, 1]
-            ones = np.ones((4, 1))
-            corners_hom = np.hstack([corners, ones])
+    #         # 加上 1 维度，变成齐次坐标 [x, y, 1]
+    #         ones = np.ones((4, 1))
+    #         corners_hom = np.hstack([corners, ones])
 
-            # 旋转
-            rotated_corners = M @ corners_hom.T  # 2x4
-            rotated_corners = rotated_corners.T  # 4x2
+    #         # 旋转
+    #         rotated_corners = M @ corners_hom.T  # 2x4
+    #         rotated_corners = rotated_corners.T  # 4x2
 
-            # 获取新的 bbox：包围旋转后的角点
-            x_coords = rotated_corners[:, 0]
-            y_coords = rotated_corners[:, 1]
-            new_x1, new_y1 = x_coords.min(), y_coords.min()
-            new_x2, new_y2 = x_coords.max(), y_coords.max()
+    #         # 获取新的 bbox：包围旋转后的角点
+    #         x_coords = rotated_corners[:, 0]
+    #         y_coords = rotated_corners[:, 1]
+    #         new_x1, new_y1 = x_coords.min(), y_coords.min()
+    #         new_x2, new_y2 = x_coords.max(), y_coords.max()
 
-            # 可选：限制在图像边界内
-            new_x1 = np.clip(new_x1, 0, w)
-            new_y1 = np.clip(new_y1, 0, h)
-            new_x2 = np.clip(new_x2, 0, w)
-            new_y2 = np.clip(new_y2, 0, h)
+    #         # 可选：限制在图像边界内
+    #         new_x1 = np.clip(new_x1, 0, w)
+    #         new_y1 = np.clip(new_y1, 0, h)
+    #         new_x2 = np.clip(new_x2, 0, w)
+    #         new_y2 = np.clip(new_y2, 0, h)
 
-            nLabel[i, :4] = new_x1, new_y1, new_x2, new_y2
+    #         nLabel[i, :4] = new_x1, new_y1, new_x2, new_y2
 
     # 随机颜色增强
-    if rand() > 0.5:
+    strength = 0.3
+    if rand() > 0.7:
         # 随机亮度（加减一个值）
-        delta = np.random.uniform(-32, 32)
+        delta = np.random.uniform(-16, 16) * strength
         nImage = np.clip(nImage.astype(np.float32) + delta, 0, 255).astype(np.uint8)
-    if rand() > 0.5:
+    if rand() > 0.7:
         # 随机对比度
-        alpha = np.random.uniform(0.5, 1.5)
+        alpha = 1.0 + np.random.uniform(-0.2, 0.2) * strength
         mean = np.mean(nImage, axis=(0, 1), keepdims=True)
         nImage = np.clip((nImage - mean) * alpha + mean, 0, 255).astype(np.uint8)
-    if rand() > 0.5:
+    if rand() > 0.7:
         # 随机饱和度（转HSV改S通道）
         hsv = cv.cvtColor(nImage, cv.COLOR_BGR2HSV).astype(np.float32)
-        hsv[..., 1] *= np.random.uniform(0.5, 1.5)
+        sat_scale = 1.0 + np.random.uniform(-0.3, 0.3) * strength
+        hsv[..., 1] *= sat_scale
         hsv[..., 1] = np.clip(hsv[..., 1], 0, 255)
         nImage = cv.cvtColor(hsv.astype(np.uint8), cv.COLOR_HSV2BGR)
 
@@ -200,6 +202,7 @@ def chakan(images, labels):
         for i, label in enumerate(labels[index]):
             x1, y1, x2, y2, _id = [int(i) for i in label]
             cv.rectangle(image, (x1, y1), (x2, y2), (0, 0, 255), thickness=1)
+            cv.circle(image, ((x2 + x1) // 2, (y2 + y1) // 2), 3, (0, 0, 255), -1)
             cv.putText(
                 image,
                 f"{_id}",

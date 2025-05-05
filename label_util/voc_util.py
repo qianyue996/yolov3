@@ -12,8 +12,8 @@ with open("config/datasetParameter.json", "r", encoding="utf-8") as f:
 # 划分训练集和验证集
 split_ratio = 0.8
 
-annotation_path_2007 = r"/mnt/nfs/ai_models/my_voc/VOCdevkit/VOC2007/Annotations"
-annotation_path_2012 = r"/mnt/nfs/ai_models/my_voc/VOCdevkit/VOC2012/Annotations"
+annotation_path_2007 = r"D:\Python\datasets\voc07+12\VOCdevkit/VOC2007/Annotations"
+annotation_path_2012 = r"D:\Python\datasets\voc07+12\VOCdevkit/VOC2012/Annotations"
 
 output_train_path = 'voc_train.txt'
 output_val_path = 'voc_val.txt'

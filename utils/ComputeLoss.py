@@ -59,9 +59,9 @@ class YOLOv3LOSS:
             # t_conf = y_true[..., 4][obj_mask | noobj_mask]
             # loss_conf = focal_loss(conf, t_conf) * self.lambda_obj_layers[i]
             # all_loss_obj += loss_conf
-            conf = prediction[..., 4].sigmoid()
-            t_conf = y_true[..., 4].sigmoid()
-            loss_conf = nn.BCELoss(reduction="none")(conf, t_conf)
+            conf = prediction[..., 4]
+            t_conf = y_true[..., 4]
+            loss_conf = nn.BCEWithLogitsLoss(reduction="none")(conf, t_conf)
             #============================================#
             #   置信度放一起计算
             #============================================#

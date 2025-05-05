@@ -4,7 +4,7 @@ from tqdm import tqdm
 
 def main():
     boxes = []
-    with open("voc_train.txt", "r", encoding="utf-8") as f:
+    with open("coco_train.txt", "r", encoding="utf-8") as f:
         for line in f.readlines():
             for box in line.strip("\n").split(" ")[1:]:
                 x1, y1, x2, y2, id = map(float, box.split(","))
@@ -13,7 +13,7 @@ def main():
     kmeans(boxes)
 
 
-def kmeans(boxes: list, k=6):
+def kmeans(boxes: list, k=9):
     boxes = np.array(boxes)
     n = boxes.shape[0]
     clusters = boxes[np.random.choice(n, k, replace=False)]

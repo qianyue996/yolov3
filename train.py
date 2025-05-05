@@ -30,7 +30,7 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 
 class CustomLR:
-    def __init__(self, optimizer, T_0=10, eta_min=1e-6, step=1):
+    def __init__(self, optimizer, T_0=10, eta_min=1e-4, step=1):
         self.optimizer = optimizer
         self.steper = step
         self.count = 0
@@ -76,15 +76,15 @@ if __name__ == "__main__":
 
     train_type = "tiny"  # or yolov3
     dataset_type = "voc"
-    continue_train = False
+    continue_train = True
     set_seed(seed=27)
-    batch_size = 48
+    batch_size = 4
     epochs = 200
     lr = 0.01
     l_loc = 1
-    l_cls = 1
-    l_obj = 5
-    l_noo = 0.5
+    l_cls = 10
+    l_obj = 1
+    l_noo = 1
     train_dataset = YOLODataset(dataset_type=dataset_type)
     dataloader = DataLoader(
         dataset=train_dataset,
@@ -103,7 +103,7 @@ if __name__ == "__main__":
         print(f"{name}: {param.requires_grad}", end=' ')
     optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=1e-4)
     # optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
-    lr_scheduler = CustomLR(optimizer, T_0=10, eta_min=1e-4)
+    lr_scheduler = CustomLR(optimizer)
     loss_fn = YOLOv3LOSS(
         model=model,
         device=device,
