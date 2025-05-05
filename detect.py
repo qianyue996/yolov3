@@ -10,7 +10,7 @@ from utils.tools import multi_class_nms
 
 
 model = Model(check_yaml('yolov3-tiny.yaml'))
-model.load_state_dict(torch.load('tiny_weight.pth', map_location=torch.device('cpu'))['model'])
+model.load_state_dict(torch.load(r'tiny_weight.pth', map_location=torch.device('cpu'))['model'])
 model.eval()
 
 device = "cpu" if torch.cuda.is_available() else "cpu"

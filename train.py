@@ -25,66 +25,9 @@ from utils.ComputeLoss import YOLOv3LOSS
 from utils.dataloader import YOLODataset, yolo_collate_fn
 from utils.tools import set_seed, worker_init_fn
 from utils.torch_utils import load_checkpoint
+from utils.yolo_trainning import CustomLR, save_bestmodel, continue_train
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
-
-
-class CustomLR:
-    def __init__(self, optimizer, warm_up=(0.001, 0.01, 5), T_max=100, eta_min=1e-4, step=1):
-        self.optimizer = optimizer
-        self.warm_up = warm_up
-        self.T_max = T_max
-        self.eta_min = eta_min
-        self.steper = step
-        self.count = 0
-        self.lr_scheduler = optim.lr_scheduler.CosineAnnealingLR(
-            self.optimizer, T_max=T_max, eta_min=eta_min
-        )
-
-    def step(self):
-        self.count += 1
-        if self.count % self.steper == 0:
-            if self.warm_up[2] != 0 and self.count <= self.warm_up[2]:
-                if self.count == self.warm_up[2]:
-                    self.lr_scheduler = optim.lr_scheduler.CosineAnnealingLR(
-                        self.optimizer, T_max=self.T_max, eta_min=self.eta_min
-                    )
-                else:
-                    self._warm_up(self.warm_up[0], self.warm_up[1], self.warm_up[2])
-            else:
-                self.lr_scheduler.step()
-
-    def _warm_up(self, start_lr=0.001, end_lr=0.01, warmup_step=5):
-        scale = (end_lr - start_lr) / warmup_step
-        dynamic_lr = start_lr + scale * self.count
-        lr = min(dynamic_lr, end_lr)
-        for param in self.optimizer.param_groups:
-            param["lr"] = lr
-
-    def get_lr(self):
-        lr = self.optimizer.param_groups[0]["lr"]
-        return lr
-
-
-def save_bestmodel(model, optimizer, epoch, losses, train_type):
-    weights_dir = Path('weights')
-    weights_dir.mkdir(exist_ok=True)
-
-    current_loss = losses[-1]
-    checkpoint = {
-        "model": model.state_dict(),
-        "optimizer": optimizer.state_dict(),
-        "epoch": epoch,
-    }
-
-    # 只有当非第一轮，且当前为最优时才保存 best
-    if epoch > 0 and len(losses) != 1 and current_loss < min(losses[:-1]):
-        torch.save(checkpoint, ".checkpoint.pth")
-        os.replace(".checkpoint.pth", weights_dir / f"best_{current_loss:.4f}_{epoch}.pth")
-    else:
-        torch.save(checkpoint, ".checkpoint.pth")
-        os.replace(".checkpoint.pth", weights_dir / f"{epoch}_{current_loss:.4f}.pth")
-
 
 
 if __name__ == "__main__":
@@ -94,13 +37,12 @@ if __name__ == "__main__":
 
     train_type = "tiny"  # or yolov3
     dataset_type = "voc"
-    continue_train = True
     set_seed(seed=27)
     batch_size = 4
-    epochs = 200
+    epochs = 100
     lr = 0.001
-    l_loc = 1
-    l_cls = 10
+    l_loc = 0.05
+    l_cls = 0.5
     l_obj = 1
     l_noo = 1
     train_dataset = YOLODataset(dataset_type=dataset_type)
@@ -119,9 +61,10 @@ if __name__ == "__main__":
     #         param.requires_grad = False
     for name, param in model.model.named_parameters():
         print(f"{name}: {param.requires_grad}", end=' ')
-    optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=1e-4)
+    optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.937, weight_decay=1e-4)
     # optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
-    lr_scheduler = CustomLR(optimizer, warm_up=(lr, 0.01, 5), T_max=195, eta_min=1e-4)
+    lr_scheduler = CustomLR(optimizer, warm_up=(lr, 0.01, 0), T_max=30, eta_min=1e-4)
+    # lr_scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=100, eta_min=1e-4)
     loss_fn = YOLOv3LOSS(
         model=model,
         device=device,
@@ -132,12 +75,11 @@ if __name__ == "__main__":
     )
     writer_path = "runs"
     writer = SummaryWriter(f"{writer_path}/{time.strftime('%Y-%m-%d-%H-%M-%S', time.localtime())}")
+    #==================================================#
+    #   加载训练
+    #==================================================#
+    continue_train('tiny_weight.pth', model, optimizer)
     start_epoch = 0
-    if continue_train:
-        checkpoint = torch.load(f"{train_type}_weight.pth", map_location=device)
-        model.load_state_dict(checkpoint["model"])
-        # optimizer.load_state_dict(checkpoint["optimizer"])
-        # start_epoch = checkpoint["epoch"] + 1
     # train
     losses = []
     global_step = 0
@@ -166,7 +108,7 @@ if __name__ == "__main__":
                 total_samples += batch_size
                 avg_loss = epoch_loss / total_samples
                 # loss compute
-                lr = lr_scheduler.get_lr()
+                lr = optimizer.param_groups[0]["lr"]
                 pbar.set_postfix(**{"epoch": epoch, "loss": f"{loss.item():.4f}", "lr": lr})
                 writer.add_scalars(
                     "loss",
@@ -182,7 +124,11 @@ if __name__ == "__main__":
                 )
                 global_step += 1
 
-        lr_scheduler.step()
         losses.append(avg_loss)
-        writer.add_scalar("avg_loss", avg_loss, epoch)
-        save_bestmodel(model, optimizer, epoch, losses, train_type)
+        lr_scheduler.step()
+        parameters = {
+            'avg_loss': avg_loss,
+            'lr': lr,
+        }
+        writer.add_scalars("parameters", parameters, epoch)
+        save_bestmodel(losses, model, optimizer, epoch)

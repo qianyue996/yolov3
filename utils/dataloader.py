@@ -116,23 +116,23 @@ def randomAug(image, label):
     #         nLabel[i, :4] = new_x1, new_y1, new_x2, new_y2
 
     # 随机颜色增强
-    strength = 0.3
-    if rand() > 0.7:
-        # 随机亮度（加减一个值）
-        delta = np.random.uniform(-16, 16) * strength
-        nImage = np.clip(nImage.astype(np.float32) + delta, 0, 255).astype(np.uint8)
-    if rand() > 0.7:
-        # 随机对比度
-        alpha = 1.0 + np.random.uniform(-0.2, 0.2) * strength
-        mean = np.mean(nImage, axis=(0, 1), keepdims=True)
-        nImage = np.clip((nImage - mean) * alpha + mean, 0, 255).astype(np.uint8)
-    if rand() > 0.7:
-        # 随机饱和度（转HSV改S通道）
-        hsv = cv.cvtColor(nImage, cv.COLOR_BGR2HSV).astype(np.float32)
-        sat_scale = 1.0 + np.random.uniform(-0.3, 0.3) * strength
-        hsv[..., 1] *= sat_scale
-        hsv[..., 1] = np.clip(hsv[..., 1], 0, 255)
-        nImage = cv.cvtColor(hsv.astype(np.uint8), cv.COLOR_HSV2BGR)
+    # strength = 0.3
+    # if rand() > 0.7:
+    #     # 随机亮度（加减一个值）
+    #     delta = np.random.uniform(-16, 16) * strength
+    #     nImage = np.clip(nImage.astype(np.float32) + delta, 0, 255).astype(np.uint8)
+    # if rand() > 0.7:
+    #     # 随机对比度
+    #     alpha = 1.0 + np.random.uniform(-0.2, 0.2) * strength
+    #     mean = np.mean(nImage, axis=(0, 1), keepdims=True)
+    #     nImage = np.clip((nImage - mean) * alpha + mean, 0, 255).astype(np.uint8)
+    # if rand() > 0.7:
+    #     # 随机饱和度（转HSV改S通道）
+    #     hsv = cv.cvtColor(nImage, cv.COLOR_BGR2HSV).astype(np.float32)
+    #     sat_scale = 1.0 + np.random.uniform(-0.3, 0.3) * strength
+    #     hsv[..., 1] *= sat_scale
+    #     hsv[..., 1] = np.clip(hsv[..., 1], 0, 255)
+    #     nImage = cv.cvtColor(hsv.astype(np.uint8), cv.COLOR_HSV2BGR)
 
     return nImage, nLabel
 
@@ -239,7 +239,7 @@ def single_chakan(image, labels):
 
 
 class Yolo_collate_fn:
-    def __init__(self, sizes=[320, 416, 512, 608, 640], step=5):
+    def __init__(self, sizes=(320, 416, 512, 608, 640), step=5):
         self.sizes = sizes
         self.imgSize = np.random.choice(self.sizes)
         self.step = step
@@ -265,6 +265,6 @@ yolo_collate_fn = Yolo_collate_fn()
 
 if __name__ == "__main__":
     dataset = YOLODataset(dataset_type='voc')
-    dataloader = DataLoader(dataset, batch_size=32, shuffle=True, collate_fn=yolo_collate_fn)
+    dataloader = DataLoader(dataset, batch_size=128, shuffle=True, collate_fn=yolo_collate_fn)
     for i, (images, bboxes) in enumerate(dataloader):
         print(images.shape, bboxes[0].shape)
