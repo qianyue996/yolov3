@@ -34,37 +34,40 @@ class CustomLR:
         self.optimizer = optimizer
         self.steper = step
         self.count = 0
-        self.lr_scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(self.optimizer, T_0=T_0, T_mult=2, eta_min=eta_min)
+        self.lr_scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(
+            self.optimizer, T_0=T_0, T_mult=2, eta_min=eta_min
+        )
 
     def step(self):
         self.count += 1
-        if self.count % self.steper == 0:
-            self.lr_scheduler.step()
+        # if self.count % self.steper == 0:
+        self.lr_scheduler.step()
 
     def get_lr(self):
         lr = self.optimizer.param_groups[0]["lr"]
         return lr
 
-def save_bestmodel(model, optimizer, epoch, losses, train_type):
-    if len(losses) == 1 or losses[-1] < min(losses):  # 保存更优的model
-        checkpoint = {
-            "model": model.state_dict(),
-            "optimizer": optimizer.state_dict(),
-            "epoch": epoch,
-        }
-        torch.save(checkpoint, ".checkpoint.pth")
-        os.replace(".checkpoint.pth", f"{train_type}_weight.pth")
 
-    EARLY_STOP_PATIENCE = 5  # 早停忍耐度
-    if len(losses) >= EARLY_STOP_PATIENCE:
-        early_stop = True
-        for i in range(1, EARLY_STOP_PATIENCE):
-            if losses[-i] < losses[-i - 1]:
-                early_stop = False
-                break
-        if early_stop:
-            print(f"early stop, final loss={losses[-1]}")
-            sys.exit()
+def save_bestmodel(model, optimizer, epoch, losses, train_type):
+    weights_dir = Path('weights')
+    weights_dir.mkdir(exist_ok=True)
+
+    current_loss = losses[-1]
+    checkpoint = {
+        "model": model.state_dict(),
+        "optimizer": optimizer.state_dict(),
+        "epoch": epoch,
+    }
+
+    # 只有当非第一轮，且当前为最优时才保存 best
+    if epoch > 0 and len(losses) != 1 and current_loss < min(losses[:-1]):
+        torch.save(checkpoint, ".checkpoint.pth")
+        os.replace(".checkpoint.pth", weights_dir / f"best_{current_loss:.4f}_{epoch}.pth")
+    else:
+        torch.save(checkpoint, ".checkpoint.pth")
+        os.replace(".checkpoint.pth", weights_dir / f"{epoch}_{current_loss:.4f}.pth")
+
+
 
 if __name__ == "__main__":
     cfg = check_yaml("yolov3-tiny.yaml")
@@ -75,13 +78,13 @@ if __name__ == "__main__":
     dataset_type = "voc"
     continue_train = False
     set_seed(seed=27)
-    batch_size = 4
+    batch_size = 48
     epochs = 200
     lr = 0.01
     l_loc = 1
-    l_cls = 10
-    l_obj = 100
-    l_noo = 1
+    l_cls = 1
+    l_obj = 5
+    l_noo = 0.5
     train_dataset = YOLODataset(dataset_type=dataset_type)
     dataloader = DataLoader(
         dataset=train_dataset,
@@ -98,11 +101,9 @@ if __name__ == "__main__":
             param.requires_grad = False
     for name, param in model.model.named_parameters():
         print(f"{name}: {param.requires_grad}", end=' ')
-    # optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=1e-4)
-    optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
-    # lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.94)
-    # lr_scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs, eta_min=1e-6)
-    lr_scheduler = CustomLR(optimizer, T_0=10, eta_min=1e-5)
+    optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=1e-4)
+    # optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
+    lr_scheduler = CustomLR(optimizer, T_0=10, eta_min=1e-4)
     loss_fn = YOLOv3LOSS(
         model=model,
         device=device,
@@ -117,13 +118,13 @@ if __name__ == "__main__":
     if continue_train:
         checkpoint = torch.load(f"{train_type}_weight.pth", map_location=device)
         model.load_state_dict(checkpoint["model"])
-        # optimizer.load_state_dict(checkpoint["optimizer"])
-        # start_epoch = checkpoint["epoch"] + 1
+        optimizer.load_state_dict(checkpoint["optimizer"])
+        start_epoch = checkpoint["epoch"] + 1
     # train
     losses = []
     global_step = 0
     for epoch in range(start_epoch, epochs):
-        if epoch > 50:
+        if epoch + 1 > 30:
             for layer in model.model[:13]:
                 for param in layer.parameters():
                     param.requires_grad = True
@@ -165,4 +166,5 @@ if __name__ == "__main__":
 
         lr_scheduler.step()
         losses.append(avg_loss)
+        writer.add_scalar("avg_loss", avg_loss, epoch)
         save_bestmodel(model, optimizer, epoch, losses, train_type)

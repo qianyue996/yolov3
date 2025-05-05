@@ -7,7 +7,7 @@ class YOLOv3LOSS:
         self.device = device
         self.anchors = model.model[-1].anchors
 
-        self.lambda_obj_layers = [1.0, 1.0, 1.0]
+        self.lambda_obj_layers = [4.0, 0.4, 4.0]
 
         self.lambda_loc = l_loc
         self.lambda_cls = l_cls
@@ -55,11 +55,13 @@ class YOLOv3LOSS:
             #============================================#
             #   置信度损失
             #============================================#
-            conf = prediction[..., 4][obj_mask | noobj_mask]
-            t_conf = y_true[..., 4][obj_mask | noobj_mask]
-            loss_conf = focal_loss(conf, t_conf)
-            all_loss_obj += loss_conf
-            # loss_conf = nn.BCELoss(reduction="none")(conf, t_conf)
+            # conf = prediction[..., 4][obj_mask | noobj_mask]
+            # t_conf = y_true[..., 4][obj_mask | noobj_mask]
+            # loss_conf = focal_loss(conf, t_conf) * self.lambda_obj_layers[i]
+            # all_loss_obj += loss_conf
+            conf = prediction[..., 4].sigmoid()
+            t_conf = y_true[..., 4].sigmoid()
+            loss_conf = nn.BCELoss(reduction="none")(conf, t_conf)
             #============================================#
             #   置信度放一起计算
             #============================================#
@@ -67,14 +69,14 @@ class YOLOv3LOSS:
             #============================================#
             #   GroundTrue Postivez正样本置信度损失
             #============================================#
-            # if obj_mask.sum() != 0:
-            #     obj_conf = loss_conf[obj_mask].mean() * self.lambda_obj_layers[i]
-            #     all_loss_obj += obj_conf
+            if obj_mask.sum() != 0:
+                obj_conf = loss_conf[obj_mask].mean() * self.lambda_obj_layers[i]
+                all_loss_obj += obj_conf
             #============================================#
             #   Background Negative负样本置信度损失
             #============================================#
-            # noobj_conf = loss_conf[noobj_mask].mean() * self.lambda_obj_layers[i]
-            # all_loss_noo += noobj_conf
+            noobj_conf = loss_conf[noobj_mask].mean() * self.lambda_obj_layers[i]
+            all_loss_noo += noobj_conf
         #============================================#
         #   没加lambda系数的loss，方便观察loss下降情况
         #============================================#
@@ -103,7 +105,7 @@ class YOLOv3LOSS:
             "lambda_obj": self.lambda_obj,
         }
 
-    def _fill_target(self, y_true, b, k, x, y, c, batch_target, anchors, index):
+    def _fill_target(self, y_true, b, k, x, y, c, batch_target, index):
         """辅助函数：填充目标值"""
         y_true[b, k, x, y, 0] = batch_target[index, 0] - x.float()
         y_true[b, k, x, y, 1] = batch_target[index, 1] - y.float()
@@ -131,8 +133,6 @@ class YOLOv3LOSS:
             gt_box = batch_target[:, 2:4]
             iou_matrix = self.compute_iou(gt_box, self.anchors[i], iou_type='iou')
             best_iou, best_na = torch.max(iou_matrix, dim=1)
-            if best_iou.max() < 0.2:
-                continue
 
             # 处理每个物体
             for index, n_a in enumerate(best_na.tolist()):
@@ -143,18 +143,18 @@ class YOLOv3LOSS:
 
                 # 处理最佳匹配的anchor
                 k = n_a
-                y_true = self._fill_target(y_true, b, k, x, y, c, batch_target, self.anchors[i], index)
+                y_true = self._fill_target(y_true, b, k, x, y, c, batch_target, index)
 
                 # 处理其他匹配的anchor
-                additional_anchors = (iou_matrix[index] >= 0.2).nonzero().squeeze(1)
+                additional_anchors = (iou_matrix[index] > 0.5).nonzero().squeeze(1)
                 for a in additional_anchors.tolist():
                     if a != n_a:
                         k = a
-                        y_true = self._fill_target(y_true, b, k, x, y, c, batch_target, self.anchors[i], index)
+                        y_true = self._fill_target(y_true, b, k, x, y, c, batch_target, index)
 
-                if best_iou[index] < 0.5:
+                if best_iou[index] < 0.5:  # 如果 IOU 大于阈值，则将目标框扩展到邻近格子
                     continue
-                
+
                 k = n_a
                 # 计算偏移方向
                 offsets = []
@@ -172,13 +172,14 @@ class YOLOv3LOSS:
                     nx = torch.clamp(x + dx, 0, S - 1)
                     ny = torch.clamp(y + dy, 0, S - 1)
 
-                # 确定该邻近格子是否也匹配到同样的 anchor（根据 IOU 阈值）
+                    # 确定该邻近格子是否也匹配到同样的 anchor（根据 IOU 阈值）
                     y_true[b, k, nx, ny, 0] = batch_target[index, 0] - nx.float()
                     y_true[b, k, nx, ny, 1] = batch_target[index, 1] - ny.float()
                     y_true[b, k, nx, ny, 2] = batch_target[index, 2]
                     y_true[b, k, nx, ny, 3] = batch_target[index, 3]
                     y_true[b, k, nx, ny, 4] = 1
                     y_true[b, k, nx, ny, 5 + c] = 1
+
         return y_true
 
     def ignore_target(self, i, prediction, y_true, obj_mask):
@@ -231,8 +232,8 @@ class YOLOv3LOSS:
             p_w = prediction[obj_mask][:, 2].exp() * anchors[:, 0]
             p_h = prediction[obj_mask][:, 3].exp() * anchors[:, 1]
 
-            t_x = y_true[obj_mask][:, 0] * S
-            t_y = y_true[obj_mask][:, 1] * S
+            t_x = y_true[obj_mask][:, 0] + gx
+            t_y = y_true[obj_mask][:, 1] + gy
             t_w = y_true[obj_mask][:, 2]
             t_h = y_true[obj_mask][:, 3]
 
@@ -365,7 +366,7 @@ class YOLOv3LOSS:
                 raise ValueError(f'Invalid iou_type: {iou_type}')
             
 
-def focal_loss(pred, target, alpha=0.75, gamma=2.0, reduction='mean'):
+def focal_loss(pred, target, alpha=0.25, gamma=2.0, reduction='mean'):
     # 计算交叉熵
     bce_loss = nn.BCEWithLogitsLoss(reduction='none')(pred, target)
     

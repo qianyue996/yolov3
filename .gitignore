@@ -8,6 +8,8 @@ data
 flagged
 .ruff_cache
 nets
+weights
+.python-version
 
 *darknet53_backbone_weights.pth
 *yolo_weights.pth
@@ -24,3 +26,4 @@ tiny_weight.pth
 normal_weight.pth
 voc_val.txt
 hyperGUI.py
+yolov3_weight.pth

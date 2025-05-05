@@ -13,7 +13,7 @@ def main():
     kmeans(boxes)
 
 
-def kmeans(boxes: list, k=9):
+def kmeans(boxes: list, k=6):
     boxes = np.array(boxes)
     n = boxes.shape[0]
     clusters = boxes[np.random.choice(n, k, replace=False)]
@@ -34,7 +34,7 @@ def kmeans(boxes: list, k=9):
             sorted_boxes = clusters[sorted_indices]
             with open("config/anchors.txt", "w", encoding="utf-8") as f:
                 for w, h in sorted_boxes:
-                    f.write(f"{w},{h} ")
+                    f.write(f"{int(w)}, {int(h)}, ")
                 f.write("\n")
             break
         for cluster in range(k):
