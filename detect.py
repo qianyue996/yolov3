@@ -1,5 +1,3 @@
-import json
-
 import cv2 as cv
 import mss
 import numpy as np
@@ -10,19 +8,13 @@ from utils.boxTool import draw_box
 from models.yolo import Model
 from utils.tools import multi_class_nms
 
-with open("config/datasetParameter.json", "r", encoding="utf-8") as f:
-    datasetConfig = json.load(f)
-
 
 model = Model(check_yaml('yolov3-tiny.yaml'))
 model.load_state_dict(torch.load('tiny_weight.pth', map_location=torch.device('cpu'))['model'])
 model.eval()
 
-nun_classes = datasetConfig["voc"]["num_class"]
-class_name = datasetConfig["voc"]["class_name"]
-
 device = "cpu" if torch.cuda.is_available() else "cpu"
-imgSize = 416
+imgSize = 640
 
 
 def get_result(outputs, score_thresh=0.3, iou_thresh=0.45):
@@ -31,7 +23,7 @@ def get_result(outputs, score_thresh=0.3, iou_thresh=0.45):
     bboxes = outputs[..., :4]
 
     _scores = outputs[..., 4].unsqueeze(-1) * outputs[..., 5:]
-    for cls_id in range(nun_classes):
+    for cls_id in range(outputs.shape[1]-5):
         cls_scores = _scores[..., cls_id]
         keep = cls_scores > score_thresh
         if keep.sum() == 0:

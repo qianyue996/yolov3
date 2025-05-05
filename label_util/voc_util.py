@@ -3,17 +3,19 @@ import os
 from collections import defaultdict
 import xml.etree.ElementTree as ET
 import random
+import yaml
 
 import tqdm
 
-with open("config/datasetParameter.json", "r", encoding="utf-8") as f:
-    config = json.load(f)
+with open('config/datasets.yaml', encoding="ascii", errors="ignore")as f:
+    cfg = yaml.safe_load(f)
+class_names = cfg['voc']['class_name']
 
 # 划分训练集和验证集
 split_ratio = 0.8
 
-annotation_path_2007 = r"D:\Python\datasets\voc07+12\VOCdevkit/VOC2007/Annotations"
-annotation_path_2012 = r"D:\Python\datasets\voc07+12\VOCdevkit/VOC2012/Annotations"
+annotation_path_2007 = r"/mnt/nfs/ai_models/my_voc/VOCdevkit/VOC2007/Annotations"
+annotation_path_2012 = r"/mnt/nfs/ai_models/my_voc/VOCdevkit/VOC2012/Annotations"
 
 output_train_path = 'voc_train.txt'
 output_val_path = 'voc_val.txt'
@@ -29,7 +31,7 @@ if __name__ == "__main__":
             root = tree.getroot()
             for _object in root.findall("object"):
                 name = _object.find("name").text
-                real_id = config["voc"]["class_name"].index(name)
+                real_id = class_names.index(name)
                 bndbox = _object.find("bndbox")
                 xmin = bndbox.find("xmin").text
                 ymin = bndbox.find("ymin").text

@@ -200,7 +200,7 @@ def chakan(images, labels):
         cv.namedWindow("show", cv.WINDOW_NORMAL)
         image = cv.cvtColor(image, cv.COLOR_RGB2BGR)
         for i, label in enumerate(labels[index]):
-            x1, y1, x2, y2, _id = [int(i) for i in label]
+            x1, y1, x2, y2, _id = tuple(map(int, label))
             cv.rectangle(image, (x1, y1), (x2, y2), (0, 0, 255), thickness=1)
             cv.circle(image, ((x2 + x1) // 2, (y2 + y1) // 2), 3, (0, 0, 255), -1)
             cv.putText(
@@ -239,7 +239,7 @@ def single_chakan(image, labels):
 
 
 def yolo_collate_fn(batch):
-    imgSize = np.random.choice([320, 416, 512, 608])
+    imgSize = np.random.choice([320, 416, 512, 608, 640])
     images, labels = zip(*batch)
     # resize + bgr -> rgb
     images, labels = map(list, zip(*[resizeCvt(image, label, imgSize) for image, label in zip(images, labels)]))

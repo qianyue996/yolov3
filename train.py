@@ -30,18 +30,36 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 
 class CustomLR:
-    def __init__(self, optimizer, T_0=10, eta_min=1e-4, step=1):
+    def __init__(self, optimizer, warm_up=(0.001, 0.01, 5), T_max=100, eta_min=1e-4, step=1):
         self.optimizer = optimizer
+        self.warm_up = warm_up
+        self.T_max = T_max
+        self.eta_min = eta_min
         self.steper = step
         self.count = 0
-        self.lr_scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(
-            self.optimizer, T_0=T_0, T_mult=2, eta_min=eta_min
+        self.lr_scheduler = optim.lr_scheduler.CosineAnnealingLR(
+            self.optimizer, T_max=T_max, eta_min=eta_min
         )
 
     def step(self):
         self.count += 1
-        # if self.count % self.steper == 0:
-        self.lr_scheduler.step()
+        if self.count % self.steper == 0:
+            if self.warm_up[2] != 0 and self.count <= self.warm_up[2]:
+                if self.count == self.warm_up[2]:
+                    self.lr_scheduler = optim.lr_scheduler.CosineAnnealingLR(
+                        self.optimizer, T_max=self.T_max, eta_min=self.eta_min
+                    )
+                else:
+                    self._warm_up(self.warm_up[0], self.warm_up[1], self.warm_up[2])
+            else:
+                self.lr_scheduler.step()
+
+    def _warm_up(self, start_lr=0.001, end_lr=0.01, warmup_step=5):
+        scale = (end_lr - start_lr) / warmup_step
+        dynamic_lr = start_lr + scale * self.count
+        lr = min(dynamic_lr, end_lr)
+        for param in self.optimizer.param_groups:
+            param["lr"] = lr
 
     def get_lr(self):
         lr = self.optimizer.param_groups[0]["lr"]
@@ -95,15 +113,15 @@ if __name__ == "__main__":
         collate_fn=yolo_collate_fn,
     )
     model = Model(cfg).to(device)
-    load_checkpoint(device, 'models/tiny_weight.pth', model)
-    for layer in model.model[:13]:
-        for param in layer.parameters():
-            param.requires_grad = False
+    # load_checkpoint(device, 'models/tiny_weight.pth', model)
+    # for layer in model.model[:13]:
+    #     for param in layer.parameters():
+    #         param.requires_grad = False
     for name, param in model.model.named_parameters():
         print(f"{name}: {param.requires_grad}", end=' ')
     optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=1e-4)
     # optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
-    lr_scheduler = CustomLR(optimizer)
+    lr_scheduler = CustomLR(optimizer, warm_up=(0.001, 0.01, 5), T_max=195, eta_min=1e-4)
     loss_fn = YOLOv3LOSS(
         model=model,
         device=device,
@@ -124,10 +142,10 @@ if __name__ == "__main__":
     losses = []
     global_step = 0
     for epoch in range(start_epoch, epochs):
-        if epoch + 1 > 30:
-            for layer in model.model[:13]:
-                for param in layer.parameters():
-                    param.requires_grad = True
+        # if epoch + 1 > 30:
+        #     for layer in model.model[:13]:
+        #         for param in layer.parameters():
+        #             param.requires_grad = True
         model.train()
         total_samples = 0
         epoch_loss = 0
@@ -150,7 +168,7 @@ if __name__ == "__main__":
                 # loss compute
                 lr = lr_scheduler.get_lr()
                 pbar.set_postfix(**{"epoch": epoch, "loss": f"{loss.item():.4f}", "lr": lr})
-                writer.add_scalars(
+                writer.add_scalar(
                     "loss",
                     {
                         "loss": loss.item(),
