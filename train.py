@@ -98,7 +98,7 @@ if __name__ == "__main__":
     set_seed(seed=27)
     batch_size = 4
     epochs = 200
-    lr = 0.01
+    lr = 0.001
     l_loc = 1
     l_cls = 10
     l_obj = 1
@@ -121,7 +121,7 @@ if __name__ == "__main__":
         print(f"{name}: {param.requires_grad}", end=' ')
     optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=1e-4)
     # optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
-    lr_scheduler = CustomLR(optimizer, warm_up=(0.001, 0.01, 5), T_max=195, eta_min=1e-4)
+    lr_scheduler = CustomLR(optimizer, warm_up=(lr, 0.01, 5), T_max=195, eta_min=1e-4)
     loss_fn = YOLOv3LOSS(
         model=model,
         device=device,
@@ -136,8 +136,8 @@ if __name__ == "__main__":
     if continue_train:
         checkpoint = torch.load(f"{train_type}_weight.pth", map_location=device)
         model.load_state_dict(checkpoint["model"])
-        optimizer.load_state_dict(checkpoint["optimizer"])
-        start_epoch = checkpoint["epoch"] + 1
+        # optimizer.load_state_dict(checkpoint["optimizer"])
+        # start_epoch = checkpoint["epoch"] + 1
     # train
     losses = []
     global_step = 0
@@ -168,7 +168,7 @@ if __name__ == "__main__":
                 # loss compute
                 lr = lr_scheduler.get_lr()
                 pbar.set_postfix(**{"epoch": epoch, "loss": f"{loss.item():.4f}", "lr": lr})
-                writer.add_scalar(
+                writer.add_scalars(
                     "loss",
                     {
                         "loss": loss.item(),

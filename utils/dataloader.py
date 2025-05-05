@@ -238,19 +238,29 @@ def single_chakan(image, labels):
     cv.destroyAllWindows()
 
 
-def yolo_collate_fn(batch):
-    imgSize = np.random.choice([320, 416, 512, 608, 640])
-    images, labels = zip(*batch)
-    # resize + bgr -> rgb
-    images, labels = map(list, zip(*[resizeCvt(image, label, imgSize) for image, label in zip(images, labels)]))
-    # 随机增强
-    images, labels = zip(*[randomAug(image, label) for image, label in zip(images, labels)])
-    #
-    # chakan(images, labels)
-    labels = xyxy2xywh(labels)
-    images, labels = normalizeData(images, labels)
-    images, labels = ToTensor(images, labels)
-    return images, labels
+class Yolo_collate_fn:
+    def __init__(self, sizes=[320, 416, 512, 608, 640], step=5):
+        self.sizes = sizes
+        self.imgSize = np.random.choice(self.sizes)
+        self.step = step
+        self.count = 0
+    def __call__(self, batch):
+        self.count += 1
+        if self.count % self.step == 0:
+            self.imgSize = np.random.choice(self.sizes)
+        images, labels = zip(*batch)
+        # resize + bgr -> rgb
+        images, labels = map(list, zip(*[resizeCvt(image, label, self.imgSize) for image, label in zip(images, labels)]))
+        # 随机增强
+        images, labels = zip(*[randomAug(image, label) for image, label in zip(images, labels)])
+        #
+        # chakan(images, labels)
+        labels = xyxy2xywh(labels)
+        images, labels = normalizeData(images, labels)
+        images, labels = ToTensor(images, labels)
+        return images, labels
+
+yolo_collate_fn = Yolo_collate_fn()
 
 
 if __name__ == "__main__":
