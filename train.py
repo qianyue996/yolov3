@@ -40,7 +40,7 @@ if __name__ == "__main__":
     set_seed(seed=27)
     batch_size = 4
     epochs = 100
-    lr = 0.001
+    lr = 0.0005
     l_loc = 0.05
     l_cls = 0.5
     l_obj = 1
@@ -61,7 +61,7 @@ if __name__ == "__main__":
     #         param.requires_grad = False
     for name, param in model.model.named_parameters():
         print(f"{name}: {param.requires_grad}", end=' ')
-    optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.937, weight_decay=1e-4)
+    optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=1e-4)
     # optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
     lr_scheduler = CustomLR(optimizer, warm_up=(lr, 0.01, 0), T_max=30, eta_min=1e-4)
     # lr_scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=100, eta_min=1e-4)
@@ -78,7 +78,7 @@ if __name__ == "__main__":
     #==================================================#
     #   加载训练
     #==================================================#
-    continue_train('tiny_weight.pth', model, optimizer)
+    # continue_train('tiny_weight.pth', model, optimizer)
     start_epoch = 0
     # train
     losses = []
@@ -109,7 +109,13 @@ if __name__ == "__main__":
                 avg_loss = epoch_loss / total_samples
                 # loss compute
                 lr = optimizer.param_groups[0]["lr"]
-                pbar.set_postfix(**{"epoch": epoch, "loss": f"{loss.item():.4f}", "lr": lr})
+                pbar.set_postfix(**{
+                    "ep": epoch,
+                    'np': f"{loss_params['np']}",
+                    "loss": f"{loss.item():.4f}",
+                    "obj": f"{loss_params['loss_obj'].item():.4f}",
+                    "noo": f"{loss_params['loss_noo'].item():.4f}",
+                    "lr": lr})
                 writer.add_scalars(
                     "loss",
                     {

@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import numpy as np
 
 
 class YOLOv3LOSS:
@@ -14,14 +15,17 @@ class YOLOv3LOSS:
         self.lambda_obj = l_obj
         self.lambda_noo = l_noo
 
+        self.a = []
+
     def __call__(self, predictions, targets):
         all_loss_loc = torch.zeros(1).to(self.device)
         all_loss_cls = all_loss_loc.clone()
         all_loss_obj = all_loss_loc.clone()
         all_loss_noo = all_loss_loc.clone()
         #============================================#
-        #   
+        #   拿基础参数
         #============================================#
+        self._S = [i.shape[2] for i in predictions]
         for i, prediction in enumerate(predictions):
             #============================================#
             #   构建网络应有的预测结果y_true
@@ -100,6 +104,7 @@ class YOLOv3LOSS:
             "loss_cls": original_loss_cls,
             "loss_obj": original_loss_obj,
             "loss_noo": original_loss_noo,
+            'np': obj_mask.sum(),
             "lambda_loc": self.lambda_loc,
             "lambda_cls": self.lambda_cls,
             "lambda_obj": self.lambda_obj,
@@ -120,7 +125,7 @@ class YOLOv3LOSS:
         S = prediction.shape[2]
         y_true = torch.zeros_like(prediction)
 
-        for b in range(B):
+        for b in range(B): # 遍历每张图片
             if targets[b].shape[0] == 0:  # 处理无目标的情况
                 continue
 
@@ -130,55 +135,64 @@ class YOLOv3LOSS:
             batch_target[:, 4] = targets[b][:, 4]
 
             # 计算IOU矩阵
-            gt_box = batch_target[:, 2:4]
-            iou_matrix = self.compute_iou(gt_box, self.anchors[i], iou_type='iou')
+            gt_box = targets[b][:, 2:4]
+            iou_matrix = self.compute_iou(gt_box, self.anchors, iou_type='iou')
             best_iou, best_na = torch.max(iou_matrix, dim=1)
+            am = list(map(list, np.split(np.arange(self.anchors.view(-1, 2).shape[0]), self.anchors.view(-1, 2).shape[0] / self.anchors[0].shape[0])))
 
-            # 处理每个物体
+            # 遍历每个物体
             for index, n_a in enumerate(best_na.tolist()):
-                # 获取坐标和类别
-                x = batch_target[index, 0].long().clamp(0, S - 1)
-                y = batch_target[index, 1].long().clamp(0, S - 1)
-                c = batch_target[index, 4].long()
+                na = self.anchors[i].shape[0]
+                if best_iou[index] in iou_matrix[index].split(split_size=na)[i]:
+                    # 获取坐标和类别
+                    x = batch_target[index, 0].long().clamp(0, S - 1)
+                    y = batch_target[index, 1].long().clamp(0, S - 1)
+                    c = batch_target[index, 4].long()
 
-                # 处理最佳匹配的anchor
-                k = n_a
-                y_true = self._fill_target(y_true, b, k, x, y, c, batch_target, index)
+                    # 处理最佳匹配的anchor
+                    k = am[i].index(n_a)
+                    y_true = self._fill_target(y_true, b, k, x, y, c, batch_target, index)
 
-                # 处理其他匹配的anchor
-                additional_anchors = (iou_matrix[index] > 0.5).nonzero().squeeze(1)
-                for a in additional_anchors.tolist():
-                    if a != n_a:
+                    # 处理其他匹配的anchor
+                    additional_anchors = (iou_matrix[index].split(split_size=na)[i] > 0.5).nonzero().squeeze(1)
+                    for a in additional_anchors.tolist():
+                        if a != am[i].index(n_a):
+                            k = a
+                            y_true = self._fill_target(y_true, b, k, x, y, c, batch_target, index)
+
+                    if best_iou[index] < 0.5:  # 如果 IOU 大于阈值，则将目标框扩展到邻近格子
+                        continue
+
+                    k = am[i].index(n_a)
+                    # 计算偏移方向
+                    offsets = []
+                    if batch_target[index, 0] % 1 > 0.5:  # x > 0.5时右扩展
+                        offsets.append((1, 0))  # 向右扩展
+                    elif batch_target[index, 0] % 1 < 0.5:  # x < 0.5时左扩展
+                        offsets.append((-1, 0))  # 向左扩展
+
+                    if batch_target[index, 1] % 1 > 0.5:  # y > 0.5时下扩展
+                        offsets.append((0, 1))  # 向下扩展
+                    elif batch_target[index, 1] % 1 < 0.5:  # y < 0.5时上扩展
+                        offsets.append((0, -1))  # 向上扩展
+
+                    for dx, dy in offsets:
+                        nx = torch.clamp(x + dx, 0, S - 1)
+                        ny = torch.clamp(y + dy, 0, S - 1)
+
+                        # 确定该邻近格子是否也匹配到同样的 anchor（根据 IOU 阈值）
+                        y_true[b, k, nx, ny, 0] = batch_target[index, 0] - nx.float()
+                        y_true[b, k, nx, ny, 1] = batch_target[index, 1] - ny.float()
+                        y_true[b, k, nx, ny, 2] = batch_target[index, 2]
+                        y_true[b, k, nx, ny, 3] = batch_target[index, 3]
+                        y_true[b, k, nx, ny, 4] = 1
+                        y_true[b, k, nx, ny, 5 + c] = 1
+                else:
+                    # 处理其他匹配的anchor
+                    additional_anchors = (iou_matrix[index].split(split_size=na)[i] > 0.5).nonzero().squeeze(1)
+                    for a in additional_anchors.tolist():
                         k = a
                         y_true = self._fill_target(y_true, b, k, x, y, c, batch_target, index)
-
-                if best_iou[index] < 0.5:  # 如果 IOU 大于阈值，则将目标框扩展到邻近格子
-                    continue
-
-                k = n_a
-                # 计算偏移方向
-                offsets = []
-                if batch_target[index, 0] % 1 > 0.5:  # x > 0.5时右扩展
-                    offsets.append((1, 0))  # 向右扩展
-                elif batch_target[index, 0] % 1 < 0.5:  # x < 0.5时左扩展
-                    offsets.append((-1, 0))  # 向左扩展
-
-                if batch_target[index, 1] % 1 > 0.5:  # y > 0.5时下扩展
-                    offsets.append((0, 1))  # 向下扩展
-                elif batch_target[index, 1] % 1 < 0.5:  # y < 0.5时上扩展
-                    offsets.append((0, -1))  # 向上扩展
-
-                for dx, dy in offsets:
-                    nx = torch.clamp(x + dx, 0, S - 1)
-                    ny = torch.clamp(y + dy, 0, S - 1)
-
-                    # 确定该邻近格子是否也匹配到同样的 anchor（根据 IOU 阈值）
-                    y_true[b, k, nx, ny, 0] = batch_target[index, 0] - nx.float()
-                    y_true[b, k, nx, ny, 1] = batch_target[index, 1] - ny.float()
-                    y_true[b, k, nx, ny, 2] = batch_target[index, 2]
-                    y_true[b, k, nx, ny, 3] = batch_target[index, 3]
-                    y_true[b, k, nx, ny, 4] = 1
-                    y_true[b, k, nx, ny, 5 + c] = 1
 
         return y_true
 
@@ -254,26 +268,30 @@ class YOLOv3LOSS:
 
     def compute_iou(self, box_1, box_2, iou_type='iou'):
         if iou_type=='iou':
-            gt_wh = box_1.unsqueeze(1)  # [N, 1, 2]
-            anchors_wh = box_2.unsqueeze(0)  # [1, A, 2]
+            ious = []
+            for i, s in enumerate(self._S):
+                gt_wh = (box_1 * s).unsqueeze(1)  # [N, 1, 2]
+                anchors_wh = box_2[i].unsqueeze(0)  # [1, A, 2]
 
-            # 计算交集的宽和高
-            inter_w = torch.min(gt_wh[..., 0], anchors_wh[..., 0])  # 交集宽度
-            inter_h = torch.min(gt_wh[..., 1], anchors_wh[..., 1])  # 交集高度
+                # 计算交集的宽和高
+                inter_w = torch.min(gt_wh[..., 0], anchors_wh[..., 0])  # 交集宽度
+                inter_h = torch.min(gt_wh[..., 1], anchors_wh[..., 1])  # 交集高度
 
-            # 计算交集面积
-            intersection = inter_w * inter_h
+                # 计算交集面积
+                intersection = inter_w * inter_h
 
-            # 计算每个框的面积
-            gt_area = gt_wh[..., 0] * gt_wh[..., 1]  # [N, 1]的面积
-            anchor_area = anchors_wh[..., 0] * anchors_wh[..., 1]  # [1, A]的面积
+                # 计算每个框的面积
+                gt_area = gt_wh[..., 0] * gt_wh[..., 1]  # [N, 1]的面积
+                anchor_area = anchors_wh[..., 0] * anchors_wh[..., 1]  # [1, A]的面积
 
-            # 计算并集面积
-            union = gt_area + anchor_area - intersection
+                # 计算并集面积
+                union = gt_area + anchor_area - intersection
 
-            iou = intersection / union
+                iou = intersection / union
 
-            return iou
+                ious.append(iou)
+
+            return torch.cat(ious, dim=1)
         
         else:
             p_x1 = box_1[:, 0]
