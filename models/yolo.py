@@ -64,7 +64,7 @@ class Detect(nn.Module):
                 xy, wh, conf = x[i].split((2, 2, self.nc + 1), 4)  # 不再对wh做sigmoid
                 conf = conf.sigmoid()
                 xy = (xy.sigmoid() * 2 - 0.5 + self.grid[i]) * self.stride[i]  # xy: 使用 2 * x - 0.5 公式
-                wh = torch.exp(wh).clamp(-4, 10) * self.anchor_grid[i]  # 对wh应用exp
+                wh = torch.exp(wh) * self.anchor_grid[i]  # 对wh应用exp
                 y = torch.cat((xy, wh, conf), 4)
                 z.append(y.view(bs, self.na * nx * ny, self.no))
 

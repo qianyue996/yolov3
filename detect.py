@@ -3,7 +3,7 @@ import mss
 import numpy as np
 import torch
 
-from utils.general import check_yaml
+from utils.general import check_yaml, non_max_suppression
 from utils.boxTool import draw_box
 from models.yolo import Model
 from utils.tools import multi_class_nms
@@ -17,36 +17,6 @@ device = "cpu" if torch.cuda.is_available() else "cpu"
 imgSize = 640
 
 
-def get_result(outputs, score_thresh=0.3, iou_thresh=0.45):
-    boxes, scores, labels = [], [], []
-    outputs = outputs.squeeze(0)
-    bboxes = outputs[..., :4]
-
-    _scores = outputs[..., 4].unsqueeze(-1) * outputs[..., 5:]
-    for cls_id in range(outputs.shape[1]-5):
-        cls_scores = _scores[..., cls_id]
-        keep = cls_scores > score_thresh
-        if keep.sum() == 0:
-            continue
-        cls_boxes = bboxes[keep]
-        cls_scores = cls_scores[keep]
-        cls_labels = torch.full((cls_scores.shape[0],), cls_id).to(device).long()
-
-        boxes.append(cls_boxes)
-        scores.append(cls_scores)
-        labels.append(cls_labels)
-    # 拼接所有层输出
-    if not boxes:
-        return None, None, None
-    boxes = torch.cat(boxes)
-    scores = torch.cat(scores)
-    labels = torch.cat(labels)
-
-    boxes, scores, labels = multi_class_nms(boxes, scores, labels, iou_thresh)
-
-    return boxes, scores, labels
-
-
 def normalizeData(images):
     images = np.expand_dims(images, axis=0)
     images = (images.astype(np.float32) / 255.0).transpose(0, 3, 1, 2)
@@ -54,13 +24,7 @@ def normalizeData(images):
 
 
 def transport(image):
-    im_h, im_w = image.shape[0], image.shape[1]
-    scale = min(imgSize / im_h, imgSize / im_w)
-    nh, nw = int(im_h * scale), int(im_w * scale)
-    nx, ny = (imgSize - nw) // 2, (imgSize - nh) // 2
-    image = cv.resize(image, (nw, nh), interpolation=cv.INTER_AREA)
-    nImage = np.full((imgSize, imgSize, 3), (128, 128, 128)).astype(np.uint8)
-    nImage[ny : ny + nh, nx : nx + nw] = image
+    nImage = cv.resize(image, (imgSize, imgSize), interpolation=cv.INTER_AREA)
 
     image = cv.cvtColor(nImage, cv.COLOR_BGR2RGB)
     image = normalizeData(image)
@@ -69,9 +33,9 @@ def transport(image):
 
 
 def detect(image, x):
-    outputs = model(x)[0]
-    boxes, scores, labels = get_result(outputs)
-    draw_box(image, boxes, scores, labels)
+    outputs = model(x)
+    results = non_max_suppression(outputs, agnostic=False, max_det=300)
+    draw_box(image, results[0])
 
 
 if __name__ == "__main__":
@@ -82,8 +46,8 @@ if __name__ == "__main__":
     with torch.no_grad():
         if is_cap:
             cap = cv.VideoCapture(0)
-            cap.set(cv.CAP_PROP_FRAME_WIDTH, 416)
-            cap.set(cv.CAP_PROP_FRAME_HEIGHT, 416)
+            cap.set(cv.CAP_PROP_FRAME_WIDTH, 640)
+            cap.set(cv.CAP_PROP_FRAME_HEIGHT, 640)
             while True:
                 ret, img = cap.read()
                 if not ret:

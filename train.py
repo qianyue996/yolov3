@@ -38,9 +38,9 @@ if __name__ == "__main__":
     train_type = "tiny"  # or yolov3
     dataset_type = "voc"
     set_seed(seed=27)
-    batch_size = 4
+    batch_size = 32
     epochs = 100
-    lr = 0.0006
+    lr = 0.0005
     l_loc = 0.05
     l_cls = 0.5
     l_obj = 1
@@ -63,7 +63,7 @@ if __name__ == "__main__":
         print(f"{name}: {param.requires_grad}", end=' ')
     optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=1e-4)
     # optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
-    lr_scheduler = CustomLR(optimizer, warm_up=(lr, 0.01, 0), T_max=30, eta_min=1e-4)
+    # lr_scheduler = CustomLR(optimizer, warm_up=(lr, 0.01, 0), T_max=30, eta_min=1e-4)
     # lr_scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=100, eta_min=1e-4)
     loss_fn = YOLOv3LOSS(
         model=model,
@@ -78,7 +78,7 @@ if __name__ == "__main__":
     #==================================================#
     #   加载训练
     #==================================================#
-    continue_train('tiny_weight.pth', model, optimizer)
+    continue_train('weights/0.4193_0.pth', model, optimizer)
     start_epoch = 0
     # train
     losses = []
@@ -100,26 +100,27 @@ if __name__ == "__main__":
                 batch_output = model(batch_x)
                 loss_params = loss_fn(batch_output, batch_y)
                 loss = loss_params["loss"]
+                o_loss = loss_params['original_loss']
                 loss.backward()
                 optimizer.step()
                 # loss compute
                 batch_size = batch_x.size(0)
-                epoch_loss += loss.item() * batch_size
+                epoch_loss += o_loss.item() * batch_size
                 total_samples += batch_size
                 avg_loss = epoch_loss / total_samples
                 # loss compute
                 lr = optimizer.param_groups[0]["lr"]
                 pbar.set_postfix(**{
                     "ep": epoch,
-                    'np': f"{loss_params['np']}",
                     "loss": f"{loss.item():.4f}",
-                    "obj": f"{loss_params['loss_obj'].item():.4f}",
-                    "noo": f"{loss_params['loss_noo'].item():.4f}",
+                    "o_loss": f"{avg_loss:.4f}",
                     "lr": lr})
+                pbar.write(f"np: {loss_params['np']:.4f} | obj: {loss_params['loss_obj'].item():.4f} | noo: {loss_params['loss_noo'].item():.4f}")
                 writer.add_scalars(
                     "loss",
                     {
                         "loss": loss.item(),
+                        "o_loss": avg_loss,
                         "loss_loc": loss_params["loss_loc"],
                         "loss_obj": loss_params["loss_obj"],
                         "loss_cls": loss_params["loss_cls"],
@@ -131,7 +132,8 @@ if __name__ == "__main__":
                 global_step += 1
 
         losses.append(avg_loss)
-        lr_scheduler.step()
+
+        # lr_scheduler.step()
         parameters = {
             'avg_loss': avg_loss,
             'lr': lr,

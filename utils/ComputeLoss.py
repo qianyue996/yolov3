@@ -88,6 +88,7 @@ class YOLOv3LOSS:
         original_loss_cls = all_loss_cls.clone()
         original_loss_obj = all_loss_obj.clone()
         original_loss_noo = all_loss_noo.clone()
+        original_loss = original_loss_loc + original_loss_cls + original_loss_obj + original_loss_noo
         #============================================#
         #   计算总loss
         #============================================#
@@ -100,6 +101,7 @@ class YOLOv3LOSS:
 
         return {
             "loss": loss,
+            "original_loss": original_loss,
             "loss_loc": original_loss_loc,
             "loss_cls": original_loss_cls,
             "loss_obj": original_loss_obj,
