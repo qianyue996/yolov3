@@ -4,6 +4,7 @@ import torch
 import tqdm
 import yaml
 from torch import optim
+from torch.cuda.amp import GradScaler, autocast
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
@@ -31,16 +32,16 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 
 if __name__ == "__main__":
-    cfg = check_yaml("yolov3.yaml")
+    cfg = check_yaml("yolov3-tiny.yaml")
     with open(cfg, encoding="ascii", errors="ignore") as f:
         config = yaml.safe_load(f)
 
     train_type = "tiny"  # or yolov3
-    dataset_type = "coco"
+    dataset_type = "voc"
     set_seed(seed=27)
     batch_size = 8
     epochs = 100
-    lr = 0.01
+    lr = 0.0005
     l_loc = 0.05
     l_cls = 1
     l_obj = 1
@@ -65,6 +66,7 @@ if __name__ == "__main__":
     optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
     # lr_scheduler = CustomLR(optimizer, warm_up=(lr, 0.01, 0), T_max=30, eta_min=1e-4)
     lr_scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs, eta_min=2e-4)
+    scaler = GradScaler()
     loss_fn = YOLOv3LOSS(
         model=model,
         device=device,
@@ -97,12 +99,14 @@ if __name__ == "__main__":
                 batch_x = batch_x.to(device)
                 batch_y = [i.to(device) for i in batch_y]
                 optimizer.zero_grad()
-                batch_output = model(batch_x)
-                loss_params = loss_fn(batch_output, batch_y, rImages)
-                loss = loss_params["loss"]
+                with autocast():
+                    batch_output = model(batch_x)
+                    loss_params = loss_fn(batch_output, batch_y, rImages)
+                    loss = loss_params["loss"]
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
                 o_loss = loss_params['original_loss']
-                loss.backward()
-                optimizer.step()
                 # loss compute
                 batch_size = batch_x.size(0)
                 epoch_loss += o_loss.item() * batch_size
@@ -133,7 +137,7 @@ if __name__ == "__main__":
 
         losses.append(avg_loss)
 
-        # lr_scheduler.step()
+        lr_scheduler.step()
         parameters = {
             'avg_loss': avg_loss,
             'lr': lr,
