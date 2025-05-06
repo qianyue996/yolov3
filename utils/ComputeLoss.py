@@ -10,14 +10,17 @@ class YOLOv3LOSS:
         self.na = self.anchors[0].shape[0]
         self.am = list(map(tuple, np.split(np.arange(self.anchors.view(-1, 2).shape[0]), self.anchors.view(-1, 2).shape[0] // self.anchors[0].shape[0])))
 
-        self.lambda_obj_layers = [4.0, 0.4, 4.0]
+        self.lambda_obj_layers = [2.0, 0.4, 4.0]
 
         self.lambda_loc = l_loc
         self.lambda_cls = l_cls
         self.lambda_obj = l_obj
         self.lambda_noo = l_noo
 
-    def __call__(self, predictions, targets):
+    def __call__(self, predictions, targets, rImages):
+
+        self.rImages = rImages
+
         all_loss_loc = torch.zeros(1).to(self.device)
         all_loss_cls = all_loss_loc.clone()
         all_loss_obj = all_loss_loc.clone()
@@ -400,3 +403,21 @@ def focal_loss(pred, target, alpha=0.25, gamma=2.0, reduction='mean'):
         return loss.sum()
     else:
         return loss
+
+# bbox debug
+# import cv2 as cv
+# S = y_true.shape[2]
+# S = 416 / S
+
+# x1 = p_x1 * S
+# x2 = p_x2 * S
+# y1 = p_y1 * S
+# y2 = p_y2 * S
+
+# for i, image in enumerate(self.rImages):
+#     image = cv.cvtColor(image, cv.COLOR_RGB2BGR)
+#     for j in (i == b).nonzero().squeeze(1):
+#         cv.rectangle(image, (int(x1[j]), int(y1[j])), (int(x2[j]), int(y2[j])), (0, 255, 0), 2)
+#     cv.imshow("image", image)
+#     cv.waitKey(0)
+#     cv.destroyAllWindows()

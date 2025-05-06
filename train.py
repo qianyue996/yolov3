@@ -31,18 +31,18 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 
 if __name__ == "__main__":
-    cfg = check_yaml("yolov3-tiny.yaml")
+    cfg = check_yaml("yolov3.yaml")
     with open(cfg, encoding="ascii", errors="ignore") as f:
         config = yaml.safe_load(f)
 
     train_type = "tiny"  # or yolov3
-    dataset_type = "voc"
+    dataset_type = "coco"
     set_seed(seed=27)
-    batch_size = 32
+    batch_size = 8
     epochs = 100
-    lr = 0.0005
+    lr = 0.01
     l_loc = 0.05
-    l_cls = 0.5
+    l_cls = 1
     l_obj = 1
     l_noo = 1
     train_dataset = YOLODataset(dataset_type=dataset_type)
@@ -61,10 +61,10 @@ if __name__ == "__main__":
     #         param.requires_grad = False
     for name, param in model.model.named_parameters():
         print(f"{name}: {param.requires_grad}", end=' ')
-    optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=1e-4)
-    # optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
+    # optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=1e-4)
+    optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
     # lr_scheduler = CustomLR(optimizer, warm_up=(lr, 0.01, 0), T_max=30, eta_min=1e-4)
-    # lr_scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=100, eta_min=1e-4)
+    lr_scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs, eta_min=2e-4)
     loss_fn = YOLOv3LOSS(
         model=model,
         device=device,
@@ -78,7 +78,7 @@ if __name__ == "__main__":
     #==================================================#
     #   加载训练
     #==================================================#
-    continue_train('weights/0.4193_0.pth', model, optimizer)
+    # continue_train('tiny_weight.pth', model, optimizer)
     start_epoch = 0
     # train
     losses = []
@@ -93,12 +93,12 @@ if __name__ == "__main__":
         epoch_loss = 0
         with tqdm.tqdm(dataloader) as pbar:
             for batch, item in enumerate(pbar):
-                batch_x, batch_y = item
+                batch_x, batch_y, rImages = item
                 batch_x = batch_x.to(device)
                 batch_y = [i.to(device) for i in batch_y]
                 optimizer.zero_grad()
                 batch_output = model(batch_x)
-                loss_params = loss_fn(batch_output, batch_y)
+                loss_params = loss_fn(batch_output, batch_y, rImages)
                 loss = loss_params["loss"]
                 o_loss = loss_params['original_loss']
                 loss.backward()
@@ -115,7 +115,7 @@ if __name__ == "__main__":
                     "loss": f"{loss.item():.4f}",
                     "o_loss": f"{avg_loss:.4f}",
                     "lr": lr})
-                pbar.write(f"np: {loss_params['np']:.4f} | obj: {loss_params['loss_obj'].item():.4f} | noo: {loss_params['loss_noo'].item():.4f}")
+                pbar.write(f"np: {loss_params['np']} | obj: {loss_params['loss_obj'].item():.4f} | noo: {loss_params['loss_noo'].item():.4f}")
                 writer.add_scalars(
                     "loss",
                     {

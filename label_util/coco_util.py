@@ -2,11 +2,11 @@ from collections import defaultdict
 import json
 import tqdm
 import os
+import yaml
 
-with open('config/datasetParameter.json', 'r', encoding='utf-8') as f:
-    config = json.load(f)
-
-class_name = config['coco']['class_name']
+with open('config/datasets.yaml', encoding="ascii", errors="ignore")as f:
+    cfg = yaml.safe_load(f)
+class_names = cfg['coco']['class_name']
 
 instances_train_path = r'D:\Python\datasets\coco2014\annotations\instances_train2014.json'
 instances_val_path = r'D:\Python\datasets\coco2014\annotations\instances_val2014.json'
@@ -27,7 +27,7 @@ if __name__ == '__main__':
     for data in tqdm.tqdm(train_data["annotations"], desc="processing... "):
         image_id = data["image_id"]
         full_path = os.path.join(image_train_path, f"COCO_train2014_{image_id:012d}.jpg")
-        id = class_name.index(id2name[data['category_id']])
+        id = class_names.index(id2name[data['category_id']])
         name_box_id[full_path].append([data["bbox"], id])
     with open(output_train_path, 'w', encoding='utf-8') as f:
         for key in tqdm.tqdm(name_box_id.keys(), desc="writing... "):
@@ -51,7 +51,7 @@ if __name__ == '__main__':
     for data in tqdm.tqdm(val_data["annotations"], desc="processing... "):
         image_id = data["image_id"]
         full_path = os.path.join(image_val_path, f"COCO_val2014_{image_id:012d}.jpg")
-        id = class_name.index(id2name[data['category_id']])
+        id = class_names.index(id2name[data['category_id']])
         name_box_id[full_path].append([data["bbox"], id])
     with open(output_val_path, 'w', encoding='utf-8') as f:
         for key in tqdm.tqdm(name_box_id.keys(), desc="writing... "):
