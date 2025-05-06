@@ -7,6 +7,8 @@ class YOLOv3LOSS:
     def __init__(self, model, device, l_loc, l_cls, l_obj, l_noo):
         self.device = device
         self.anchors = model.model[-1].anchors
+        self.na = self.anchors[0].shape[0]
+        self.am = list(map(list, np.split(np.arange(self.anchors.view(-1, 2).shape[0]), self.anchors.view(-1, 2).shape[0] // self.anchors[0].shape[0])))
 
         self.lambda_obj_layers = [4.0, 0.4, 4.0]
 
@@ -110,12 +112,12 @@ class YOLOv3LOSS:
             "lambda_obj": self.lambda_obj,
         }
 
-    def _fill_target(self, y_true, b, k, x, y, c, batch_target, index):
+    def _fill_target(self, y_true, b, k, x, y, c, batch_target, t):
         """辅助函数：填充目标值"""
-        y_true[b, k, x, y, 0] = batch_target[index, 0] - x.float()
-        y_true[b, k, x, y, 1] = batch_target[index, 1] - y.float()
-        y_true[b, k, x, y, 2] = batch_target[index, 2]
-        y_true[b, k, x, y, 3] = batch_target[index, 3]
+        y_true[b, k, x, y, 0] = batch_target[t, 0] - x.float()
+        y_true[b, k, x, y, 1] = batch_target[t, 1] - y.float()
+        y_true[b, k, x, y, 2] = batch_target[t, 2]
+        y_true[b, k, x, y, 3] = batch_target[t, 3]
         y_true[b, k, x, y, 4] = 1
         y_true[b, k, x, y, 5 + c] = 1
         return y_true
@@ -138,42 +140,38 @@ class YOLOv3LOSS:
             gt_box = targets[b][:, 2:4]
             iou_matrix = self.compute_iou(gt_box, self.anchors, iou_type='iou')
             best_iou, best_na = torch.max(iou_matrix, dim=1)
-            am = list(map(list, np.split(np.arange(self.anchors.view(-1, 2).shape[0]), self.anchors.view(-1, 2).shape[0] / self.anchors[0].shape[0])))
 
             # 遍历每个物体
-            for index, n_a in enumerate(best_na.tolist()):
-                na = self.anchors[i].shape[0]
-                if best_iou[index] in iou_matrix[index].split(split_size=na)[i]:
-                    # 获取坐标和类别
-                    x = batch_target[index, 0].long().clamp(0, S - 1)
-                    y = batch_target[index, 1].long().clamp(0, S - 1)
-                    c = batch_target[index, 4].long()
+            for t, n_a in enumerate(best_na.tolist()):
+                # 获取坐标和类别
+                x = batch_target[t, 0].long().clamp(0, S - 1)
+                y = batch_target[t, 1].long().clamp(0, S - 1)
+                c = batch_target[t, 4].long()
+                if n_a in self.am[i]:
 
                     # 处理最佳匹配的anchor
-                    k = am[i].index(n_a)
-                    y_true = self._fill_target(y_true, b, k, x, y, c, batch_target, index)
+                    k = self.am[i].index(n_a)
+                    y_true = self._fill_target(y_true, b, k, x, y, c, batch_target, t)
 
                     # 处理其他匹配的anchor
-                    additional_anchors = (iou_matrix[index].split(split_size=na)[i] > 0.5).nonzero().squeeze(1)
+                    additional_anchors = (iou_matrix[t].split(split_size=self.na)[i] > 0.5).nonzero().squeeze(1)
                     for a in additional_anchors.tolist():
-                        if a != am[i].index(n_a):
-                            k = a
-                            y_true = self._fill_target(y_true, b, k, x, y, c, batch_target, index)
+                        if a != k:
+                            y_true = self._fill_target(y_true, b, a, x, y, c, batch_target, t)
 
-                    if best_iou[index] < 0.5:  # 如果 IOU 大于阈值，则将目标框扩展到邻近格子
+                    if best_iou[t] < 0.5:  # 如果 IOU 大于阈值，则将目标框扩展到邻近格子
                         continue
 
-                    k = am[i].index(n_a)
                     # 计算偏移方向
                     offsets = []
-                    if batch_target[index, 0] % 1 > 0.5:  # x > 0.5时右扩展
+                    if batch_target[t, 0] % 1 > 0.5:  # x > 0.5时右扩展
                         offsets.append((1, 0))  # 向右扩展
-                    elif batch_target[index, 0] % 1 < 0.5:  # x < 0.5时左扩展
+                    elif batch_target[t, 0] % 1 < 0.5:  # x < 0.5时左扩展
                         offsets.append((-1, 0))  # 向左扩展
 
-                    if batch_target[index, 1] % 1 > 0.5:  # y > 0.5时下扩展
+                    if batch_target[t, 1] % 1 > 0.5:  # y > 0.5时下扩展
                         offsets.append((0, 1))  # 向下扩展
-                    elif batch_target[index, 1] % 1 < 0.5:  # y < 0.5时上扩展
+                    elif batch_target[t, 1] % 1 < 0.5:  # y < 0.5时上扩展
                         offsets.append((0, -1))  # 向上扩展
 
                     for dx, dy in offsets:
@@ -181,18 +179,12 @@ class YOLOv3LOSS:
                         ny = torch.clamp(y + dy, 0, S - 1)
 
                         # 确定该邻近格子是否也匹配到同样的 anchor（根据 IOU 阈值）
-                        y_true[b, k, nx, ny, 0] = batch_target[index, 0] - nx.float()
-                        y_true[b, k, nx, ny, 1] = batch_target[index, 1] - ny.float()
-                        y_true[b, k, nx, ny, 2] = batch_target[index, 2]
-                        y_true[b, k, nx, ny, 3] = batch_target[index, 3]
-                        y_true[b, k, nx, ny, 4] = 1
-                        y_true[b, k, nx, ny, 5 + c] = 1
+                        y_true = self._fill_target(y_true, b, k, nx, ny, c, batch_target, t)
                 else:
                     # 处理其他匹配的anchor
-                    additional_anchors = (iou_matrix[index].split(split_size=na)[i] > 0.5).nonzero().squeeze(1)
+                    additional_anchors = (iou_matrix[t].split(split_size=self.na)[i] > 0.5).nonzero().squeeze(1)
                     for a in additional_anchors.tolist():
-                        k = a
-                        y_true = self._fill_target(y_true, b, k, x, y, c, batch_target, index)
+                        y_true = self._fill_target(y_true, b, a, x, y, c, batch_target, t)
 
         return y_true
 
