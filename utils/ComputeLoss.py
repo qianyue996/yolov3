@@ -8,7 +8,7 @@ class YOLOv3LOSS:
         self.device = device
         self.anchors = model.model[-1].anchors
         self.na = self.anchors[0].shape[0]
-        self.am = list(map(list, np.split(np.arange(self.anchors.view(-1, 2).shape[0]), self.anchors.view(-1, 2).shape[0] // self.anchors[0].shape[0])))
+        self.am = list(map(tuple, np.split(np.arange(self.anchors.view(-1, 2).shape[0]), self.anchors.view(-1, 2).shape[0] // self.anchors[0].shape[0])))
 
         self.lambda_obj_layers = [4.0, 0.4, 4.0]
 
@@ -16,8 +16,6 @@ class YOLOv3LOSS:
         self.lambda_cls = l_cls
         self.lambda_obj = l_obj
         self.lambda_noo = l_noo
-
-        self.a = []
 
     def __call__(self, predictions, targets):
         all_loss_loc = torch.zeros(1).to(self.device)
@@ -159,7 +157,7 @@ class YOLOv3LOSS:
                         if a != k:
                             y_true = self._fill_target(y_true, b, a, x, y, c, batch_target, t)
 
-                    if best_iou[t] < 0.5:  # 如果 IOU 大于阈值，则将目标框扩展到邻近格子
+                    if best_iou[t] < 0.9:  # 如果 IOU 大于阈值，则将目标框扩展到邻近格子
                         continue
 
                     # 计算偏移方向
@@ -231,12 +229,12 @@ class YOLOv3LOSS:
             b, a, gx, gy = obj_mask.nonzero(as_tuple=True)
             anchors = self.anchors[i][a]
             #============================================#
-            #   xywh 转 xyxy
+            #   xywh 转 xyxy并动态限制tw和th
             #============================================#
             p_x = prediction[obj_mask][:, 0].sigmoid() * 2 - 0.5 + gx
             p_y = prediction[obj_mask][:, 1].sigmoid() * 2 - 0.5 + gy
-            p_w = prediction[obj_mask][:, 2].exp() * anchors[:, 0]
-            p_h = prediction[obj_mask][:, 3].exp() * anchors[:, 1]
+            p_w = (prediction[obj_mask][:, 2].exp() * anchors[:, 0]).clamp(0, prediction.shape[2])
+            p_h = (prediction[obj_mask][:, 3].exp() * anchors[:, 1]).clamp(0, prediction.shape[3])
 
             t_x = y_true[obj_mask][:, 0] + gx
             t_y = y_true[obj_mask][:, 1] + gy

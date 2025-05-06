@@ -40,7 +40,7 @@ if __name__ == "__main__":
     set_seed(seed=27)
     batch_size = 4
     epochs = 100
-    lr = 0.0005
+    lr = 0.0006
     l_loc = 0.05
     l_cls = 0.5
     l_obj = 1
@@ -78,7 +78,7 @@ if __name__ == "__main__":
     #==================================================#
     #   加载训练
     #==================================================#
-    # continue_train('tiny_weight.pth', model, optimizer)
+    continue_train('tiny_weight.pth', model, optimizer)
     start_epoch = 0
     # train
     losses = []
