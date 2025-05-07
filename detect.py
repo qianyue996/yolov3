@@ -10,11 +10,11 @@ from utils.tools import multi_class_nms
 
 
 model = Model(check_yaml('yolov3-tiny.yaml'))
-model.load_state_dict(torch.load(r'tiny_weight.pth', map_location=torch.device('cpu'))['model'])
+model.load_state_dict(torch.load(r'0.5082_best_61.pth', map_location=torch.device('cpu'))['model'])
 model.eval()
 
 device = "cpu" if torch.cuda.is_available() else "cpu"
-imgSize = 640
+imgSize = 480
 
 
 def normalizeData(images):
@@ -39,15 +39,15 @@ def detect(image, x):
 
 
 if __name__ == "__main__":
-    is_cap = True
+    is_cap = False
     is_img = False
-    is_screenshot = False
+    is_screenshot = True
 
     with torch.no_grad():
         if is_cap:
             cap = cv.VideoCapture(0)
-            cap.set(cv.CAP_PROP_FRAME_WIDTH, 640)
-            cap.set(cv.CAP_PROP_FRAME_HEIGHT, 640)
+            # cap.set(cv.CAP_PROP_FRAME_WIDTH, 640)
+            # cap.set(cv.CAP_PROP_FRAME_HEIGHT, 640)
             while True:
                 ret, img = cap.read()
                 if not ret:
@@ -68,6 +68,7 @@ if __name__ == "__main__":
             img, _input = transport(img)  # to tensor
             detect(img, _input)  # outputict
             cv.imwrite("output.jpg", img)
+            print('successfully!!')
         elif is_screenshot:
             screen_width, screen_height = 2880, 1800
             size_w, size_h = 640, 640

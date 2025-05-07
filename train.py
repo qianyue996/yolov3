@@ -39,7 +39,7 @@ if __name__ == "__main__":
     train_type = "tiny"  # or yolov3
     dataset_type = "voc"
     set_seed(seed=27)
-    batch_size = 8
+    batch_size = 64
     epochs = 100
     lr = 0.0005
     l_loc = 0.05
@@ -57,15 +57,12 @@ if __name__ == "__main__":
     )
     model = Model(cfg).to(device)
     # load_checkpoint(device, 'models/tiny_weight.pth', model)
-    # for layer in model.model[:13]:
-    #     for param in layer.parameters():
-    #         param.requires_grad = False
     for name, param in model.model.named_parameters():
         print(f"{name}: {param.requires_grad}", end=' ')
-    # optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=1e-4)
-    optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
+    optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.937, weight_decay=1e-4)
+    # optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
     # lr_scheduler = CustomLR(optimizer, warm_up=(lr, 0.01, 0), T_max=30, eta_min=1e-4)
-    lr_scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs, eta_min=2e-4)
+    # lr_scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs, eta_min=2e-4)
     scaler = GradScaler()
     loss_fn = YOLOv3LOSS(
         model=model,
@@ -80,28 +77,24 @@ if __name__ == "__main__":
     #==================================================#
     #   加载训练
     #==================================================#
-    # continue_train('tiny_weight.pth', model, optimizer)
+    continue_train('tiny_weight.pth', model, optimizer)
     start_epoch = 0
     # train
     losses = []
     global_step = 0
     for epoch in range(start_epoch, epochs):
-        # if epoch + 1 > 30:
-        #     for layer in model.model[:13]:
-        #         for param in layer.parameters():
-        #             param.requires_grad = True
         model.train()
         total_samples = 0
         epoch_loss = 0
         with tqdm.tqdm(dataloader) as pbar:
             for batch, item in enumerate(pbar):
-                batch_x, batch_y, rImages = item
+                batch_x, batch_y = item
                 batch_x = batch_x.to(device)
                 batch_y = [i.to(device) for i in batch_y]
                 optimizer.zero_grad()
                 with autocast():
                     batch_output = model(batch_x)
-                    loss_params = loss_fn(batch_output, batch_y, rImages)
+                    loss_params = loss_fn(batch_output, batch_y)
                     loss = loss_params["loss"]
                 scaler.scale(loss).backward()
                 scaler.step(optimizer)
@@ -137,7 +130,7 @@ if __name__ == "__main__":
 
         losses.append(avg_loss)
 
-        lr_scheduler.step()
+        # lr_scheduler.step()
         parameters = {
             'avg_loss': avg_loss,
             'lr': lr,

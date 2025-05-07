@@ -14,8 +14,8 @@ class_names = cfg['voc']['class_name']
 # 划分训练集和验证集
 split_ratio = 0.8
 
-annotation_path_2007 = r"/mnt/nfs/ai_models/my_voc/VOCdevkit/VOC2007/Annotations"
-annotation_path_2012 = r"/mnt/nfs/ai_models/my_voc/VOCdevkit/VOC2012/Annotations"
+annotation_path_2007 = r"D:\Python\datasets\voc07+12\VOCdevkit/VOC2007/Annotations"
+annotation_path_2012 = r"D:\Python\datasets\voc07+12\VOCdevkit/VOC2012/Annotations"
 
 output_train_path = 'voc_train.txt'
 output_val_path = 'voc_val.txt'
@@ -37,7 +37,7 @@ if __name__ == "__main__":
                 ymin = bndbox.find("ymin").text
                 xmax = bndbox.find("xmax").text
                 ymax = bndbox.find("ymax").text
-                bndbox = list(map(float, [xmin, ymin, xmax, ymax]))
+                bndbox = [xmin, ymin, xmax, ymax]
                 name_box_id[img_path].append([bndbox, real_id])
 
     items = list(name_box_id.items())
@@ -51,11 +51,11 @@ if __name__ == "__main__":
             f.write(key)
             box_infos = train_box_id[key]
             for info in box_infos:
-                x_min = int(info[0][0])
-                y_min = int(info[0][1])
-                x_max = int(info[0][2])
-                y_max = int(info[0][3])
-                box_info = f" {x_min},{y_min},{x_max},{y_max},{int(info[1])}"
+                x_min = info[0][0]
+                y_min = info[0][1]
+                x_max = info[0][2]
+                y_max = info[0][3]
+                box_info = f" {x_min},{y_min},{x_max},{y_max},{info[1]}"
                 f.write(box_info)
             f.write("\n")
 
@@ -64,10 +64,10 @@ if __name__ == "__main__":
             f.write(key)
             box_infos = val_box_id[key]
             for info in box_infos:
-                x_min = int(info[0][0])
-                y_min = int(info[0][1])
-                x_max = int(info[0][2])
-                y_max = int(info[0][3])
-                box_info = f" {x_min},{y_min},{x_max},{y_max},{int(info[1])}"
+                x_min = info[0][0]
+                y_min = info[0][1]
+                x_max = info[0][2]
+                y_max = info[0][3]
+                box_info = f" {x_min},{y_min},{x_max},{y_max},{info[1]}"
                 f.write(box_info)
             f.write("\n")

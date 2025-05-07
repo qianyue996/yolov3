@@ -29,10 +29,10 @@ class YOLODataset(Dataset):
         return len(self.datas)
 
     def __getitem__(self, index):
-        image = cv.imread(self.datas[index].strip("\n").split(" ")[0])
+        image = cv.imread(self.datas[index].strip().split(" ")[0])
         if image is None:  # 忽略无标签的图片
             raise ValueError("没有读取到图片")
-        labels = np.array([list(map(float, item.split(","))) for item in self.datas[index].strip("\n").split(" ")[1:]])
+        labels = np.array([[float(i) for i in i.split(",")] for i in self.datas[index].strip().split(" ")[1:]])
 
         return image, labels
 
@@ -138,15 +138,17 @@ def randomAug(image, label):
 
 
 def xyxy2xywh(labels):
-    labels = list(labels)
-    for i, label in enumerate(labels):
-        cx = (label[:, 0] + label[:, 2]) / 2
-        cy = (label[:, 1] + label[:, 3]) / 2
-        w = label[:, 2] - label[:, 0]
-        h = label[:, 3] - label[:, 1]
-        ids = label[:, 4]
-        nLabels = np.stack([cx, cy, w, h, ids], axis=-1)
-        labels[i] = nLabels
+    if not isinstance(labels, list):
+        labels = list(labels)
+    labels = [
+        np.stack([
+            (l[:, 0] + l[:, 2]) / 2,
+            (l[:, 1] + l[:, 3]) / 2,
+            l[:, 2] - l[:, 0],
+            l[:, 3] - l[:, 1],
+            l[:, 4]
+        ], axis=-1) for l in labels
+    ]
     return labels
 
 
@@ -181,7 +183,8 @@ def resizeCvt(image=None, labels=None, imgSize=416):
 
 
 def normalizeData(images, labels):
-    images = np.array(images)
+    if isinstance(images, list):
+        images = np.array(images)
     imgSize = images.shape[1]
     images = (images / 255.0).transpose(0, 3, 1, 2)
     for i, label in enumerate(labels):
@@ -249,18 +252,16 @@ class Yolo_collate_fn:
         self.count += 1
         if self.count % self.step == 0:
             self.imgSize = np.random.choice(self.sizes)
-        images, labels = zip(*batch)
         # resize + bgr -> rgb
-        images, labels = map(list, zip(*[resizeCvt(image, label, self.imgSize) for image, label in zip(images, labels)]))
+        images, labels = map(list, zip(*[resizeCvt(image, label, self.imgSize) for image, label in batch]))
         # 随机增强
         # images, labels = zip(*[randomAug(image, label) for image, label in zip(images, labels)])
         #
-        # chakan(images, labels)
-        rImages = images.copy()
+        chakan(images, labels)
         labels = xyxy2xywh(labels)
         images, labels = normalizeData(images, labels)
         images, labels = ToTensor(images, labels)
-        return images, labels, rImages
+        return images, labels
 
 yolo_collate_fn = Yolo_collate_fn()
 

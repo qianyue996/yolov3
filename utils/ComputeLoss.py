@@ -17,10 +17,7 @@ class YOLOv3LOSS:
         self.lambda_obj = l_obj
         self.lambda_noo = l_noo
 
-    def __call__(self, predictions, targets, rImages):
-
-        self.rImages = rImages
-
+    def __call__(self, predictions, targets):
         all_loss_loc = torch.zeros(1).to(self.device)
         all_loss_cls = all_loss_loc.clone()
         all_loss_obj = all_loss_loc.clone()
@@ -196,7 +193,7 @@ class YOLOv3LOSS:
         #============================================#
         #   batch size
         #============================================#
-        B = obj_mask.shape[0]
+        B = prediction.shape[0]
         #============================================#
         #   特征图大小
         #============================================#
@@ -225,7 +222,9 @@ class YOLOv3LOSS:
                 #   获取正样本的y坐标
                 #============================================#
                 y = obj_mask[bs].nonzero()[n][-2:][1].item()
-
+                #============================================#
+                #   置正样本所有anchor为0
+                #============================================#
                 noobj_mask[bs, :, x, y] = False
         if obj_mask.sum().item() != 0:
             #============================================#
@@ -236,15 +235,15 @@ class YOLOv3LOSS:
             #============================================#
             #   xywh 转 xyxy并动态限制tw和th
             #============================================#
-            p_x = prediction[obj_mask][:, 0].sigmoid() * 2 - 0.5 + gx
-            p_y = prediction[obj_mask][:, 1].sigmoid() * 2 - 0.5 + gy
-            p_w = (prediction[obj_mask][:, 2].exp() * anchors[:, 0]).clamp(0, prediction.shape[2])
-            p_h = (prediction[obj_mask][:, 3].exp() * anchors[:, 1]).clamp(0, prediction.shape[3])
+            p_x = prediction[b, a, gx, gy][:, 0].sigmoid() * 2 - 0.5 + gx
+            p_y = prediction[b, a, gx, gy][:, 1].sigmoid() * 2 - 0.5 + gy
+            p_w = (prediction[b, a, gx, gy][:, 2].exp() * anchors[:, 0]).clamp(0, prediction.shape[2])
+            p_h = (prediction[b, a, gx, gy][:, 3].exp() * anchors[:, 1]).clamp(0, prediction.shape[3])
 
-            t_x = y_true[obj_mask][:, 0] + gx
-            t_y = y_true[obj_mask][:, 1] + gy
-            t_w = y_true[obj_mask][:, 2]
-            t_h = y_true[obj_mask][:, 3]
+            t_x = y_true[b, a, gx, gy][:, 0] + gx
+            t_y = y_true[b, a, gx, gy][:, 1] + gy
+            t_w = y_true[b, a, gx, gy][:, 2]
+            t_h = y_true[b, a, gx, gy][:, 3]
 
             p_x1 = p_x - p_w / 2
             p_y1 = p_y - p_h / 2

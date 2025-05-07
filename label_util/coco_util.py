@@ -27,18 +27,18 @@ if __name__ == '__main__':
     for data in tqdm.tqdm(train_data["annotations"], desc="processing... "):
         image_id = data["image_id"]
         full_path = os.path.join(image_train_path, f"COCO_train2014_{image_id:012d}.jpg")
-        id = class_names.index(id2name[data['category_id']])
-        name_box_id[full_path].append([data["bbox"], id])
+        label = class_names.index(id2name[data['category_id']])
+        name_box_id[full_path].append([data["bbox"], label])
     with open(output_train_path, 'w', encoding='utf-8') as f:
         for key in tqdm.tqdm(name_box_id.keys(), desc="writing... "):
             f.write(key)
             box_infos = name_box_id[key]
             for info in box_infos:
-                x_min = int(info[0][0])
-                y_min = int(info[0][1])
-                x_max = int(info[0][2])
-                y_max = int(info[0][3])
-                box_info = f" {x_min},{y_min},{x_max},{y_max},{int(info[1])}"
+                x_min = info[0][0]
+                y_min = info[0][1]
+                x_max = info[0][2]
+                y_max = info[0][3]
+                box_info = f" {x_min},{y_min},{x_max},{y_max},{info[1]}"
                 f.write(box_info)
             f.write("\n")
 
@@ -51,17 +51,17 @@ if __name__ == '__main__':
     for data in tqdm.tqdm(val_data["annotations"], desc="processing... "):
         image_id = data["image_id"]
         full_path = os.path.join(image_val_path, f"COCO_val2014_{image_id:012d}.jpg")
-        id = class_names.index(id2name[data['category_id']])
-        name_box_id[full_path].append([data["bbox"], id])
+        label = class_names.index(id2name[data['category_id']])
+        name_box_id[full_path].append([data["bbox"], label])
     with open(output_val_path, 'w', encoding='utf-8') as f:
         for key in tqdm.tqdm(name_box_id.keys(), desc="writing... "):
             f.write(key)
             box_infos = name_box_id[key]
             for info in box_infos:
-                x_min = int(info[0][0])
-                y_min = int(info[0][1])
-                x_max = int(info[0][2])
-                y_max = int(info[0][3])
-                box_info = f" {x_min},{y_min},{x_max},{y_max},{int(info[1])}"
+                x_min = info[0][0]
+                y_min = info[0][1]
+                x_max = info[0][2]
+                y_max = info[0][3]
+                box_info = f" {x_min},{y_min},{x_max},{y_max},{info[1]}"
                 f.write(box_info)
             f.write("\n")
