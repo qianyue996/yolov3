@@ -2,20 +2,20 @@ import torch
 import torch.nn as nn
 import numpy as np
 
+device = "cuda" if torch.cuda.is_available() else "cpu"
 
 class YOLOv3LOSS:
-    def __init__(self, model, device, l_loc, l_cls, l_obj, l_noo):
+    def __init__(self, model):
         self.device = device
         self.anchors = model.model[-1].anchors
         self.na = self.anchors[0].shape[0]
         self.am = list(map(tuple, np.split(np.arange(self.anchors.view(-1, 2).shape[0]), self.anchors.view(-1, 2).shape[0] // self.anchors[0].shape[0])))
 
-        self.lambda_obj_layers = [2.0, 0.4, 4.0]
-
-        self.lambda_loc = l_loc
-        self.lambda_cls = l_cls
-        self.lambda_obj = l_obj
-        self.lambda_noo = l_noo
+        self.lambda_obj_layers = [1.0, 0.4, 4.0]
+        self.lambda_loc = 0.05
+        self.lambda_cls = 1
+        self.lambda_obj = 1
+        self.lambda_noo = 1
 
     def __call__(self, predictions, targets):
         all_loss_loc = torch.zeros(1).to(self.device)

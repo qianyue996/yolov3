@@ -54,11 +54,11 @@ def randomAug(image, label):
         # bbox: [x1, y1, x2, y2]
         if flip_type == 1:  # 水平翻转
             nLabel[:, [0, 2]] = w - nLabel[:, [2, 0]]
-        elif flip_type == 0:  # 垂直翻转
-            nLabel[:, [1, 3]] = h - nLabel[:, [3, 1]]
-        elif flip_type == -1:  # 对角翻转（等于水平+垂直）
-            nLabel[:, [0, 2]] = w - nLabel[:, [2, 0]]
-            nLabel[:, [1, 3]] = h - nLabel[:, [3, 1]]
+        # elif flip_type == 0:  # 垂直翻转
+        #     nLabel[:, [1, 3]] = h - nLabel[:, [3, 1]]
+        # elif flip_type == -1:  # 对角翻转（等于水平+垂直）
+        #     nLabel[:, [0, 2]] = w - nLabel[:, [2, 0]]
+        #     nLabel[:, [1, 3]] = h - nLabel[:, [3, 1]]
 
     # 随机缩放（resize 到一个随机尺寸后再 resize 回原尺寸）
     # if rand() > 0.5:
@@ -116,7 +116,7 @@ def randomAug(image, label):
     #         nLabel[i, :4] = new_x1, new_y1, new_x2, new_y2
 
     # 随机颜色增强
-    # strength = 0.3
+    strength = 0.3
     # if rand() > 0.7:
     #     # 随机亮度（加减一个值）
     #     delta = np.random.uniform(-16, 16) * strength
@@ -126,13 +126,13 @@ def randomAug(image, label):
     #     alpha = 1.0 + np.random.uniform(-0.2, 0.2) * strength
     #     mean = np.mean(nImage, axis=(0, 1), keepdims=True)
     #     nImage = np.clip((nImage - mean) * alpha + mean, 0, 255).astype(np.uint8)
-    # if rand() > 0.7:
-    #     # 随机饱和度（转HSV改S通道）
-    #     hsv = cv.cvtColor(nImage, cv.COLOR_BGR2HSV).astype(np.float32)
-    #     sat_scale = 1.0 + np.random.uniform(-0.3, 0.3) * strength
-    #     hsv[..., 1] *= sat_scale
-    #     hsv[..., 1] = np.clip(hsv[..., 1], 0, 255)
-    #     nImage = cv.cvtColor(hsv.astype(np.uint8), cv.COLOR_HSV2BGR)
+    if rand() > 0.7:
+        # 随机饱和度（转HSV改S通道）
+        hsv = cv.cvtColor(nImage, cv.COLOR_BGR2HSV).astype(np.float32)
+        sat_scale = 1.0 + np.random.uniform(-0.3, 0.3) * strength
+        hsv[..., 1] *= sat_scale
+        hsv[..., 1] = np.clip(hsv[..., 1], 0, 255)
+        nImage = cv.cvtColor(hsv.astype(np.uint8), cv.COLOR_HSV2BGR)
 
     return nImage, nLabel
 
@@ -257,7 +257,7 @@ class Yolo_collate_fn:
         # 随机增强
         # images, labels = zip(*[randomAug(image, label) for image, label in zip(images, labels)])
         #
-        chakan(images, labels)
+        # chakan(images, labels)
         labels = xyxy2xywh(labels)
         images, labels = normalizeData(images, labels)
         images, labels = ToTensor(images, labels)

@@ -10,11 +10,11 @@ from utils.tools import multi_class_nms
 
 
 model = Model(check_yaml('yolov3-tiny.yaml'))
-model.load_state_dict(torch.load(r'0.5082_best_61.pth', map_location=torch.device('cpu'))['model'])
+model.load_state_dict(torch.load(r'0.4207_best_16.pth', map_location=torch.device('cpu'))['model'])
 model.eval()
 
 device = "cpu" if torch.cuda.is_available() else "cpu"
-imgSize = 480
+imgSize = 320
 
 
 def normalizeData(images):
@@ -39,9 +39,9 @@ def detect(image, x):
 
 
 if __name__ == "__main__":
-    is_cap = False
+    is_cap = True
     is_img = False
-    is_screenshot = True
+    is_screenshot = False
 
     with torch.no_grad():
         if is_cap:
