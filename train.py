@@ -46,7 +46,7 @@ if __name__ == "__main__":
         dataset=train_dataset,
         batch_size=batch_size,
         shuffle=True,
-        num_workers=8,
+        num_workers=4,
         worker_init_fn=worker_init_fn,
         collate_fn=yolo_collate_fn,
     )
