@@ -38,7 +38,7 @@ if __name__ == "__main__":
     train_type = "tiny"  # or yolov3
     dataset_type = "voc"
     set_seed(seed=27)
-    batch_size = 4
+    batch_size = 64
     epochs = 120
     lr = 0.05
     train_dataset = YOLODataset(dataset_type=dataset_type)
@@ -63,13 +63,14 @@ if __name__ == "__main__":
     #==================================================#
     #   加载训练
     #==================================================#
-    continue_train('0.4365_best_7.pth', model, optimizer)
+    continue_train('0.3741_best_100.pth', model, optimizer)
     start_epoch = 0
     # train
     losses = []
     global_step = 0
     for epoch in range(start_epoch, epochs):
         model.train()
+        optimizer.zero_grad()
         total_samples = 0
         total_loss = 0
         with tqdm.tqdm(dataloader) as pbar:
@@ -85,8 +86,8 @@ if __name__ == "__main__":
                 scaler.scale(loss).backward()
                 if (batch+1) % 2 == 0:
                     scaler.step(optimizer)
-                    optimizer.zero_grad()
                     scaler.update()
+                    optimizer.zero_grad()
                 o_loss = loss_params['original_loss'].item()
                 # loss compute
                 batch_size = batch_x.shape[0]
