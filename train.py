@@ -38,8 +38,8 @@ if __name__ == "__main__":
     train_type = "tiny"  # or yolov3
     dataset_type = "voc"
     set_seed(seed=27)
-    batch_size = 64
-    epochs = 100
+    batch_size = 4
+    epochs = 120
     lr = 0.05
     train_dataset = YOLODataset(dataset_type=dataset_type)
     dataloader = DataLoader(
@@ -52,8 +52,8 @@ if __name__ == "__main__":
     )
     model = Model(cfg).to(device)
     # load_checkpoint(device, 'models/tiny_weight.pth', model)
-    optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.937, weight_decay=1e-4)
-    # optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
+    # optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.937, weight_decay=1e-4)
+    optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
     # lr_scheduler = CustomLR(optimizer, warm_up=(lr, 0.01, 0), T_max=30, eta_min=1e-4)
     lr_scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=20, eta_min=1e-4)
     scaler = torch.cuda.amp.GradScaler()
@@ -116,7 +116,7 @@ if __name__ == "__main__":
                 )
                 global_step += 1
         losses.append(avg_loss)
-        # lr_scheduler.step()
+        lr_scheduler.step()
         parameters = {
             'avg_loss': avg_loss,
             'lr': lr,

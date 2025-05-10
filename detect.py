@@ -10,12 +10,12 @@ from utils.tools import multi_class_nms
 
 
 model = Model(check_yaml('yolov3-tiny.yaml'))
-model.load_state_dict(torch.load(r'0.4207_best_16.pth', map_location=torch.device('cpu'))['model'])
+model.load_state_dict(torch.load(r'0.3741_best_100.pth', map_location=torch.device('cpu'))['model'])
 model.eval()
 
 device = "cpu" if torch.cuda.is_available() else "cpu"
-imgSize = 320
-
+imgW = 640
+imgH = 480
 
 def normalizeData(images):
     images = np.expand_dims(images, axis=0)
@@ -24,7 +24,7 @@ def normalizeData(images):
 
 
 def transport(image):
-    nImage = cv.resize(image, (imgSize, imgSize), interpolation=cv.INTER_AREA)
+    nImage = cv.resize(image, (imgW, imgH), interpolation=cv.INTER_AREA)
 
     image = cv.cvtColor(nImage, cv.COLOR_BGR2RGB)
     image = normalizeData(image)
@@ -47,7 +47,7 @@ if __name__ == "__main__":
         if is_cap:
             cap = cv.VideoCapture(0)
             # cap.set(cv.CAP_PROP_FRAME_WIDTH, 640)
-            # cap.set(cv.CAP_PROP_FRAME_HEIGHT, 640)
+            # cap.set(cv.CAP_PROP_FRAME_HEIGHT, 480)
             while True:
                 ret, img = cap.read()
                 if not ret:

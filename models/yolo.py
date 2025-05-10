@@ -61,10 +61,9 @@ class Detect(nn.Module):
                 if self.dynamic or self.grid[i].shape[2:4] != x[i].shape[2:4]:
                     self.grid[i], self.anchor_grid[i] = self._make_grid(nx, ny, i)
 
-                xy, wh, conf = x[i].split((2, 2, self.nc + 1), 4)  # 不再对wh做sigmoid
-                conf = conf.sigmoid()
-                xy = (xy.sigmoid() * 2 - 0.5 + self.grid[i]) * self.stride[i]  # xy: 使用 2 * x - 0.5 公式
-                wh = torch.exp(wh) * self.anchor_grid[i]  # 对wh应用exp
+                xy, wh, conf = x[i].sigmoid().split((2, 2, self.nc + 1), 4)  # 不再对wh做sigmoid
+                xy = (xy * 2 - 0.5 + self.grid[i]) * self.stride[i]  # xy: 使用 2 * x - 0.5 公式
+                wh = ((wh * 2) ** 2) * self.anchor_grid[i]
                 y = torch.cat((xy, wh, conf), 4)
                 z.append(y.view(bs, self.na * nx * ny, self.no))
 
