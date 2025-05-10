@@ -38,7 +38,7 @@ if __name__ == "__main__":
     train_type = "tiny"  # or yolov3
     dataset_type = "voc"
     set_seed(seed=27)
-    batch_size = 64
+    batch_size = 4
     epochs = 120
     lr = 0.05
     train_dataset = YOLODataset(dataset_type=dataset_type)
@@ -79,7 +79,6 @@ if __name__ == "__main__":
                 batch_x = batch_x.to(device)
                 batch_y = [i.to(device) for i in batch_y]
                 with torch.cuda.amp.autocast():
-                    optimizer.zero_grad()
                     batch_output = model(batch_x)
                     loss_params = loss_fn(batch_output, batch_y)
                     loss = loss_params["loss"] / 2

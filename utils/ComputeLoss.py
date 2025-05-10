@@ -9,10 +9,12 @@ class YOLOv3LOSS:
         self.am = list(map(tuple, np.split(np.arange(self.anchors.view(-1, 2).shape[0]), self.anchors.view(-1, 2).shape[0] // self.anchors[0].shape[0])))
         self.nl = model.model[-1].nl
         self.lambda_obj_layers = [2.0, 0.4, 4.0]
-        self.lambda_loc = 0.25
-        self.lambda_cls = 1
-        self.lambda_obj = 10
-        self.lambda_noo = 10
+
+        self.ema_loc = 1.0
+        self.ema_cls = 1.0
+        self.ema_obj = 1.0
+        self.ema_noo = 1.0
+        self.momentum = 0.9
 
     def __call__(self, p, targets):
         device = p[0].device
@@ -40,7 +42,6 @@ class YOLOv3LOSS:
             conf = l_p[..., 4]
             t_conf = y_true[l][..., 4]
             loss_conf = nn.BCEWithLogitsLoss(reduction="none")(conf, t_conf)
-            focal_loss(conf, t_conf)
             #============================================#
             #   GroundTrue Postivez正样本置信度损失
             #============================================#
@@ -61,10 +62,15 @@ class YOLOv3LOSS:
         #============================================#
         #   计算总loss
         #============================================#
-        loc_loss *= self.lambda_loc
-        cls_loss *= self.lambda_cls
-        obj_loss *= self.lambda_obj
-        noo_loss *= self.lambda_noo
+        self.ema_loc = self.momentum * self.ema_loc + (1 - self.momentum) * loc_loss.item()
+        self.ema_cls = self.momentum * self.ema_cls + (1 - self.momentum) * cls_loss.item()
+        self.ema_obj = self.momentum * self.ema_obj + (1 - self.momentum) * obj_loss.item()
+        self.ema_noo = self.momentum * self.ema_noo + (1 - self.momentum) * noo_loss.item()
+
+        loc_loss /= (self.ema_loc + 1e-8)
+        cls_loss /= (self.ema_cls + 1e-8)
+        obj_loss /= (self.ema_obj + 1e-8)
+        noo_loss /= (self.ema_noo + 1e-8)
 
         loss = loc_loss + cls_loss + obj_loss + noo_loss
 
