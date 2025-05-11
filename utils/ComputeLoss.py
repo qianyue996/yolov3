@@ -8,34 +8,32 @@ class YOLOv3LOSS:
         self.na = self.anchors[0].shape[0]
         self.am = list(map(tuple, np.split(np.arange(self.anchors.view(-1, 2).shape[0]), self.anchors.view(-1, 2).shape[0] // self.anchors[0].shape[0])))
         self.nl = model.model[-1].nl
-        self.lambda_obj_layers = [2.0, 0.4, 4.0]
+        self.lambda_obj_layers = [4.0, 1.0, 4.0]
 
-        self.ema_loc = 1.0
-        self.ema_cls = 1.0
-        self.ema_obj = 1.0
-        self.ema_noo = 1.0
-        self.momentum = 0.9
+        self.l_loc = 0.05
+        self.l_cls = 0.5
+        self.l_obj = 1.0
 
     def __call__(self, p, targets):
         device = p[0].device
         y_true = self.build_target(p, targets)
         noobj_mask, pred_box, targ_box = self.ignore_target(p, y_true)
-        loc_loss, cls_loss, obj_loss, noo_loss = torch.zeros(1).to(device), torch.zeros(1).to(device), torch.zeros(1).to(device), torch.zeros(1).to(device)
+        loc_loss, cls_loss, obj_loss = torch.zeros(1).to(device), torch.zeros(1).to(device), torch.zeros(1).to(device)
         obj_mask = [(i[..., 4]==1) for i in y_true]
         for l, l_p in enumerate(p):
             if obj_mask[l].sum().item() != 0:
                 #============================================#
                 #   位置损失
                 #============================================#
+                wihi = 2.0 - ((targ_box[l][:, 2] * targ_box[l][:, 3]) / p[l].shape[2] ** 2)
                 giou = self.compute_iou(pred_box[l], targ_box[l], iou_type='ciou')
-                loc_loss += (1 - giou).mean()
-                # all_loss_loc += loss_loc
+                loc_loss += ((1 - giou) * wihi).mean()
                 #============================================#
                 #   分类损失
                 #============================================#
-                _cls = p[l][..., 5:][obj_mask[l]]
-                t_cls = y_true[l][..., 5:][obj_mask[l]]
-                cls_loss += nn.BCEWithLogitsLoss(reduction='mean')(_cls, t_cls)
+                _cls = p[l][..., 5:]
+                t_cls = y_true[l][..., 5:]
+                cls_loss += nn.BCEWithLogitsLoss(reduction='none')(_cls, t_cls)[obj_mask[l]].mean()
             #============================================#
             #   置信度损失
             #============================================#
@@ -46,33 +44,27 @@ class YOLOv3LOSS:
             #   GroundTrue Postivez正样本置信度损失
             #============================================#
             if obj_mask[l].sum().item() != 0:
-                obj_loss += loss_conf[obj_mask[l]].mean() * self.lambda_obj_layers[l] * (obj_mask[l].sum() / (obj_mask[l].sum() + noobj_mask[l].sum()))
+                obj_loss += loss_conf[obj_mask[l]].mean() * self.lambda_obj_layers[l]
             #============================================#
             #   Background Negative负样本置信度损失
             #============================================#
-            noo_loss += loss_conf[noobj_mask[l]].mean() * self.lambda_obj_layers[l] * (noobj_mask[l].sum() / (obj_mask[l].sum() + noobj_mask[l].sum()))
+            obj_loss += loss_conf[noobj_mask[l]].mean() * self.lambda_obj_layers[l]
         #============================================#
         #   没加lambda系数的loss，方便观察loss下降情况
         #============================================#
-        original_loss_loc = loc_loss.clone()
-        original_loss_cls = cls_loss.clone()
-        original_loss_obj = obj_loss.clone()
-        original_loss_noo = noo_loss.clone()
-        original_loss = original_loss_loc + original_loss_cls + original_loss_obj + original_loss_noo
+        original_loss_loc = loc_loss.clone().item()
+        original_loss_cls = cls_loss.clone().item()
+        original_loss_obj = obj_loss.clone().item()
+        original_loss = original_loss_loc + original_loss_cls + original_loss_obj
         #============================================#
         #   计算总loss
         #============================================#
-        self.ema_loc = self.momentum * self.ema_loc + (1 - self.momentum) * loc_loss.item()
-        self.ema_cls = self.momentum * self.ema_cls + (1 - self.momentum) * cls_loss.item()
-        self.ema_obj = self.momentum * self.ema_obj + (1 - self.momentum) * obj_loss.item()
-        self.ema_noo = self.momentum * self.ema_noo + (1 - self.momentum) * noo_loss.item()
 
-        loc_loss /= (self.ema_loc + 1e-8)
-        cls_loss /= (self.ema_cls + 1e-8)
-        obj_loss /= (self.ema_obj + 1e-8)
-        noo_loss /= (self.ema_noo + 1e-8)
+        loc_loss *= self.l_loc
+        cls_loss *= self.l_cls
+        obj_loss *= self.l_obj
 
-        loss = loc_loss + cls_loss + obj_loss + noo_loss
+        loss = loc_loss + cls_loss + obj_loss
 
         return {
             "loss": loss,
@@ -80,7 +72,6 @@ class YOLOv3LOSS:
             "loss_loc": original_loss_loc,
             "loss_cls": original_loss_cls,
             "loss_obj": original_loss_obj,
-            "loss_noo": original_loss_noo,
             'np': sum([i.sum().item() for i in obj_mask])
         }
 

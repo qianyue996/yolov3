@@ -87,7 +87,7 @@ if __name__ == "__main__":
                     scaler.step(optimizer)
                     scaler.update()
                     optimizer.zero_grad()
-                o_loss = loss_params['original_loss'].item()
+                o_loss = loss_params['original_loss']
                 # loss compute
                 batch_size = batch_x.shape[0]
                 total_loss += o_loss * batch_size
@@ -100,7 +100,7 @@ if __name__ == "__main__":
                     "loss": f"{loss.item():.4f}",
                     "o_loss": f"{avg_loss:.4f}",
                     "lr": lr})
-                pbar.write(f"np: {loss_params['np']} | obj: {loss_params['loss_obj'].item():.4f} | noo: {loss_params['loss_noo'].item():.4f}")
+                pbar.write(f"np: {loss_params['np']} | loc: {loss_params['loss_loc']:.4f} | cls: {loss_params['loss_cls']:.4f} | obj: {loss_params['loss_obj']:.4f}")
                 writer.add_scalars(
                     "loss",
                     {
@@ -109,7 +109,6 @@ if __name__ == "__main__":
                         "loss_loc": loss_params["loss_loc"],
                         "loss_obj": loss_params["loss_obj"],
                         "loss_cls": loss_params["loss_cls"],
-                        "loss_noo": loss_params["loss_noo"],
                         "lr": lr,
                     },
                     global_step,
