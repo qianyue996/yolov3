@@ -10,9 +10,9 @@ class YOLOv3LOSS:
         self.nl = model.model[-1].nl
         self.lambda_obj_layers = [4.0, 1.0, 4.0]
 
-        self.l_loc = 0.05
-        self.l_cls = 0.5
-        self.l_obj = 1.0
+        self.l_loc = 0.075
+        self.l_cls = 0.1875
+        self.l_obj = 1.5
 
     def __call__(self, p, targets):
         device = p[0].device
@@ -37,18 +37,18 @@ class YOLOv3LOSS:
             #============================================#
             #   置信度损失
             #============================================#
-            conf = l_p[..., 4]
-            t_conf = y_true[l][..., 4]
-            loss_conf = nn.BCEWithLogitsLoss(reduction="none")(conf, t_conf)
+            conf = l_p[..., 4][obj_mask[l] | noobj_mask[l]]
+            t_conf = y_true[l][..., 4][obj_mask[l] | noobj_mask[l]]
+            obj_loss += nn.BCEWithLogitsLoss(reduction="mean")(conf, t_conf)
             #============================================#
             #   GroundTrue Postivez正样本置信度损失
             #============================================#
-            if obj_mask[l].sum().item() != 0:
-                obj_loss += loss_conf[obj_mask[l]].mean() * self.lambda_obj_layers[l]
+            # if obj_mask[l].sum().item() != 0:
+            #     obj_loss += loss_conf[obj_mask[l]].mean()
             #============================================#
             #   Background Negative负样本置信度损失
             #============================================#
-            obj_loss += loss_conf[noobj_mask[l]].mean() * self.lambda_obj_layers[l]
+            # obj_loss += loss_conf[noobj_mask[l]].mean()
         #============================================#
         #   没加lambda系数的loss，方便观察loss下降情况
         #============================================#
@@ -64,7 +64,7 @@ class YOLOv3LOSS:
         cls_loss *= self.l_cls
         obj_loss *= self.l_obj
 
-        loss = loc_loss + cls_loss + obj_loss
+        loss = (loc_loss + cls_loss + obj_loss) * l_p.shape[0]
 
         return {
             "loss": loss,
