@@ -9,8 +9,9 @@ from models.yolo import Model
 from utils.tools import multi_class_nms
 
 
-model = Model(check_yaml('yolov3-tiny.yaml'))
-model.load_state_dict(torch.load(r'0.3741_best_100.pth', map_location=torch.device('cpu'))['model'])
+# model = Model(check_yaml('yolov3-tiny.yaml'))
+# model.load_state_dict(torch.load(r'yolov3-tiny.pt', map_location=torch.device('cpu'))['model'])
+model = torch.load(r'yolov3-tiny.pt', map_location=torch.device('cpu'))['model'].float()
 model.eval()
 
 device = "cpu" if torch.cuda.is_available() else "cpu"

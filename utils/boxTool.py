@@ -4,7 +4,7 @@ import yaml
 
 with open('config/datasets.yaml', encoding="ascii", errors="ignore")as f:
     cfg = yaml.safe_load(f)
-class_names = cfg['voc']['class_name']
+class_names = cfg['coco']['class_name']
 
 
 def draw_box(image, results):

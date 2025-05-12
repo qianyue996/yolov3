@@ -243,8 +243,8 @@ def single_chakan(image, labels):
 
 class Yolo_collate_fn:
     def __init__(self, sizes=(320, 416, 512, 608, 640), step=5):
-        # self.sizes = sizes
-        self.sizes = [416]
+        self.sizes = sizes
+        # self.sizes = [416]
         self.imgSize = np.random.choice(self.sizes)
         self.step = step
         self.count = 0

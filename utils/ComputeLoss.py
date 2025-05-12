@@ -8,7 +8,8 @@ class YOLOv3LOSS:
         self.na = self.anchors[0].shape[0]
         self.am = list(map(tuple, np.split(np.arange(self.anchors.view(-1, 2).shape[0]), self.anchors.view(-1, 2).shape[0] // self.anchors[0].shape[0])))
         self.nl = model.model[-1].nl
-        self.lambda_obj_layers = [4.0, 1.0, 4.0]
+
+        self.balance = [4.0, 1.0, 0.4]
 
         self.l_loc = 0.075
         self.l_cls = 0.1875
@@ -31,24 +32,15 @@ class YOLOv3LOSS:
                 #============================================#
                 #   分类损失
                 #============================================#
-                _cls = p[l][..., 5:]
-                t_cls = y_true[l][..., 5:]
-                cls_loss += nn.BCEWithLogitsLoss(reduction='none')(_cls, t_cls)[obj_mask[l]].mean()
+                _cls = p[l][..., 5:][obj_mask[l]]
+                t_cls = y_true[l][..., 5:][obj_mask[l]]
+                cls_loss += nn.BCEWithLogitsLoss(reduction='mean')(_cls, t_cls)
             #============================================#
             #   置信度损失
             #============================================#
             conf = l_p[..., 4][obj_mask[l] | noobj_mask[l]]
             t_conf = y_true[l][..., 4][obj_mask[l] | noobj_mask[l]]
-            obj_loss += nn.BCEWithLogitsLoss(reduction="mean")(conf, t_conf)
-            #============================================#
-            #   GroundTrue Postivez正样本置信度损失
-            #============================================#
-            # if obj_mask[l].sum().item() != 0:
-            #     obj_loss += loss_conf[obj_mask[l]].mean()
-            #============================================#
-            #   Background Negative负样本置信度损失
-            #============================================#
-            # obj_loss += loss_conf[noobj_mask[l]].mean()
+            obj_loss += nn.BCEWithLogitsLoss(reduction="mean")(conf, t_conf) * self.balance[l]
         #============================================#
         #   没加lambda系数的loss，方便观察loss下降情况
         #============================================#
@@ -283,22 +275,14 @@ class YOLOv3LOSS:
             raise ValueError('Unsupported type of loss.')
             
 
-def focal_loss(pred, target, alpha=0.25, gamma=1.5, reduction='mean'):
-    # 计算交叉熵
-    bce_loss = nn.BCEWithLogitsLoss(reduction='none')(pred, target)
+def focal_loss(pred, targ, alpha=0.25, gamma=1.5, reduction='mean'):
+    loss = nn.BCEWithLogitsLoss(reduction='none')(pred, targ)
     
-    # 2) 计算 p_t（模型对当前标签的置信度）
     p = torch.sigmoid(pred)
-    p_t = target * p + (1 - target) * (1 - p)
-
-    # 3) 计算 α_t（正负样本不同权重）
-    alpha_t = target * alpha + (1 - target) * (1 - alpha)
-    
-    # 4) 焦点因子
-    focal_factor = (1 - p_t) ** gamma
-    
-    # 5) 最终 Focal Loss
-    loss = alpha_t * focal_factor * bce_loss
+    p_t = targ * p + (1 - targ) * (1 - p)
+    alpha_factor = targ * alpha + (1 - targ) * (1 - alpha)
+    modulating_factor = (1.0 - p_t) ** gamma
+    loss *= alpha_factor * modulating_factor
 
     # 返回平均损失
     if reduction == 'mean':
