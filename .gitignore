@@ -29,3 +29,4 @@ hyperGUI.py
 yolov3_weight.pth
 *.pth
 *.pt
+.python-version
