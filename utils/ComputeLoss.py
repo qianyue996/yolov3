@@ -195,7 +195,7 @@ class YOLOv3LOSS:
         t_y1 = box_2[:, 1]
         t_x2 = box_2[:, 2]
         t_y2 = box_2[:, 3]
-        # 计算交集区域面积
+
         area_x1 = torch.max(p_x1, t_x1)
         area_y1 = torch.max(p_y1, t_y1)
         area_x2 = torch.min(p_x2, t_x2)

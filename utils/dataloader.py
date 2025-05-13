@@ -54,11 +54,11 @@ def randomAug(image, label):
         # bbox: [x1, y1, x2, y2]
         if flip_type == 1:  # 水平翻转
             nLabel[:, [0, 2]] = w - nLabel[:, [2, 0]]
-        # elif flip_type == 0:  # 垂直翻转
-        #     nLabel[:, [1, 3]] = h - nLabel[:, [3, 1]]
-        # elif flip_type == -1:  # 对角翻转（等于水平+垂直）
-        #     nLabel[:, [0, 2]] = w - nLabel[:, [2, 0]]
-        #     nLabel[:, [1, 3]] = h - nLabel[:, [3, 1]]
+        elif flip_type == 0:  # 垂直翻转
+            nLabel[:, [1, 3]] = h - nLabel[:, [3, 1]]
+        elif flip_type == -1:  # 对角翻转（等于水平+垂直）
+            nLabel[:, [0, 2]] = w - nLabel[:, [2, 0]]
+            nLabel[:, [1, 3]] = h - nLabel[:, [3, 1]]
 
     # 随机缩放（resize 到一个随机尺寸后再 resize 回原尺寸）
     # if rand() > 0.5:
@@ -173,7 +173,6 @@ def resizeCvt(image=None, labels=None, imgSize=416):
 
     # 同步变换 bbox
     if labels is not None:
-        # labels = labels.astype(np.float32)
         labels[:, [0, 2]] = labels[:, [0, 2]] * scale + left
         labels[:, [1, 3]] = labels[:, [1, 3]] * scale + top
 
@@ -183,8 +182,7 @@ def resizeCvt(image=None, labels=None, imgSize=416):
 
 
 def normalizeData(images, labels):
-    if isinstance(images, list):
-        images = np.array(images)
+    images = np.array(images)
     imgSize = images.shape[1]
     images = (images / 255.0).transpose(0, 3, 1, 2)
     for i, label in enumerate(labels):
@@ -257,7 +255,7 @@ class Yolo_collate_fn:
         # 随机增强
         images, labels = zip(*[randomAug(image, label) for image, label in zip(images, labels)])
         #
-        # chakan(images, labels)
+        chakan(images, labels)
         labels = xyxy2xywh(labels)
         images, labels = normalizeData(images, labels)
         images, labels = ToTensor(images, labels)
