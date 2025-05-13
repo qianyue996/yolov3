@@ -253,9 +253,9 @@ class Yolo_collate_fn:
         # resize + bgr -> rgb
         images, labels = map(list, zip(*[resizeCvt(image, label, self.imgSize) for image, label in batch]))
         # 随机增强
-        images, labels = zip(*[randomAug(image, label) for image, label in zip(images, labels)])
+        # images, labels = zip(*[randomAug(image, label) for image, label in zip(images, labels)])
         #
-        chakan(images, labels)
+        # chakan(images, labels)
         labels = xyxy2xywh(labels)
         images, labels = normalizeData(images, labels)
         images, labels = ToTensor(images, labels)

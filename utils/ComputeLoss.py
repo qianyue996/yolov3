@@ -11,9 +11,9 @@ class YOLOv3LOSS:
 
         self.balance = [4.0, 1.0, 0.4]
 
-        self.l_loc = 0.075
-        self.l_cls = 0.5
-        self.l_obj = 1.5
+        self.l_loc = 0.25
+        self.l_cls = 4
+        self.l_obj = 10
 
     def __call__(self, p, targets):
         device = p[0].device
@@ -37,10 +37,13 @@ class YOLOv3LOSS:
                 cls_loss += nn.BCEWithLogitsLoss(reduction='mean')(_cls, t_cls)
             #============================================#
             #   置信度损失
-            #============================================#
-            conf = l_p[..., 4][obj_mask[l] | noobj_mask[l]]
-            t_conf = y_true[l][..., 4][obj_mask[l] | noobj_mask[l]]
-            obj_loss += nn.BCEWithLogitsLoss(reduction="mean")(conf, t_conf) * self.balance[l]
+            #============================================#  
+            conf = l_p[..., 4]
+            t_conf = y_true[l][..., 4]
+            scale_pos = obj_mask[l].sum().item() / (obj_mask[l].sum().item() + noobj_mask[l].sum().item())
+            obj_loss_temp = nn.BCEWithLogitsLoss(reduction="none")(conf, t_conf) * self.balance[l]
+            obj_loss += obj_loss_temp[obj_mask[l]].mean() * scale_pos
+            obj_loss += obj_loss_temp[noobj_mask[l]].mean() * (1 - scale_pos)
         #============================================#
         #   没加lambda系数的loss，方便观察loss下降情况
         #============================================#
@@ -56,7 +59,7 @@ class YOLOv3LOSS:
         cls_loss *= self.l_cls
         obj_loss *= self.l_obj
 
-        loss = (loc_loss + cls_loss + obj_loss) * l_p.shape[0]
+        loss = loc_loss + cls_loss + obj_loss
 
         return {
             "loss": loss,
@@ -99,47 +102,68 @@ class YOLOv3LOSS:
                 max_iou, best_a = torch.max(iou, dim=1)
 
                 for i, ai in enumerate(best_a.tolist()):
-                    if ai not in self.am[l]:
-                        continue
-                    
-                    b_targ = target[i][:4] * S[l]
+                    if max_iou[i] < 0.2:
+                        if ai not in self.am[l]:
+                            continue
+                        b_targ = target[i][:4] * S[l]
 
-                    b = t
-                    k = self.am[l].index(ai)
-                    x = b_targ[0].long().clamp(0, S[l] - 1).item()
-                    y = b_targ[1].long().clamp(0, S[l] - 1).item()
-                    c = target[i][4].long().item()
+                        b = t
+                        k = self.am[l].index(ai)
+                        x = b_targ[0].long().clamp(0, S[l] - 1).item()
+                        y = b_targ[1].long().clamp(0, S[l] - 1).item()
+                        c = target[i][4].long().item()
 
-                    y_true[b, k, x, y, 0] = b_targ[0] % 1
-                    y_true[b, k, x, y, 1] = b_targ[1] % 1
-                    y_true[b, k, x, y, 2] = b_targ[2]
-                    y_true[b, k, x, y, 3] = b_targ[3]
-                    y_true[b, k, x, y, 4] = 1
-                    y_true[b, k, x, y, 5 + c] = 1
+                        y_true[b, k, x, y, 0] = b_targ[0] % 1
+                        y_true[b, k, x, y, 1] = b_targ[1] % 1
+                        y_true[b, k, x, y, 2] = b_targ[2]
+                        y_true[b, k, x, y, 3] = b_targ[3]
+                        y_true[b, k, x, y, 4] = 1
+                        y_true[b, k, x, y, 5 + c] = 1
 
-                    if x <= 0 and y <= 0 or x >= S[l]-1 and y >= S[l]-1:
-                        continue
-                    offsets = []
-                    if b_targ[0] % 1 > 0.5:  # x > 0.5时右扩展
-                        offsets.append((1, 0))  # 向右扩展
-                    elif b_targ[0] % 1 < 0.5:  # x < 0.5时左扩展
-                        offsets.append((-1, 0))  # 向左扩展
+                    else:
+                        for j in (iou[i] >= 0.2).nonzero():
+                            j = j.item()
+                            if j not in self.am[l]:
+                                continue
 
-                    if b_targ[1] % 1 > 0.5:  # y > 0.5时下扩展
-                        offsets.append((0, 1))  # 向下扩展
-                    elif b_targ[1] % 1 < 0.5:  # y < 0.5时上扩展
-                        offsets.append((0, -1))  # 向上扩展
+                            b_targ = target[i][:4] * S[l]
 
-                    for dx, dy in offsets:
-                        nx = max(0, min(S[l] - 1, x + dx))
-                        ny = max(0, min(S[l] - 1, y + dy))
+                            b = t
+                            k = self.am[l].index(j)
+                            x = b_targ[0].long().clamp(0, S[l] - 1).item()
+                            y = b_targ[1].long().clamp(0, S[l] - 1).item()
+                            c = target[i][4].long().item()
 
-                        y_true[b, k, nx, ny, 0] = abs(b_targ[0] - nx)
-                        y_true[b, k, nx, ny, 1] = abs(b_targ[1] - ny)
-                        y_true[b, k, nx, ny, 2] = b_targ[2]
-                        y_true[b, k, nx, ny, 3] = b_targ[3]
-                        y_true[b, k, nx, ny, 4] = 1
-                        y_true[b, k, nx, ny, 5 + c] = 1
+                            y_true[b, k, x, y, 0] = b_targ[0] % 1
+                            y_true[b, k, x, y, 1] = b_targ[1] % 1
+                            y_true[b, k, x, y, 2] = b_targ[2]
+                            y_true[b, k, x, y, 3] = b_targ[3]
+                            y_true[b, k, x, y, 4] = 1
+                            y_true[b, k, x, y, 5 + c] = 1
+
+                            if x <= 0 and y <= 0 or x >= S[l]-1 and y >= S[l]-1:
+                                continue
+                            offsets = []
+                            if b_targ[0] % 1 > 0.5:  # x > 0.5时右扩展
+                                offsets.append((1, 0))  # 向右扩展
+                            elif b_targ[0] % 1 < 0.5:  # x < 0.5时左扩展
+                                offsets.append((-1, 0))  # 向左扩展
+
+                            if b_targ[1] % 1 > 0.5:  # y > 0.5时下扩展
+                                offsets.append((0, 1))  # 向下扩展
+                            elif b_targ[1] % 1 < 0.5:  # y < 0.5时上扩展
+                                offsets.append((0, -1))  # 向上扩展
+
+                            for dx, dy in offsets:
+                                nx = max(0, min(S[l] - 1, x + dx))
+                                ny = max(0, min(S[l] - 1, y + dy))
+
+                                y_true[b, k, nx, ny, 0] = abs(b_targ[0] - nx)
+                                y_true[b, k, nx, ny, 1] = abs(b_targ[1] - ny)
+                                y_true[b, k, nx, ny, 2] = b_targ[2]
+                                y_true[b, k, nx, ny, 3] = b_targ[3]
+                                y_true[b, k, nx, ny, 4] = 1
+                                y_true[b, k, nx, ny, 5 + c] = 1
 
             y_list.append(y_true)
 
