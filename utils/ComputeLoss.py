@@ -12,7 +12,7 @@ class YOLOv3LOSS:
         self.balance = [4.0, 1.0, 0.4]
 
         self.l_loc = 0.075
-        self.l_cls = 0.1875
+        self.l_cls = 0.5
         self.l_obj = 1.5
 
     def __call__(self, p, targets):
@@ -150,9 +150,10 @@ class YOLOv3LOSS:
         noobj_mask = []
         for l in range(self.nl):
             obj_mask = y_true[l][..., 4] == 1
-            l_mask = torch.ones_like(obj_mask, dtype=torch.bool)
             b, a, x, y = obj_mask.nonzero(as_tuple=True)
-            l_mask[b, :, x, y] = False
+            # l_mask = torch.ones_like(obj_mask, dtype=torch.bool)
+            # l_mask[b, :, x, y] = False
+            l_mask = ~obj_mask
             noobj_mask.append(l_mask)
             
             if obj_mask.sum().item() == 0:

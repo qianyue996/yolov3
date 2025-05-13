@@ -81,12 +81,11 @@ if __name__ == "__main__":
                 with torch.cuda.amp.autocast():
                     batch_output = model(batch_x)
                     loss_params = loss_fn(batch_output, batch_y)
-                    loss = loss_params["loss"] / 2
+                    loss = loss_params["loss"]
                 scaler.scale(loss).backward()
-                if (batch+1) % 2 == 0:
-                    scaler.step(optimizer)
-                    scaler.update()
-                    optimizer.zero_grad()
+                scaler.step(optimizer)
+                scaler.update()
+                optimizer.zero_grad()
                 o_loss = loss_params['original_loss']
                 # loss compute
                 batch_size = batch_x.shape[0]
