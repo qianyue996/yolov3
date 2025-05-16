@@ -1,3 +1,4 @@
+import argparse
 import os
 import time
 import torch
@@ -29,6 +30,14 @@ from utils.yolo_trainning import CustomLR, save_bestmodel, continue_train
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
+def parse_opt():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--weights", type=str, default=ROOT / "", help="initial weights path")
+    parser.add_argument("--cfg", type=str, default="yolov3-tiny.yaml", help="model.yaml path")
+    parser.add_argument("--data", type=str, default=ROOT / "data/voc.yaml", help="dataset.yaml path")
+    parser.add_argument("--epochs", type=int, default=100, help="total training epochs")
+    parser.add_argument("--batch-size", type=int, default=16, help="total batch size for all GPUs, -1 for autobatch")
+
 
 if __name__ == "__main__":
     cfg = check_yaml("yolov3-tiny.yaml")
@@ -39,8 +48,8 @@ if __name__ == "__main__":
     dataset_type = "voc"
     set_seed(seed=27)
     batch_size = 4
-    epochs = 120
-    lr = 0.05
+    epochs = 300
+    lr = 0.03
     train_dataset = YOLODataset(dataset_type=dataset_type)
     dataloader = DataLoader(
         dataset=train_dataset,
@@ -52,10 +61,10 @@ if __name__ == "__main__":
     )
     model = Model(cfg).to(device)
     # load_checkpoint(device, 'models/tiny_weight.pth', model)
-    # optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.937, weight_decay=1e-4)
-    optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
+    optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=1e-4)
+    # optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
     # lr_scheduler = CustomLR(optimizer, warm_up=(lr, 0.01, 0), T_max=30, eta_min=1e-4)
-    lr_scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=20, eta_min=1e-4)
+    lr_scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=50, eta_min=1e-5)
     scaler = torch.cuda.amp.GradScaler()
     loss_fn = YOLOv3LOSS(model=model)
     writer_path = "runs"
@@ -63,7 +72,7 @@ if __name__ == "__main__":
     #==================================================#
     #   加载训练
     #==================================================#
-    continue_train('0.3741_best_100.pth', model, optimizer)
+    # model = continue_train('1.2232_best_101.pth', model, optimizer)
     start_epoch = 0
     # train
     losses = []

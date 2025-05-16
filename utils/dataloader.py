@@ -116,16 +116,16 @@ def randomAug(image, label):
     #         nLabel[i, :4] = new_x1, new_y1, new_x2, new_y2
 
     # 随机颜色增强
-    strength = 0.3
-    # if rand() > 0.7:
-    #     # 随机亮度（加减一个值）
-    #     delta = np.random.uniform(-16, 16) * strength
-    #     nImage = np.clip(nImage.astype(np.float32) + delta, 0, 255).astype(np.uint8)
-    # if rand() > 0.7:
-    #     # 随机对比度
-    #     alpha = 1.0 + np.random.uniform(-0.2, 0.2) * strength
-    #     mean = np.mean(nImage, axis=(0, 1), keepdims=True)
-    #     nImage = np.clip((nImage - mean) * alpha + mean, 0, 255).astype(np.uint8)
+    strength = 0.2
+    if rand() > 0.7:
+        # 随机亮度（加减一个值）
+        delta = np.random.uniform(-16, 16) * strength
+        nImage = np.clip(nImage.astype(np.float32) + delta, 0, 255).astype(np.uint8)
+    if rand() > 0.7:
+        # 随机对比度
+        alpha = 1.0 + np.random.uniform(-0.2, 0.2) * strength
+        mean = np.mean(nImage, axis=(0, 1), keepdims=True)
+        nImage = np.clip((nImage - mean) * alpha + mean, 0, 255).astype(np.uint8)
     if rand() > 0.7:
         # 随机饱和度（转HSV改S通道）
         hsv = cv.cvtColor(nImage, cv.COLOR_BGR2HSV).astype(np.float32)
@@ -253,7 +253,7 @@ class Yolo_collate_fn:
         # resize + bgr -> rgb
         images, labels = map(list, zip(*[resizeCvt(image, label, self.imgSize) for image, label in batch]))
         # 随机增强
-        # images, labels = zip(*[randomAug(image, label) for image, label in zip(images, labels)])
+        images, labels = zip(*[randomAug(image, label) for image, label in zip(images, labels)])
         #
         # chakan(images, labels)
         labels = xyxy2xywh(labels)

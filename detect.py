@@ -2,21 +2,34 @@ import cv2 as cv
 import mss
 import numpy as np
 import torch
+import yaml
 
 from utils.general import check_yaml, non_max_suppression
-from utils.boxTool import draw_box
 from models.yolo import Model
 from utils.tools import multi_class_nms
 
 
-# model = Model(check_yaml('yolov3-tiny.yaml'))
-# model.load_state_dict(torch.load(r'yolov3-tiny.pt', map_location=torch.device('cpu'))['model'])
-model = torch.load(r'yolov3-tiny.pt', map_location=torch.device('cpu'))['model'].float()
+model = torch.load('model.pt')
 model.eval()
 
 device = "cpu" if torch.cuda.is_available() else "cpu"
-imgW = 640
-imgH = 480
+imgW = 416
+imgH = 416
+
+with open('config/datasets.yaml', encoding="ascii", errors="ignore")as f:
+    cfg = yaml.safe_load(f)
+class_names = cfg['voc']['class_name']
+
+
+def draw_box(image, results):
+    for i, result in enumerate(results):
+        if results[i] is None or len(results[i]) == 0:
+            continue
+        x1, y1, x2, y2 = tuple(map(int, result[:4]))
+        score, label = round(result[4].item(), 2), result[-1].long().item()
+        cv.circle(image, ((x2 + x1) // 2, (y2 + y1) // 2), 3, (0, 0, 255), -1)
+        cv.rectangle(image, (x1, y1), (x2, y2), (0, 0, 255), thickness=2)
+        cv.putText(image, f"{score} {class_names[label]}", (x1, y1 - 5), cv.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), thickness=1)
 
 def normalizeData(images):
     images = np.expand_dims(images, axis=0)

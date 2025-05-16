@@ -49,22 +49,20 @@ def save_bestmodel(losses, model, optimizer, epoch):
 
     current_loss = losses[-1]
     checkpoint = {
-        "model": model.state_dict(),
-        "optimizer": optimizer.state_dict(),
+        "model": model,
+        "optimizer": optimizer,
         "epoch": epoch,
     }
 
     # 只有当非第一轮，且当前为最优时才保存 best
     if epoch > 0 and len(losses) != 1 and current_loss < min(losses[:-1]):
         torch.save(checkpoint, ".checkpoint.pth")
-        os.replace(".checkpoint.pth", weights_dir / f"{current_loss:.4f}_best_{epoch}.pth")
+        os.replace(".checkpoint.pth", weights_dir / f"{current_loss:.4f}_best_{epoch}.pt")
     else:
         torch.save(checkpoint, ".checkpoint.pth")
-        os.replace(".checkpoint.pth", weights_dir / f"{current_loss:.4f}_{epoch}.pth")
+        os.replace(".checkpoint.pth", weights_dir / f"{current_loss:.4f}_{epoch}.pt")
 
-def continue_train(ckp_path, model, optimizer):
-    checkpoint = torch.load(
-        ckp_path,
-        map_location=torch.device("cuda" if torch.cuda.is_available() else "cpu"))
-    model.load_state_dict(checkpoint["model"])
+def continue_train(ckp_path, optimizer):
+    model = torch.load(ckp_path, map_location=torch.device("cuda" if torch.cuda.is_available() else "cpu"))
     # optimizer.load_state_dict(checkpoint["optimizer"])
+    return model

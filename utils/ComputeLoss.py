@@ -11,9 +11,9 @@ class YOLOv3LOSS:
 
         self.balance = [4.0, 1.0, 0.4]
 
-        self.l_loc = 0.25
-        self.l_cls = 4
-        self.l_obj = 10
+        self.l_loc = 0.05
+        self.l_cls = 1
+        self.l_obj = 1
 
     def __call__(self, p, targets):
         device = p[0].device
@@ -64,9 +64,9 @@ class YOLOv3LOSS:
         return {
             "loss": loss,
             "original_loss": original_loss,
-            "loss_loc": original_loss_loc,
-            "loss_cls": original_loss_cls,
-            "loss_obj": original_loss_obj,
+            "loss_loc": loc_loss.item(),
+            "loss_cls": cls_loss.item(),
+            "loss_obj": obj_loss.item(),
             'np': sum([i.sum().item() for i in obj_mask])
         }
 
