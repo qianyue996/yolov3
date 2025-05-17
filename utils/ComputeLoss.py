@@ -40,7 +40,7 @@ class YOLOv3LOSS:
             #============================================#
             conf = l_p[..., 4][obj_mask[l] | noobj_mask[l]]
             t_conf = y_true[l][..., 4][obj_mask[l] | noobj_mask[l]]
-            obj_loss += nn.BCEWithLogitsLoss(reduction='mean')(conf, t_conf)
+            obj_loss += focal_loss(conf, t_conf)
         #============================================#
         #   没加lambda系数的loss，方便观察loss下降情况
         #============================================#

@@ -47,7 +47,7 @@ if __name__ == "__main__":
     train_type = "tiny"  # or yolov3
     dataset_type = "voc"
     set_seed(seed=27)
-    batch_size = 1
+    batch_size = 4
     epochs = 300
     lr = 0.03
     train_dataset = YOLODataset(dataset_type=dataset_type)
