@@ -37,13 +37,10 @@ class YOLOv3LOSS:
                 cls_loss += nn.BCEWithLogitsLoss(reduction='mean')(_cls, t_cls)
             #============================================#
             #   置信度损失
-            #============================================#  
-            conf = l_p[..., 4]
-            t_conf = y_true[l][..., 4]
-            scale_pos = obj_mask[l].sum().item() / (obj_mask[l].sum().item() + noobj_mask[l].sum().item())
-            obj_loss_temp = nn.BCEWithLogitsLoss(reduction="none")(conf, t_conf) * self.balance[l]
-            obj_loss += obj_loss_temp[obj_mask[l]].mean() * scale_pos
-            obj_loss += obj_loss_temp[noobj_mask[l]].mean() * (1 - scale_pos)
+            #============================================#
+            conf = l_p[..., 4][obj_mask[l] | noobj_mask[l]]
+            t_conf = y_true[l][..., 4][obj_mask[l] | noobj_mask[l]]
+            obj_loss += nn.BCEWithLogitsLoss(reduction='mean')(conf, t_conf)
         #============================================#
         #   没加lambda系数的loss，方便观察loss下降情况
         #============================================#
@@ -54,7 +51,6 @@ class YOLOv3LOSS:
         #============================================#
         #   计算总loss
         #============================================#
-
         loc_loss *= self.l_loc
         cls_loss *= self.l_cls
         obj_loss *= self.l_obj

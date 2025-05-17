@@ -62,7 +62,7 @@ def save_bestmodel(losses, model, optimizer, epoch):
         torch.save(checkpoint, ".checkpoint.pth")
         os.replace(".checkpoint.pth", weights_dir / f"{current_loss:.4f}_{epoch}.pt")
 
-def continue_train(ckp_path, optimizer):
-    model = torch.load(ckp_path, map_location=torch.device("cuda" if torch.cuda.is_available() else "cpu"))
-    # optimizer.load_state_dict(checkpoint["optimizer"])
+def continue_train(ckp_path, device):
+    ckp = torch.load(ckp_path, map_location=device)
+    model = ckp['model']
     return model

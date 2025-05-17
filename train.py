@@ -47,7 +47,7 @@ if __name__ == "__main__":
     train_type = "tiny"  # or yolov3
     dataset_type = "voc"
     set_seed(seed=27)
-    batch_size = 4
+    batch_size = 1
     epochs = 300
     lr = 0.03
     train_dataset = YOLODataset(dataset_type=dataset_type)
@@ -59,20 +59,20 @@ if __name__ == "__main__":
         worker_init_fn=worker_init_fn,
         collate_fn=yolo_collate_fn,
     )
-    model = Model(cfg).to(device)
+    # model = Model(cfg).to(device)
     # load_checkpoint(device, 'models/tiny_weight.pth', model)
+    #==================================================#
+    #   加载训练
+    #==================================================#
+    model = continue_train(r"C:\Users\admin\Downloads-h\5.0597_best_58.pt", device)
     optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=1e-4)
     # optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
-    # lr_scheduler = CustomLR(optimizer, warm_up=(lr, 0.01, 0), T_max=30, eta_min=1e-4)
-    lr_scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=50, eta_min=1e-5)
+    # lr_scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=50, eta_min=1e-5)
+    lr_scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=80, eta_min=1e-5)
     scaler = torch.cuda.amp.GradScaler()
     loss_fn = YOLOv3LOSS(model=model)
     writer_path = "runs"
     writer = SummaryWriter(f"{writer_path}/{time.strftime('%Y-%m-%d-%H-%M-%S', time.localtime())}")
-    #==================================================#
-    #   加载训练
-    #==================================================#
-    # model = continue_train('1.2232_best_101.pth', model, optimizer)
     start_epoch = 0
     # train
     losses = []
