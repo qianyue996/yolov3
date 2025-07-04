@@ -1,6 +1,8 @@
 ds:
   split_ratio: 0.8
 voc:
+  annotation_path_2007 : "D:\\Python\\datasets\\voc07+12\\VOCdevkit\\VOC2007\\Annotations"
+  annotation_path_2012 : "D:\\Python\\datasets\\voc07+12\\VOCdevkit\\VOC2012\\Annotations"
   ds_length: 20
   class_name:
     [
