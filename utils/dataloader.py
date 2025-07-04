@@ -1,4 +1,5 @@
 import cv2 as cv
+import json
 import numpy as np
 import torch
 from torch.utils.data.dataloader import DataLoader
@@ -6,33 +7,21 @@ from torch.utils.data.dataset import Dataset
 
 
 class YOLODataset(Dataset):
-    def __init__(self, dataset_type=None, Train=True):
-        super(YOLODataset, self).__init__()
-        if dataset_type == "coco":
-            if Train:
-                with open("coco_train.txt", "r", encoding="utf-8") as f:
-                    self.datas = f.readlines()
-            else:
-                with open("coco_val.txt", "r", encoding="utf-8") as f:
-                    self.datas = f.readlines()
-        elif dataset_type == "voc":
-            if Train:
-                with open("voc_train.txt", "r", encoding="utf-8") as f:
-                    self.datas = f.readlines()
-            else:
-                with open("voc_val.txt", "r", encoding="utf-8") as f:
-                    self.datas = f.readlines()
-        else:
-            raise ValueError("dataset_type must be coco or voc")
+    def __init__(self, dataset_json_path: str = "voc_train.json"):
+        super().__init__()
+        with open(dataset_json_path, "r", encoding="utf-8") as f:
+            self.datasets = json.load(f)
 
     def __len__(self):
-        return len(self.datas)
+        return len(self.datasets)
 
     def __getitem__(self, index):
-        image = cv.imread(self.datas[index].strip().split(" ")[0])
-        if image is None:  # 忽略无标签的图片
-            raise ValueError("没有读取到图片")
-        labels = np.array([[float(i) for i in i.split(",")] for i in self.datas[index].strip().split(" ")[1:]])
+        # image = cv.imread(self.datasets[index]['file_path'])
+        image = [1]
+        labels = []
+        for label in self.datasets[index]['labels']:
+            label = [float(v) for k, v in label.items()]
+            labels.append(label)
 
         return image, labels
 
@@ -153,6 +142,9 @@ def xyxy2xywh(labels):
 
 
 def resizeCvt(image=None, labels=None, imgSize=416):
+    if isinstance(labels, list):
+        labels = np.array(labels)
+        
     if image is None:
         raise ValueError('image is None')
     im_h, im_w = image.shape[:2]
@@ -239,33 +231,37 @@ def single_chakan(image, labels):
     cv.destroyAllWindows()
 
 
-class Yolo_collate_fn:
-    def __init__(self, sizes=(320, 416, 512, 608, 640), step=5):
-        self.sizes = sizes
-        # self.sizes = [416]
-        self.imgSize = np.random.choice(self.sizes)
-        self.step = step
-        self.count = 0
-    def __call__(self, batch):
-        self.count += 1
-        if self.count % self.step == 0:
-            self.imgSize = np.random.choice(self.sizes)
-        # resize + bgr -> rgb
-        images, labels = map(list, zip(*[resizeCvt(image, label, self.imgSize) for image, label in batch]))
-        # 随机增强
-        images, labels = zip(*[randomAug(image, label) for image, label in zip(images, labels)])
-        #
-        # chakan(images, labels)
-        labels = xyxy2xywh(labels)
-        images, labels = normalizeData(images, labels)
-        images, labels = ToTensor(images, labels)
-        return images, labels
+# class Yolo_collate_fn:
+#     def __init__(self, sizes=(320, 416, 512, 608, 640), step=5):
+#         self.sizes = sizes
+#         # self.sizes = [416]
+#         self.imgSize = np.random.choice(self.sizes)
+#         self.step = step
+#         self.count = 0
+#     def __call__(self, batch):
+#         self.count += 1
+#         if self.count % self.step == 0:
+#             self.imgSize = np.random.choice(self.sizes)
+#         # resize + bgr -> rgb
+#         images, labels = map(list, zip(*[resizeCvt(image, label, self.imgSize) for image, label in batch]))
+#         # 随机增强
+#         images, labels = zip(*[randomAug(image, label) for image, label in zip(images, labels)])
+#         #
+#         # chakan(images, labels)
+#         labels = xyxy2xywh(labels)
+#         images, labels = normalizeData(images, labels)
+#         images, labels = ToTensor(images, labels)
+#         return images, labels
 
-yolo_collate_fn = Yolo_collate_fn()
+# yolo_collate_fn = Yolo_collate_fn()
+
+def yolo_collate_fn(batch):
+    ...
+
 
 
 if __name__ == "__main__":
-    dataset = YOLODataset(dataset_type='voc')
+    dataset = YOLODataset(dataset_json_path="./voc_train.json")
     dataloader = DataLoader(dataset, batch_size=128, shuffle=True, collate_fn=yolo_collate_fn)
     for i, (images, bboxes) in enumerate(dataloader):
         print(images.shape, bboxes[0].shape)
