@@ -2,6 +2,9 @@ import torch.nn as nn
 import math
 import torch
 import torch.nn.functional as F
+import logging
+
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def initialize_weights(model):
     """Initializes weights for Conv2D, BatchNorm2d, and activation layers (Hardswish, LeakyReLU, ReLU, ReLU6, SiLU) in a
@@ -31,23 +34,29 @@ def scale_img(img, ratio=1.0, same_shape=False, gs=32):  # img(16,3,256,416)
     return F.pad(img, [0, w - s[1], 0, h - s[0]], value=0.447)  # value = imagenet mean
 
 def load_checkpoint(device, check_path, original_model):
-    my_model_dict = torch.load(check_path, map_location=device)['model']
+
+    init_weight_dict = torch.load(check_path, map_location=device)['model']
+
     original_model_dict = original_model.model.state_dict()
 
-    my_backbone_dict = {k: v for k, v in my_model_dict.items() if k.startswith("backbone.")}
+    init_weight_backbone_dict = {k: v for k, v in init_weight_dict.items() if k.startswith("backbone.")}
 
-    for key, my_param in my_backbone_dict.items():
+    for index, item in enumerate(init_weight_backbone_dict.items()):
+
+        key, init_weight_param = item
         # 去掉原模型中的 "backbone." 前缀
         original_key = key.replace("backbone.", "")
         
-        if original_key in original_model_dict and original_model_dict[original_key].shape == my_param.shape:
+        if original_key in original_model_dict and original_model_dict[original_key].shape == init_weight_param.shape:
             # 如果形状一致，拷贝参数
-            print(f"复制：{original_key}")
-            original_model_dict[original_key].data.copy_(my_param.data)
+            original_model_dict[original_key].data.copy_(init_weight_param.data)
+            logging.info(f"成功复制：{original_key}")
         else:
-            print(f"跳过：{original_key}（形状不匹配或没有找到相应层）")
+            logging.warning(f"跳过复制：{original_key}（形状不匹配或没有找到相应层）")
 
     # 5. 更新原始模型的参数
     original_model_dict.update(original_model_dict)
+
     original_model.model.load_state_dict(original_model_dict)
-    print("load checkpoint successfully！")
+
+    logging.info("load checkpoint successfully！")

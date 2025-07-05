@@ -43,7 +43,7 @@ class CustomLR:
         return lr
 
 
-def save_bestmodel(losses, model, optimizer, epoch):
+def save_best_model(losses, model, optimizer, epoch):
     weights_dir = Path('weights')
     weights_dir.mkdir(exist_ok=True)
 
@@ -63,6 +63,6 @@ def save_bestmodel(losses, model, optimizer, epoch):
         os.replace(".checkpoint.pth", weights_dir / f"{current_loss:.4f}_{epoch}.pt")
 
 def continue_train(ckp_path, device):
-    ckp = torch.load(ckp_path, map_location=device)
+    ckp = torch.load(ckp_path, weights_only=False, map_location=device)
     model = ckp['model']
     return model

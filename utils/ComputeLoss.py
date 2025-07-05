@@ -42,13 +42,6 @@ class YOLOv3LOSS:
             t_conf = y_true[l][..., 4][obj_mask[l] | noobj_mask[l]]
             obj_loss += focal_loss(conf, t_conf)
         #============================================#
-        #   没加lambda系数的loss，方便观察loss下降情况
-        #============================================#
-        original_loss_loc = loc_loss.clone().item()
-        original_loss_cls = cls_loss.clone().item()
-        original_loss_obj = obj_loss.clone().item()
-        original_loss = original_loss_loc + original_loss_cls + original_loss_obj
-        #============================================#
         #   计算总loss
         #============================================#
         loc_loss *= self.l_loc
@@ -59,11 +52,9 @@ class YOLOv3LOSS:
 
         return {
             "loss": loss,
-            "original_loss": original_loss,
-            "loss_loc": loc_loss.item(),
-            "loss_cls": cls_loss.item(),
-            "loss_obj": obj_loss.item(),
-            'np': sum([i.sum().item() for i in obj_mask])
+            "loc_loss": loc_loss.item(),
+            "cls_loss": cls_loss.item(),
+            "obj_loss": obj_loss.item(),
         }
 
 

@@ -7,6 +7,9 @@ import yaml
 from torch import optim
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.tensorboard.writer import SummaryWriter
+import logging
+
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
 import sys
 from pathlib import Path
@@ -26,7 +29,7 @@ from utils.ComputeLoss import YOLOv3LOSS
 from utils.dataloader import YOLODataset, yolo_collate_fn
 from utils.tools import set_seed, worker_init_fn
 from utils.torch_utils import load_checkpoint
-from utils.yolo_trainning import CustomLR, save_bestmodel, continue_train
+from utils.yolo_trainning import CustomLR, save_best_model, continue_train
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -47,9 +50,9 @@ if __name__ == "__main__":
     train_type = "tiny"  # or yolov3
     dataset_type = "voc"
     set_seed(seed=27)
-    batch_size = 64
+    batch_size = 8
     epochs = 300
-    lr = 0.001
+    lr = 0.01
     train_dataset = YOLODataset(dataset_json_path="./voc_train.json")
     dataloader = DataLoader(
         dataset=train_dataset,
@@ -61,16 +64,10 @@ if __name__ == "__main__":
         collate_fn=yolo_collate_fn,
     )
     model = Model(cfg).to(device)
-    # load_checkpoint(device, 'models/tiny_weight.pth', model)
-    #==================================================#
-    #   加载训练
-    #==================================================#
-    # model = continue_train(r"weights/1.4720_best_149.pt", device)
+    load_checkpoint(device, 'models/tiny_weight.pth', model)
+    model = continue_train(r"0.9945_best_32.pt", device)
     optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.99, weight_decay=1e-4)
     # optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
-    # lr_scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=50, eta_min=1e-5)
-    # lr_scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=80, eta_min=1e-5)
-    # scaler = torch.cuda.amp.GradScaler()
     loss_fn = YOLOv3LOSS(model=model)
     writer_path = "runs"
     writer = SummaryWriter(f"{writer_path}/{time.strftime('%Y-%m-%d-%H-%M-%S', time.localtime())}")
@@ -80,6 +77,7 @@ if __name__ == "__main__":
     global_step = 0
     for epoch in range(start_epoch, epochs):
         model.train()
+        avg_loss = 0
         total_samples = 0
         total_loss = 0
         with tqdm.tqdm(dataloader) as pbar:
@@ -87,46 +85,35 @@ if __name__ == "__main__":
                 batch_x, batch_y = item
                 batch_x = batch_x.to(device)
                 batch_y = [i.to(device) for i in batch_y]
-                # with torch.cuda.amp.autocast():
                 batch_output = model(batch_x)
                 loss_params = loss_fn(batch_output, batch_y)
                 loss = loss_params["loss"]
-                # scaler.scale(loss).backward()
-                # scaler.step(optimizer)
-                # scaler.update()
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
-                # loss compute
+                
+                # ...
                 batch_size = batch_x.shape[0]
-                total_loss += loss.item() * batch_size
+                item_loss = loss.item()
+                total_loss += item_loss * batch_size
                 total_samples += batch_size
                 avg_loss = total_loss / total_samples
-                # loss compute
-                # lr = optimizer.param_groups[0]["lr"]
-                pbar.set_postfix(**{
-                    "ep": epoch,
-                    "loss": f"{loss.item():.6f}",
+                pbar.set_postfix({
+                    "epoch": epoch,
+                    "step_loss": f"{item_loss:.6f}",
                     "avg_loss": f"{avg_loss:.6f}",})
-                pbar.write(f"np: {loss_params['np']} | loc: {loss_params['loss_loc']:.6f} | cls: {loss_params['loss_cls']:.6f} | obj: {loss_params['loss_obj']:.6f}")
+                pbar.write(f"loc_loss: {loss_params['loc_loss']:.6f} | cls_loss: {loss_params['cls_loss']:.6f} | obj_loss: {loss_params['obj_loss']:.6f}")
                 writer.add_scalars(
-                    "loss",
+                    "yolov3",
                     {
-                        "loss": loss.item(),
+                        "step_loss": item_loss,
                         "avg_loss": avg_loss,
-                        "loss_loc": loss_params["loss_loc"],
-                        "loss_obj": loss_params["loss_obj"],
-                        "loss_cls": loss_params["loss_cls"],
-                        "lr": lr,
+                        "loc_loss": loss_params["loc_loss"],
+                        "obj_loss": loss_params["obj_loss"],
+                        "cls_loss": loss_params["cls_loss"],
                     },
                     global_step,
                 )
                 global_step += 1
         losses.append(avg_loss)
-        # # lr_scheduler.step()
-        # parameters = {
-        #     'avg_loss': avg_loss,
-        #     'lr': lr,
-        # }
-        # writer.add_scalars("parameters", parameters, epoch)
-        save_bestmodel(losses, model, optimizer, epoch)
+        save_best_model(losses, model, optimizer, epoch)
