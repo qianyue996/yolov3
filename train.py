@@ -6,7 +6,7 @@ import tqdm
 import yaml
 from torch import optim
 from torch.utils.data.dataloader import DataLoader
-from torch.utils.tensorboard import SummaryWriter
+from torch.utils.tensorboard.writer import SummaryWriter
 
 import sys
 from pathlib import Path
@@ -47,7 +47,7 @@ if __name__ == "__main__":
     train_type = "tiny"  # or yolov3
     dataset_type = "voc"
     set_seed(seed=27)
-    batch_size = 4
+    batch_size = 64
     epochs = 300
     lr = 0.001
     train_dataset = YOLODataset(dataset_json_path="./voc_train.json")
@@ -60,12 +60,12 @@ if __name__ == "__main__":
         worker_init_fn=worker_init_fn,
         collate_fn=yolo_collate_fn,
     )
-    # model = Model(cfg).to(device)
+    model = Model(cfg).to(device)
     # load_checkpoint(device, 'models/tiny_weight.pth', model)
     #==================================================#
     #   加载训练
     #==================================================#
-    model = continue_train(r"1.4720_best_149.pt", device)
+    # model = continue_train(r"weights/1.4720_best_149.pt", device)
     optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.99, weight_decay=1e-4)
     # optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
     # lr_scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=50, eta_min=1e-5)
@@ -106,9 +106,9 @@ if __name__ == "__main__":
                 # lr = optimizer.param_groups[0]["lr"]
                 pbar.set_postfix(**{
                     "ep": epoch,
-                    "loss": f"{loss.item():.4f}",
-                    "avg_loss": f"{avg_loss:.4f}",})
-                pbar.write(f"np: {loss_params['np']} | loc: {loss_params['loss_loc']:.4f} | cls: {loss_params['loss_cls']:.4f} | obj: {loss_params['loss_obj']:.4f}")
+                    "loss": f"{loss.item():.6f}",
+                    "avg_loss": f"{avg_loss:.6f}",})
+                pbar.write(f"np: {loss_params['np']} | loc: {loss_params['loss_loc']:.6f} | cls: {loss_params['loss_cls']:.6f} | obj: {loss_params['loss_obj']:.6f}")
                 writer.add_scalars(
                     "loss",
                     {
