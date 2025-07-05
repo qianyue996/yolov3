@@ -11,9 +11,9 @@ class YOLOv3LOSS:
 
         self.balance = [4.0, 1.0, 0.4]
 
-        self.l_loc = 0.05
-        self.l_cls = 1
-        self.l_obj = 1
+        self.l_loc = 1
+        self.l_cls = 0
+        self.l_obj = 0
 
     def __call__(self, p, targets):
         device = p[0].device

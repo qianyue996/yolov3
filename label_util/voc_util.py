@@ -4,6 +4,10 @@ import xml.etree.ElementTree as ET
 import random
 import yaml
 from tqdm import tqdm
+import logging
+
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+
 
 def main(cfg, out_train, out_val):
     big_labels_data = []
@@ -22,11 +26,10 @@ def main(cfg, out_train, out_val):
                 obj_name = obj.find("name").text.strip() # type: ignore
                 bndbox = obj.find("bndbox")
                 box_part = ["xmin", "ymin", "xmax", "ymax"]
-                label = {
-                    "name_id": name2id[obj_name]
-                }
+                label = {}
                 for part in box_part:
                     label[part] = bndbox.find(part).text # type: ignore
+                label["name_id"] = name2id[obj_name]
                 single_data["labels"].append(label)
             big_labels_data.append(single_data)
 
@@ -38,10 +41,12 @@ def main(cfg, out_train, out_val):
 
     with open(out_train, 'w', encoding='utf-8') as f:
         train_json = json.dumps(train_data, ensure_ascii=False, indent=2)
+        logging.info("正在保存训练集数据")
         f.write(train_json)
 
     with open(out_val, 'w', encoding='utf-8') as f:
         val_json = json.dumps(val_data, ensure_ascii=False, indent=2)
+        logging.info("正在保存验证集数据")
         f.write(val_json)
 
 

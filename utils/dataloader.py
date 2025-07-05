@@ -16,8 +16,7 @@ class YOLODataset(Dataset):
         return len(self.datasets)
 
     def __getitem__(self, index):
-        # image = cv.imread(self.datasets[index]['file_path'])
-        image = [1]
+        image = cv.imread(self.datasets[index]['file_path'])
         labels = []
         for label in self.datasets[index]['labels']:
             label = [float(v) for k, v in label.items()]
@@ -127,6 +126,18 @@ def randomAug(image, label):
 
 
 def xyxy2xywh(labels):
+    """
+    将边界框坐标从 (x1, y1, x2, y2) 格式转换为 (cx, cy, w, h) 格式。
+
+    参数:
+        labels (list or np.ndarray): 边界框标签数据，可以是列表或 NumPy 数组。
+            每个元素是一个形状为 (N, 5) 的数组，其中每行表示一个边界框，
+            格式为 [x1, y1, x2, y2, class_id]。
+
+    返回:
+        list: 转换后的边界框标签数据，每个元素的形状与输入相同，
+            但边界框格式变为 [cx, cy, w, h, class_id]。
+    """
     if not isinstance(labels, list):
         labels = list(labels)
     labels = [
@@ -141,12 +152,10 @@ def xyxy2xywh(labels):
     return labels
 
 
-def resizeCvt(image=None, labels=None, imgSize=416):
-    if isinstance(labels, list):
+def resizeCvt(image, labels, imgSize=416):
+    if not isinstance(labels, np.ndarray):
         labels = np.array(labels)
-        
-    if image is None:
-        raise ValueError('image is None')
+
     im_h, im_w = image.shape[:2]
     scale = min(imgSize / im_h, imgSize / im_w)
     nh, nw = int(im_h * scale), int(im_w * scale)
@@ -174,6 +183,22 @@ def resizeCvt(image=None, labels=None, imgSize=416):
 
 
 def normalizeData(images, labels):
+    """
+    对图像数据进行归一化处理，并将边界框坐标按图像尺寸进行缩放。
+
+    参数:
+        images (list or np.ndarray): 输入的图像数据，形状为 (batch_size, height, width, channels)，
+            像素值范围为 [0, 255]。
+        labels (list): 边界框标签数据，每个元素是一个形状为 (N, 5) 的数组，
+            格式为 [cx, cy, w, h, class_id]，其中坐标是相对于原始图像尺寸的。
+
+    返回:
+        tuple: 归一化后的图像数据和缩放后的边界框标签数据。
+            - images (np.ndarray): 归一化后的图像数据，形状为 (batch_size, channels, height, width)，
+              像素值范围为 [0, 1]。
+            - labels (list): 缩放后的边界框标签数据，每个元素的形状与输入相同，
+              但边界框坐标已按图像尺寸归一化到 [0, 1] 范围内。
+    """
     images = np.array(images)
     imgSize = images.shape[1]
     images = (images / 255.0).transpose(0, 3, 1, 2)
@@ -182,9 +207,23 @@ def normalizeData(images, labels):
     return images, labels
 
 
-def ToTensor(images, labels):
-    images = torch.tensor(images, dtype=torch.float32)
-    labels = [torch.tensor(label, dtype=torch.float32) for label in labels]
+def totensor(images, labels):
+    """
+    将图像和标签数据转换为 PyTorch 张量。
+
+    参数:
+        images (np.ndarray or list): 输入的图像数据，形状为 (batch_size, channels, height, width)，
+            像素值范围为 [0, 1]，通常是归一化后的图像。
+        labels (list): 边界框标签数据，每个元素是一个形状为 (N, 5) 的数组，
+            格式为 [cx, cy, w, h, class_id]，其中坐标已归一化到 [0, 1] 范围内。
+
+    返回:
+        tuple: 转换后的 PyTorch 张量数据。
+            - images (torch.Tensor): 形状为 (batch_size, channels, height, width) 的图像张量。
+            - labels (list of torch.Tensor): 每个元素是形状为 (N, 5) 的标签张量。
+    """
+    images = torch.tensor(images, dtype=torch.float)
+    labels = [torch.tensor(label, dtype=torch.float) for label in labels]
     return images, labels
 
 
@@ -256,7 +295,17 @@ def single_chakan(image, labels):
 # yolo_collate_fn = Yolo_collate_fn()
 
 def yolo_collate_fn(batch):
-    ...
+    images, labels = map(list, zip(*[resizeCvt(image, label) for image, label in batch]))
+    
+    # chakan(images, labels)
+
+    labels = xyxy2xywh(labels)
+
+    images, labels = normalizeData(images, labels)
+
+    images, labels = totensor(images, labels)
+
+    return images, labels
 
 
 
