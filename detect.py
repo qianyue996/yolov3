@@ -10,11 +10,12 @@ from utils.tools import multi_class_nms
 
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
-imgW = 640
-imgH = 640
+# device = "cpu"
+imgW = 416
+imgH = 416
 prev_boxes = []
 
-model = torch.load(r"C:\Users\admin\Downloads-h\5.0597_best_58.pt", map_location=device)['model'].to(device)
+model = torch.load(r"101.5727_best_6.pt", map_location=device, weights_only=False)['model'].to(device)
 model.eval()
 
 with open('config/datasets.yaml', encoding="ascii", errors="ignore")as f:
@@ -104,7 +105,7 @@ def transport(image):
 
 def detect(image, x):
     outputs = model(x)
-    results = non_max_suppression(outputs, conf_thres=0.25, iou_thres=0.45,agnostic=False, max_det=300)
+    results = non_max_suppression(outputs, conf_thres=0.1, iou_thres=0.2,agnostic=False, max_det=300)
     draw_box(image, results[0])
 
 

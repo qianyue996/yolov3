@@ -4,4 +4,12 @@ version = "0.1.0"
 description = ""
 readme = "README.md"
 requires-python = ">=3.10, <3.11"
-dependencies = []
+dependencies = [
+    "mss>=10.0.0",
+    "pandas>=2.3.1",
+    "requests>=2.32.4",
+    "seaborn>=0.13.2",
+    "setuptools>=80.9.0",
+    "tensorboard>=2.20.0",
+    "ultralytics>=8.3.170",
+]

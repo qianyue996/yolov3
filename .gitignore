@@ -34,4 +34,4 @@ requirements.txt
 voc_train.json
 voc_val.json
 img/
-trian.ipynb
+train.ipynb

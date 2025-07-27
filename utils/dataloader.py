@@ -126,30 +126,16 @@ def randomAug(image, label):
 
 
 def xyxy2xywh(labels):
-    """
-    将边界框坐标从 (x1, y1, x2, y2) 格式转换为 (cx, cy, w, h) 格式。
-
-    参数:
-        labels (list or np.ndarray): 边界框标签数据，可以是列表或 NumPy 数组。
-            每个元素是一个形状为 (N, 5) 的数组，其中每行表示一个边界框，
-            格式为 [x1, y1, x2, y2, class_id]。
-
-    返回:
-        list: 转换后的边界框标签数据，每个元素的形状与输入相同，
-            但边界框格式变为 [cx, cy, w, h, class_id]。
-    """
-    if not isinstance(labels, list):
-        labels = list(labels)
-    labels = [
-        np.stack([
-            (l[:, 0] + l[:, 2]) / 2,
-            (l[:, 1] + l[:, 3]) / 2,
-            l[:, 2] - l[:, 0],
-            l[:, 3] - l[:, 1],
-            l[:, 4]
-        ], axis=-1) for l in labels
-    ]
-    return labels
+    new_labels = []
+    for label in labels:
+        x = (label[:, 0] + label[:, 2]) / 2
+        y = (label[:, 1] + label[:, 3]) / 2
+        w = label[:, 2] - label[:, 0]
+        h = label[:, 3] - label[:, 1]
+        c = label[:, 4]
+        stack = np.stack([x, y, w, h, c], axis=-1)
+        new_labels.append(stack)
+    return new_labels
 
 
 def resizeCvt(image, labels, imgSize=416):
@@ -183,22 +169,6 @@ def resizeCvt(image, labels, imgSize=416):
 
 
 def normalizeData(images, labels):
-    """
-    对图像数据进行归一化处理，并将边界框坐标按图像尺寸进行缩放。
-
-    参数:
-        images (list or np.ndarray): 输入的图像数据，形状为 (batch_size, height, width, channels)，
-            像素值范围为 [0, 255]。
-        labels (list): 边界框标签数据，每个元素是一个形状为 (N, 5) 的数组，
-            格式为 [cx, cy, w, h, class_id]，其中坐标是相对于原始图像尺寸的。
-
-    返回:
-        tuple: 归一化后的图像数据和缩放后的边界框标签数据。
-            - images (np.ndarray): 归一化后的图像数据，形状为 (batch_size, channels, height, width)，
-              像素值范围为 [0, 1]。
-            - labels (list): 缩放后的边界框标签数据，每个元素的形状与输入相同，
-              但边界框坐标已按图像尺寸归一化到 [0, 1] 范围内。
-    """
     images = np.array(images)
     imgSize = images.shape[1]
     images = (images / 255.0).transpose(0, 3, 1, 2)
@@ -208,20 +178,6 @@ def normalizeData(images, labels):
 
 
 def totensor(images, labels):
-    """
-    将图像和标签数据转换为 PyTorch 张量。
-
-    参数:
-        images (np.ndarray or list): 输入的图像数据，形状为 (batch_size, channels, height, width)，
-            像素值范围为 [0, 1]，通常是归一化后的图像。
-        labels (list): 边界框标签数据，每个元素是一个形状为 (N, 5) 的数组，
-            格式为 [cx, cy, w, h, class_id]，其中坐标已归一化到 [0, 1] 范围内。
-
-    返回:
-        tuple: 转换后的 PyTorch 张量数据。
-            - images (torch.Tensor): 形状为 (batch_size, channels, height, width) 的图像张量。
-            - labels (list of torch.Tensor): 每个元素是形状为 (N, 5) 的标签张量。
-    """
     images = torch.tensor(images, dtype=torch.float)
     labels = [torch.tensor(label, dtype=torch.float) for label in labels]
     return images, labels
@@ -310,7 +266,7 @@ def yolo_collate_fn(batch):
 
 
 if __name__ == "__main__":
-    dataset = YOLODataset(dataset_json_path="./voc_train.json")
+    dataset = YOLODataset()
     dataloader = DataLoader(dataset, batch_size=128, shuffle=True, collate_fn=yolo_collate_fn)
     for i, (images, bboxes) in enumerate(dataloader):
         print(images.shape, bboxes[0].shape)

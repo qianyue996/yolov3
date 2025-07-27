@@ -14,7 +14,7 @@ class YOLOLOSS:
 
         self.l_loc = 1
         self.l_cls = 1
-        self.l_obj = 5
+        self.l_obj = 1
 
     def __call__(self, p, targets):
         device = p[0].device
@@ -49,7 +49,7 @@ class YOLOLOSS:
         cls_loss *= self.l_cls
         obj_loss *= self.l_obj
 
-        loss = loc_loss + cls_loss + obj_loss
+        loss = (loc_loss + cls_loss + obj_loss)
 
         return {
             "loss": loss,
