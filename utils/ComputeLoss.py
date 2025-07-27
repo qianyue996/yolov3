@@ -2,18 +2,19 @@ import torch
 import torch.nn as nn
 import numpy as np
 
-class YOLOv3LOSS:
+class YOLOLOSS:
     def __init__(self, model):
+        self.model = model
         self.anchors = model.model[-1].anchors
-        self.na = self.anchors[0].shape[0]
-        self.am = list(map(tuple, np.split(np.arange(self.anchors.view(-1, 2).shape[0]), self.anchors.view(-1, 2).shape[0] // self.anchors[0].shape[0])))
-        self.nl = model.model[-1].nl
+        self.number_anchors = model.model[-1].na
+        self.number_layers = model.model[-1].nl
+        self.stride = model.stride
 
         self.balance = [4.0, 1.0, 0.4]
 
         self.l_loc = 1
-        self.l_cls = 0
-        self.l_obj = 0
+        self.l_cls = 1
+        self.l_obj = 5
 
     def __call__(self, p, targets):
         device = p[0].device
@@ -28,19 +29,19 @@ class YOLOv3LOSS:
                 #============================================#
                 wihi = 2.0 - ((targ_box[l][:, 2] * targ_box[l][:, 3]) / p[l].shape[2] ** 2)
                 giou = self.compute_iou(pred_box[l], targ_box[l], iou_type='ciou')
-                loc_loss += ((1 - giou) * wihi).mean()
+                loc_loss += ((1 - giou) * wihi).sum()
                 #============================================#
                 #   分类损失
                 #============================================#
-                _cls = p[l][..., 5:][obj_mask[l]]
+                p_cls = p[l][..., 5:][obj_mask[l]]
                 t_cls = y_true[l][..., 5:][obj_mask[l]]
-                cls_loss += nn.BCEWithLogitsLoss(reduction='mean')(_cls, t_cls)
+                cls_loss += nn.BCEWithLogitsLoss(reduction='sum')(p_cls, t_cls)
             #============================================#
             #   置信度损失
             #============================================#
-            conf = l_p[..., 4][obj_mask[l] | noobj_mask[l]]
+            p_conf = l_p[..., 4][obj_mask[l] | noobj_mask[l]]
             t_conf = y_true[l][..., 4][obj_mask[l] | noobj_mask[l]]
-            obj_loss += focal_loss(conf, t_conf)
+            obj_loss += nn.BCEWithLogitsLoss(reduction='sum')(p_conf, t_conf) * self.balance[l]
         #============================================#
         #   计算总loss
         #============================================#
@@ -62,108 +63,46 @@ class YOLOv3LOSS:
         y_list = []
         if len(targets) != p[0].shape[0]:
             raise ValueError("targets.shape[0] != p.shape[0]")
-        
-        S = [i.shape[2] for i in p]
-        for l in range(self.nl):
-            y_true = torch.zeros_like(p[l])
-            for t, target in enumerate(targets):
-                if target.shape[0] == 0:
-                    continue
-                ious = []
-                for _l in range(self.nl):
-                    gt_box = (target[:, 2:4] * S[_l]).unsqueeze(1) # [N, 1, 2]
-                    anchors = self.anchors[_l] # [1, na * 3, 2]
+        for n_layer in range(self.number_layers):
+            grid_size = p[n_layer].shape[2]
+            y_true = torch.zeros_like(p[n_layer])
+            for target_index, target in enumerate(targets):
+                gt_box = (target[:, 2:4] * self.stride[n_layer]).unsqueeze(1) # [N, 1, 2]
+                anchors = self.anchors[n_layer] # [1, na * 3, 2]
+                area_w = torch.min(gt_box[..., 0], anchors[..., 0])
+                area_h = torch.min(gt_box[..., 1], anchors[..., 1])
+                inter = area_w * area_h
+                area_a = gt_box[..., 0] * gt_box[..., 1]
+                area_b = anchors[..., 0] * anchors[..., 1]
+                union = area_a + area_b - inter
+                iou = inter / union
+                max_iou, best_anchor_index = torch.max(iou, dim=1)
 
-                    area_w = torch.min(gt_box[..., 0], anchors[..., 0])
-                    area_h = torch.min(gt_box[..., 1], anchors[..., 1])
-                    inter = area_w * area_h
+                for i, anchor_index in enumerate(best_anchor_index.tolist()):
+                    if max_iou[i] < 0.5:
+                        continue
+                    single_target = target[i][:4] * self.stride[n_layer]
+                    b = target_index
+                    k = anchor_index
+                    x = single_target[0].long().clamp(0, grid_size - 1).item()
+                    y = single_target[1].long().clamp(0, grid_size - 1).item()
+                    c = target[i][4].long().item()
 
-                    area_a = gt_box[..., 0] * gt_box[..., 1]
-                    area_b = anchors[..., 0] * anchors[..., 1]
-                    union = area_a + area_b - inter
-
-                    iou = inter / union
-                    ious.append(iou)
-                iou = torch.cat(ious).view(len(target), -1)
-
-                max_iou, best_a = torch.max(iou, dim=1)
-
-                for i, ai in enumerate(best_a.tolist()):
-                    if max_iou[i] < 0.2:
-                        if ai not in self.am[l]:
-                            continue
-                        b_targ = target[i][:4] * S[l]
-
-                        b = t
-                        k = self.am[l].index(ai)
-                        x = b_targ[0].long().clamp(0, S[l] - 1).item()
-                        y = b_targ[1].long().clamp(0, S[l] - 1).item()
-                        c = target[i][4].long().item()
-
-                        y_true[b, k, x, y, 0] = b_targ[0] % 1
-                        y_true[b, k, x, y, 1] = b_targ[1] % 1
-                        y_true[b, k, x, y, 2] = b_targ[2]
-                        y_true[b, k, x, y, 3] = b_targ[3]
-                        y_true[b, k, x, y, 4] = 1
-                        y_true[b, k, x, y, 5 + c] = 1
-
-                    else:
-                        for j in (iou[i] >= 0.2).nonzero():
-                            j = j.item()
-                            if j not in self.am[l]:
-                                continue
-
-                            b_targ = target[i][:4] * S[l]
-
-                            b = t
-                            k = self.am[l].index(j)
-                            x = b_targ[0].long().clamp(0, S[l] - 1).item()
-                            y = b_targ[1].long().clamp(0, S[l] - 1).item()
-                            c = target[i][4].long().item()
-
-                            y_true[b, k, x, y, 0] = b_targ[0] % 1
-                            y_true[b, k, x, y, 1] = b_targ[1] % 1
-                            y_true[b, k, x, y, 2] = b_targ[2]
-                            y_true[b, k, x, y, 3] = b_targ[3]
-                            y_true[b, k, x, y, 4] = 1
-                            y_true[b, k, x, y, 5 + c] = 1
-
-                            if x <= 0 and y <= 0 or x >= S[l]-1 and y >= S[l]-1:
-                                continue
-                            offsets = []
-                            if b_targ[0] % 1 > 0.5:  # x > 0.5时右扩展
-                                offsets.append((1, 0))  # 向右扩展
-                            elif b_targ[0] % 1 < 0.5:  # x < 0.5时左扩展
-                                offsets.append((-1, 0))  # 向左扩展
-
-                            if b_targ[1] % 1 > 0.5:  # y > 0.5时下扩展
-                                offsets.append((0, 1))  # 向下扩展
-                            elif b_targ[1] % 1 < 0.5:  # y < 0.5时上扩展
-                                offsets.append((0, -1))  # 向上扩展
-
-                            for dx, dy in offsets:
-                                nx = max(0, min(S[l] - 1, x + dx))
-                                ny = max(0, min(S[l] - 1, y + dy))
-
-                                y_true[b, k, nx, ny, 0] = abs(b_targ[0] - nx)
-                                y_true[b, k, nx, ny, 1] = abs(b_targ[1] - ny)
-                                y_true[b, k, nx, ny, 2] = b_targ[2]
-                                y_true[b, k, nx, ny, 3] = b_targ[3]
-                                y_true[b, k, nx, ny, 4] = 1
-                                y_true[b, k, nx, ny, 5 + c] = 1
-
+                    y_true[b, k, x, y, 0] = single_target[0] % 1
+                    y_true[b, k, x, y, 1] = single_target[1] % 1
+                    y_true[b, k, x, y, 2] = single_target[2]
+                    y_true[b, k, x, y, 3] = single_target[3]
+                    y_true[b, k, x, y, 4] = 1
+                    y_true[b, k, x, y, 5 + c] = 1
             y_list.append(y_true)
-
         return y_list
 
     def ignore_target(self, p, y_true):
         pred_box, targ_box = [], []
         noobj_mask = []
-        for l in range(self.nl):
-            obj_mask = y_true[l][..., 4] == 1
+        for n_layer in range(self.number_layers):
+            obj_mask = y_true[n_layer][..., 4] == 1
             b, a, x, y = obj_mask.nonzero(as_tuple=True)
-            # l_mask = torch.ones_like(obj_mask, dtype=torch.bool)
-            # l_mask[b, :, x, y] = False
             l_mask = ~obj_mask
             noobj_mask.append(l_mask)
             
@@ -171,15 +110,15 @@ class YOLOv3LOSS:
                 pred_box.append(0)
                 targ_box.append(0)
                 continue
-            p_x = p[l][b, a, x, y, 0].sigmoid() * 2 - 0.5 + x
-            p_y = p[l][b, a, x, y, 1].sigmoid() * 2 - 0.5 + y
-            p_w = torch.square(p[l][b, a, x, y, 2].sigmoid() * 2) * self.anchors[l][a][:, 0]
-            p_h = torch.square(p[l][b, a, x, y, 3].sigmoid() * 2) * self.anchors[l][a][:, 1]
+            p_x = p[n_layer][b, a, x, y, 0].sigmoid() * 2 - 0.5 + x
+            p_y = p[n_layer][b, a, x, y, 1].sigmoid() * 2 - 0.5 + y
+            p_w = torch.square(p[n_layer][b, a, x, y, 2].sigmoid() * 2) * self.anchors[n_layer][a][:, 0]
+            p_h = torch.square(p[n_layer][b, a, x, y, 3].sigmoid() * 2) * self.anchors[n_layer][a][:, 1]
 
-            t_x = y_true[l][b, a, x, y, 0] + x
-            t_y = y_true[l][b, a, x, y, 1] + y
-            t_w = y_true[l][b, a, x, y, 2]
-            t_h = y_true[l][b, a, x, y, 3]
+            t_x = y_true[n_layer][b, a, x, y, 0] + x
+            t_y = y_true[n_layer][b, a, x, y, 1] + y
+            t_w = y_true[n_layer][b, a, x, y, 2]
+            t_h = y_true[n_layer][b, a, x, y, 3]
 
             p_x1 = p_x - p_w / 2
             p_y1 = p_y - p_h / 2
@@ -196,7 +135,7 @@ class YOLOv3LOSS:
 
         return noobj_mask, pred_box, targ_box
 
-    def compute_iou(self, box_1=None, box_2=None, iou_type='giou'):
+    def compute_iou(self, box_1, box_2, iou_type='giou'):
         p_x1 = box_1[:, 0]
         p_y1 = box_1[:, 1]
         p_x2 = box_1[:, 2]

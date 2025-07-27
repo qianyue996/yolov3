@@ -56,18 +56,3 @@ if __name__ == "__main__":
     with open('config/yolo_conf.yaml', encoding="ascii", errors="ignore")as f:
         cfg = yaml.safe_load(f)
     main(cfg, out_train, out_val)
-
-"""type for yolo label
-{
-    "file_path": /path/to/file.jpg/png,
-    "labels": [
-        {
-            "name_id": int,
-            "xmin": xxx,
-            "ymin": xxx,
-            "xmax": xxx,
-            "ymax": xxx,
-        }
-    ]
-}
-"""

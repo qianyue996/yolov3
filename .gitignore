@@ -33,3 +33,5 @@ yolov3_weight.pth
 requirements.txt
 voc_train.json
 voc_val.json
+img/
+trian.ipynb
