@@ -9,7 +9,7 @@ dependencies = [
     "pandas>=2.3.1",
     "requests>=2.32.4",
     "seaborn>=0.13.2",
-    "setuptools>=80.9.0",
+    "setuptools==80.9.0",
     "tensorboard>=2.20.0",
     "ultralytics>=8.3.170",
 ]

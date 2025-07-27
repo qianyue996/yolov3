@@ -16,7 +16,7 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 if __name__ == "__main__":
     set_seed(seed=27)
-    batch_size = 8
+    batch_size = 16
     epochs = 300
     lr = 0.001
     train_dataset = YOLODataset()
@@ -30,6 +30,7 @@ if __name__ == "__main__":
         collate_fn=yolo_collate_fn,
     )
     model = Model("models/yolov3.yaml").to(device)
+    # model = torch.load(r"101.5727_best_6.pt", map_location=device, weights_only=False)['model']
     # load_checkpoint(device, 'models/tiny_weight.pth', model)
     # model = continue_train(r"0.9945_best_32.pt", device)
     optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.99, weight_decay=1e-4)
