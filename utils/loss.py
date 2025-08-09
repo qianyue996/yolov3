@@ -1,0 +1,213 @@
+import torch
+import torch.nn as nn
+import numpy as np
+import math
+
+
+class YOLOLOSS:
+    def __init__(self, model):
+        self.model = model
+        self.stride = compute_stride(model)
+        self.anchors = torch.tensor(model.anchors)
+        self.anchors_mask = model.anchors_mask
+        self.class_name = model.class_name
+
+        self.balance = [0.4, 1.0, 4]
+        self.box_ratio = 0.05
+        self.obj_ratio = 5
+        self.cls_ratio = 1
+
+    def __call__(self, predicts, targets):
+        loss = 0
+        for num_layer, predict in enumerate(predicts):
+            y_true, noobj_mask, box_loss_scale = self.build_targets(num_layer, predict, targets)
+            noobj_mask, pred_boxes = self.get_ignore(num_layer, predict, targets, noobj_mask)
+            box_loss_scale = 2 - box_loss_scale
+
+            obj_mask = y_true[..., 4] == 1
+            n = torch.sum(obj_mask)
+
+            if n != 0:
+                giou = self.box_giou(pred_boxes, y_true[..., :4])
+                loss_loc = (1 - giou)[obj_mask].mean()
+
+                pred_cls = predict[..., 5:][obj_mask]
+                targ_cls = y_true[..., 5:][obj_mask]
+                loss_cls = nn.BCEWithLogitsLoss(reduction='mean')(pred_cls, targ_cls)
+                loss += loss_loc * self.box_ratio + loss_cls * self.cls_ratio
+
+            conf = predict[..., 4]
+            loss_conf = nn.BCEWithLogitsLoss(reduction='none')(conf, obj_mask.type_as(conf))[noobj_mask.bool() | obj_mask].mean()
+            loss += loss_conf * self.balance[num_layer] * self.obj_ratio
+
+        return loss
+
+    def build_targets(self, num_layer, predict, targets):
+        y_true = torch.zeros_like(predict)
+        bs = len(targets)
+        anchors_mask = self.anchors_mask[num_layer]
+        size_w = predict.shape[2]
+        size_h = predict.shape[3]
+        noobj_mask = torch.ones(bs, len(anchors_mask), size_h, size_w)
+        box_loss_scale  = torch.zeros(bs, len(anchors_mask), size_w, size_h)
+        anchors = self.anchors[anchors_mask]
+        for b, target in enumerate(targets):
+            if len(target) == 0:
+                continue
+            batch_target = torch.zeros_like(target)
+            batch_target[:, [0, 2]] = target[:, [0, 2]] / size_w
+            batch_target[:, [1, 3]] = target[:, [1, 3]] / size_h
+            batch_target[:, 4] = target[:, 4]
+            batch_target = batch_target.cpu()
+
+            iou = compute_iou(batch_target, anchors)
+            best_anchors = torch.argmax(iou, dim=-1)
+
+            for t, best_num_anchor in enumerate(best_anchors):
+                if best_num_anchor not in anchors_mask:
+                    continue
+                k = anchors_mask.index(best_num_anchor)
+                x = torch.floor(batch_target[t, 0]).long()
+                y = torch.floor(batch_target[t, 1]).long()
+                c = batch_target[t, 4].long()
+
+                noobj_mask[b, k, x, y] = 0
+                y_true[b, k, x, y, 0] = batch_target[t, 0] % 1
+                y_true[b, k, x, y, 1] = batch_target[t, 1] % 1
+                y_true[b, k, x, y, 2] = math.log(
+                    batch_target[t, 2] * size_w / anchors[best_num_anchor][0]
+                )
+                y_true[b, k, x, y, 3] = math.log(
+                    batch_target[t, 3] * size_h / anchors[best_num_anchor][1]
+                )
+                y_true[b, k, x, y, 4] = 1
+                y_true[b, k, x, y, c + 5] = 1
+                box_loss_scale[b, k, x, y] = batch_target[t, 2] * batch_target[t, 3] / size_w / size_h
+
+        return y_true, noobj_mask, box_loss_scale
+
+    def get_ignore(self, num_layer, predict, targets, noobj_mask):
+        bs = len(targets)
+        x = predict.sigmoid()[..., 0]
+        y = predict.sigmoid()[..., 1]
+        w = predict[..., 2]
+        h = predict[..., 3]
+        size_w = predict.shape[2]
+        size_h = predict.shape[3]
+        grid_x = torch.linspace(0, size_w - 1, size_w).repeat(size_h, 1).repeat(
+            int(bs * len(self.anchors_mask[num_layer])), 1, 1).view(x.shape).type_as(x)
+        grid_y = torch.linspace(0, size_h - 1, size_h).repeat(size_w, 1).t().repeat(
+            int(bs * len(self.anchors_mask[num_layer])), 1, 1).view(y.shape).type_as(x)
+        
+        scaled_anchors_l = np.array(self.anchors)[self.anchors_mask[num_layer]]
+        anchor_w = torch.Tensor(scaled_anchors_l).index_select(1, torch.LongTensor([0])).type_as(x)
+        anchor_h = torch.Tensor(scaled_anchors_l).index_select(1, torch.LongTensor([1])).type_as(x)
+
+        anchor_w = anchor_w.repeat(bs, 1).repeat(1, 1, size_w * size_h).view(w.shape)
+        anchor_h = anchor_h.repeat(bs, 1).repeat(1, 1, size_w * size_h).view(h.shape)
+
+        pred_boxes_x    = torch.unsqueeze(x + grid_x, -1)
+        pred_boxes_y    = torch.unsqueeze(y + grid_y, -1)
+        pred_boxes_w    = torch.unsqueeze(torch.exp(w) * anchor_w, -1)
+        pred_boxes_h    = torch.unsqueeze(torch.exp(h) * anchor_h, -1)
+        pred_boxes      = torch.cat([pred_boxes_x, pred_boxes_y, pred_boxes_w, pred_boxes_h], dim = -1)
+
+        for b in range(bs):           
+            pred_boxes_for_ignore = pred_boxes[b].view(-1, 4)
+            if len(targets[b]) > 0:
+                batch_target = torch.zeros_like(targets[b])
+                batch_target[:, [0,2]] = targets[b][:, [0,2]] * size_w
+                batch_target[:, [1,3]] = targets[b][:, [1,3]] * size_h
+                batch_target = batch_target[:, :4].type_as(x)
+                anch_ious = compute_iou(batch_target, pred_boxes_for_ignore)
+                anch_ious_max, _    = torch.max(anch_ious, dim = 0)
+                anch_ious_max       = anch_ious_max.view(pred_boxes[b].size()[:3])
+                noobj_mask[b][anch_ious_max > 0.5] = 0
+
+        return noobj_mask, pred_boxes
+
+
+    def box_giou(self, b1, b2):
+        #----------------------------------------------------#
+        #   求出预测框左上角右下角
+        #----------------------------------------------------#
+        b1_xy       = b1[..., :2]
+        b1_wh       = b1[..., 2:4]
+        b1_wh_half  = b1_wh/2.
+        b1_mins     = b1_xy - b1_wh_half
+        b1_maxes    = b1_xy + b1_wh_half
+        #----------------------------------------------------#
+        #   求出真实框左上角右下角
+        #----------------------------------------------------#
+        b2_xy       = b2[..., :2]
+        b2_wh       = b2[..., 2:4]
+        b2_wh_half  = b2_wh/2.
+        b2_mins     = b2_xy - b2_wh_half
+        b2_maxes    = b2_xy + b2_wh_half
+
+        #----------------------------------------------------#
+        #   求真实框和预测框所有的iou
+        #----------------------------------------------------#
+        intersect_mins  = torch.max(b1_mins, b2_mins)
+        intersect_maxes = torch.min(b1_maxes, b2_maxes)
+        intersect_wh    = torch.max(intersect_maxes - intersect_mins, torch.zeros_like(intersect_maxes))
+        intersect_area  = intersect_wh[..., 0] * intersect_wh[..., 1]
+        b1_area         = b1_wh[..., 0] * b1_wh[..., 1]
+        b2_area         = b2_wh[..., 0] * b2_wh[..., 1]
+        union_area      = b1_area + b2_area - intersect_area
+        iou             = intersect_area / union_area
+
+        #----------------------------------------------------#
+        #   找到包裹两个框的最小框的左上角和右下角
+        #----------------------------------------------------#
+        enclose_mins    = torch.min(b1_mins, b2_mins)
+        enclose_maxes   = torch.max(b1_maxes, b2_maxes)
+        enclose_wh      = torch.max(enclose_maxes - enclose_mins, torch.zeros_like(intersect_maxes))
+        #----------------------------------------------------#
+        #   计算对角线距离
+        #----------------------------------------------------#
+        enclose_area    = enclose_wh[..., 0] * enclose_wh[..., 1]
+        giou            = iou - (enclose_area - union_area) / enclose_area
+        
+        return giou
+
+
+def focal_loss(pred, targ, alpha=0.25, gamma=1.5, reduction="mean"):
+    loss = nn.BCEWithLogitsLoss(reduction="none")(pred, targ)
+
+    predicts = torch.sigmoid(pred)
+    p_t = targ * predicts + (1 - targ) * (1 - predicts)
+    alpha_factor = targ * alpha + (1 - targ) * (1 - alpha)
+    modulating_factor = (1.0 - p_t) ** gamma
+    loss *= alpha_factor * modulating_factor
+
+    # 返回平均损失
+    if reduction == "mean":
+        return loss.mean()
+    elif reduction == "sum":
+        return loss.sum()
+    else:
+        return loss
+
+
+def compute_iou(box_a, box_b):
+    boxa_wh = box_a[:, 2:4].unsqueeze(1)
+    area_w = torch.min(boxa_wh[..., 0], box_b[..., 0])
+    area_h = torch.min(boxa_wh[..., 1], box_b[..., 1])
+    inter = area_w * area_h
+    boxa_area = boxa_wh[..., 0] * boxa_wh[..., 1]
+    boxb_area = box_b[..., 0] * box_b[..., 1]
+    union = boxa_area + boxb_area - inter
+    iou = inter / union
+    return iou
+
+
+def compute_stride(model):
+    input_size = 416
+    feature_out = model(torch.randn(1, 3, input_size, input_size))
+    stride1 = input_size / feature_out[0].shape[2]
+    stride2 = input_size / feature_out[1].shape[2]
+    stride3 = input_size / feature_out[2].shape[2]
+
+    return [int(stride1), int(stride2), int(stride3)]
+

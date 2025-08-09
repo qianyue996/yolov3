@@ -10,6 +10,8 @@ flagged
 nets
 weights
 .python-version
+models/
+uv.lock
 
 *darknet53_backbone_weights.pth
 *yolo_weights.pth
@@ -28,6 +30,7 @@ voc_val.txt
 hyperGUI.py
 yolov3_weight.pth
 *.pth
+test.py
 *.pt
 .python-version
 requirements.txt

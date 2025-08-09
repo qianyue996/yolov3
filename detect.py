@@ -15,7 +15,7 @@ imgW = 416
 imgH = 416
 prev_boxes = []
 
-model = torch.load(r"101.5727_best_6.pt", map_location=device, weights_only=False)['model'].to(device)
+model = torch.load(r"0.9517_best_3.pt", map_location=device, weights_only=False)['model'].to(device)
 model.eval()
 
 with open('config/datasets.yaml', encoding="ascii", errors="ignore")as f:
@@ -105,7 +105,7 @@ def transport(image):
 
 def detect(image, x):
     outputs = model(x)
-    results = non_max_suppression(outputs, conf_thres=0.1, iou_thres=0.2,agnostic=False, max_det=300)
+    results = non_max_suppression(outputs, conf_thres=0.7, iou_thres=0.40,agnostic=False, max_det=300)
     draw_box(image, results[0])
 
 

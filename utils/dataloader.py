@@ -1,272 +1,107 @@
-import cv2 as cv
-import json
-import numpy as np
+from typing import List, Tuple, Any
 import torch
-from torch.utils.data.dataloader import DataLoader
+import cv2 as cv
+import numpy as np
+import albumentations as A
 from torch.utils.data.dataset import Dataset
+import torchvision.datasets.coco as coco
+from PIL import ImageDraw, Image
+from utils import load_category_config
 
+class_names = load_category_config("config/yolo_conf.yaml")
 
 class YOLODataset(Dataset):
-    def __init__(self, dataset_json_path: str = "voc_train.json"):
+    def __init__(self, root: str, annFile: str):
+        """
+        Args:
+            root (string): 图片存放路径
+            annFile (string): 标签文件存放路径
+        """
         super().__init__()
-        with open(dataset_json_path, "r", encoding="utf-8") as f:
-            self.datasets = json.load(f)
+        self.dataset = coco.CocoDetection(
+            root=root,
+            annFile=annFile
+        )
+        self.transform = A.Compose(
+            transforms=[
+                A.LongestMaxSize(max_size=416),
+                A.PadIfNeeded(min_height=416, min_width=416, border_mode=cv.BORDER_CONSTANT, fill=0),
+                A.HorizontalFlip(p=0.5),
+                A.Normalize(
+                    mean=(0.4711, 0.4475, 0.4080),
+                    std=(0.2378, 0.2329, 0.2361),
+                    max_pixel_value=255.0
+                ),
+                A.ToTensorV2(),
+            ],
+            bbox_params=A.BboxParams(format='coco')
+        )
+
+        # 构建原生类名与类别id映射表
+        self.id2name = {
+            i["id"]: i["name"]
+            for i in
+            self.dataset.coco.dataset["categories"]
+        }
+
+        # 外部类别名称列表
+        self.class_name = class_names["coco"]
 
     def __len__(self):
-        return len(self.datasets)
+        return len(self.dataset)
 
-    def __getitem__(self, index):
-        image = cv.imread(self.datasets[index]['file_path'])
-        labels = []
-        for label in self.datasets[index]['labels']:
-            label = [float(v) for k, v in label.items()]
-            labels.append(label)
+    def __getitem__(self, index: int) -> Tuple[Any, Any, Any]:
+        """
+        
+        Returns:
+            array: 图像的numpy array数组
+            bboxes List[List[float]]: 检测框的坐标信息 min_x, min_y, width, height
+            labels List[int]: 检测框的类别信息
+        """
+        image, infos = self.dataset[index]
+        info = [
+            {
+                "bbox": element["bbox"],
+                "label": self.class_name.index(self.id2name[element["category_id"]])
+            }
+            for element in infos
+        ]
+        transform_result = self.transform(image=np.array(image), bboxes=[i["bbox"] for i in info])
+        
+        return transform_result["image"], transform_result["bboxes"], [i["label"] for i in info]
 
-        return image, labels
+def image_show(image: Image.Image, bboxes: List, labels: List):
+    image = Image.fromarray(image)
+    image_handler = ImageDraw.ImageDraw(image)
 
+    for i, bbox in enumerate(bboxes):
+        label_text = f'{class_names["coco"]["class_name"][labels[i]]} {labels[i]}'
+        x_min, y_min, width, height = list(map(int, bbox))
+        text_x = x_min
+        text_y = y_min-15
+        image_handler.rectangle(((x_min, y_min), (x_min + width, y_min + height)), outline="red")
+        image_handler.text((text_x, text_y), label_text, fill="green")
 
-def rand():
-    return np.random.random()
+    img_np_rgb = np.array(image)
+    img_np_bgr = cv.cvtColor(img_np_rgb, cv.COLOR_RGB2BGR)
+    cv.namedWindow("Image from OpenCV", cv.WINDOW_NORMAL)
+    cv.imshow("Image from OpenCV", img_np_bgr)
 
-
-def randomAug(image, label):
-    imgSize = image.shape[0]
-    nImage = image.copy()
-    nLabel = label.copy()
-    h, w = nImage.shape[:2]
-
-    # 随机翻转
-    if rand() > 0.7:
-        flip_type = np.random.choice([0, 1, -1])
-        nImage = cv.flip(nImage, flip_type)
-        # bbox: [x1, y1, x2, y2]
-        if flip_type == 1:  # 水平翻转
-            nLabel[:, [0, 2]] = w - nLabel[:, [2, 0]]
-        elif flip_type == 0:  # 垂直翻转
-            nLabel[:, [1, 3]] = h - nLabel[:, [3, 1]]
-        elif flip_type == -1:  # 对角翻转（等于水平+垂直）
-            nLabel[:, [0, 2]] = w - nLabel[:, [2, 0]]
-            nLabel[:, [1, 3]] = h - nLabel[:, [3, 1]]
-
-    # 随机缩放（resize 到一个随机尺寸后再 resize 回原尺寸）
-    # if rand() > 0.5:
-    #     scale = np.random.uniform(0.5, 0.9)  # 随机缩放比例
-    #     new_w = int(w * scale)
-    #     new_h = int(h * scale)
-    #     nImage = cv.resize(nImage, (new_w, new_h))
-
-    #     pad_w = imgSize - new_w
-    #     pad_h = imgSize - new_h
-    #     top = pad_h // 2
-    #     bottom = pad_h - top
-    #     left = pad_w // 2
-    #     right = pad_w - left
-    #     nImage = cv.copyMakeBorder(
-    #         nImage, top, bottom, left, right, borderType=cv.BORDER_CONSTANT, value=(128, 128, 128)
-    #     )
-    #     if nLabel is not None:
-    #         nLabel[:, :4] *= scale
-    #         nLabel[:, [0, 2]] += left
-    #         nLabel[:, [1, 3]] += top
-    # 随机旋转
-    # if rand() > 0.3:
-    #     angle = np.random.uniform(-15, 15)  # 在 -15 到 15 度之间随机转
-    #     M = cv.getRotationMatrix2D((w // 2, h // 2), angle, 1.0)
-    #     nImage = cv.warpAffine(nImage, M, (w, h), borderMode=cv.BORDER_REFLECT)
-
-    #     # 处理 bbox，同步旋转
-    #     for i, label in enumerate(nLabel):
-    #         x1, y1, x2, y2, _ = label
-
-    #         # 四个角点
-    #         corners = np.array([[x1, y1], [x2, y1], [x2, y2], [x1, y2]])
-
-    #         # 加上 1 维度，变成齐次坐标 [x, y, 1]
-    #         ones = np.ones((4, 1))
-    #         corners_hom = np.hstack([corners, ones])
-
-    #         # 旋转
-    #         rotated_corners = M @ corners_hom.T  # 2x4
-    #         rotated_corners = rotated_corners.T  # 4x2
-
-    #         # 获取新的 bbox：包围旋转后的角点
-    #         x_coords = rotated_corners[:, 0]
-    #         y_coords = rotated_corners[:, 1]
-    #         new_x1, new_y1 = x_coords.min(), y_coords.min()
-    #         new_x2, new_y2 = x_coords.max(), y_coords.max()
-
-    #         # 可选：限制在图像边界内
-    #         new_x1 = np.clip(new_x1, 0, w)
-    #         new_y1 = np.clip(new_y1, 0, h)
-    #         new_x2 = np.clip(new_x2, 0, w)
-    #         new_y2 = np.clip(new_y2, 0, h)
-
-    #         nLabel[i, :4] = new_x1, new_y1, new_x2, new_y2
-
-    # 随机颜色增强
-    strength = 0.2
-    if rand() > 0.7:
-        # 随机亮度（加减一个值）
-        delta = np.random.uniform(-16, 16) * strength
-        nImage = np.clip(nImage.astype(np.float32) + delta, 0, 255).astype(np.uint8)
-    if rand() > 0.7:
-        # 随机对比度
-        alpha = 1.0 + np.random.uniform(-0.2, 0.2) * strength
-        mean = np.mean(nImage, axis=(0, 1), keepdims=True)
-        nImage = np.clip((nImage - mean) * alpha + mean, 0, 255).astype(np.uint8)
-    if rand() > 0.7:
-        # 随机饱和度（转HSV改S通道）
-        hsv = cv.cvtColor(nImage, cv.COLOR_BGR2HSV).astype(np.float32)
-        sat_scale = 1.0 + np.random.uniform(-0.3, 0.3) * strength
-        hsv[..., 1] *= sat_scale
-        hsv[..., 1] = np.clip(hsv[..., 1], 0, 255)
-        nImage = cv.cvtColor(hsv.astype(np.uint8), cv.COLOR_HSV2BGR)
-
-    return nImage, nLabel
-
-
-def xyxy2xywh(labels):
-    new_labels = []
-    for label in labels:
-        x = (label[:, 0] + label[:, 2]) / 2
-        y = (label[:, 1] + label[:, 3]) / 2
-        w = label[:, 2] - label[:, 0]
-        h = label[:, 3] - label[:, 1]
-        c = label[:, 4]
-        stack = np.stack([x, y, w, h, c], axis=-1)
-        new_labels.append(stack)
-    return new_labels
-
-
-def resizeCvt(image, labels, imgSize=416):
-    if not isinstance(labels, np.ndarray):
-        labels = np.array(labels)
-
-    im_h, im_w = image.shape[:2]
-    scale = min(imgSize / im_h, imgSize / im_w)
-    nh, nw = int(im_h * scale), int(im_w * scale)
-
-    # 缩放图像
-    image = cv.resize(image, (nw, nh), interpolation=cv.INTER_AREA)
-
-    # 计算 padding（上下左右）
-    top = (imgSize - nh) // 2
-    bottom = imgSize - nh - top
-    left = (imgSize - nw) // 2
-    right = imgSize - nw - left
-
-    # 灰色填充
-    nImage = cv.copyMakeBorder(image, top, bottom, left, right, borderType=cv.BORDER_CONSTANT, value=(128, 128, 128))
-
-    # 同步变换 bbox
-    if labels is not None:
-        labels[:, [0, 2]] = labels[:, [0, 2]] * scale + left
-        labels[:, [1, 3]] = labels[:, [1, 3]] * scale + top
-
-    # 转为 RGB
-    nImage = cv.cvtColor(nImage, cv.COLOR_BGR2RGB)
-    return nImage, labels
-
-
-def normalizeData(images, labels):
-    images = np.array(images)
-    imgSize = images.shape[1]
-    images = (images / 255.0).transpose(0, 3, 1, 2)
-    for i, label in enumerate(labels):
-        labels[i][:, :4] = label[:, :4] / imgSize
-    return images, labels
-
-
-def totensor(images, labels):
-    images = torch.tensor(images, dtype=torch.float)
-    labels = [torch.tensor(label, dtype=torch.float) for label in labels]
-    return images, labels
-
-
-def chakan(images, labels):
-    for index, image in enumerate(images):
-        cv.namedWindow("show", cv.WINDOW_NORMAL)
-        image = cv.cvtColor(image, cv.COLOR_RGB2BGR)
-        for i, label in enumerate(labels[index]):
-            x1, y1, x2, y2, _id = tuple(map(int, label))
-            cv.rectangle(image, (x1, y1), (x2, y2), (0, 0, 255), thickness=1)
-            cv.circle(image, ((x2 + x1) // 2, (y2 + y1) // 2), 3, (0, 0, 255), -1)
-            cv.putText(
-                image,
-                f"{_id}",
-                (int(x1), int(y1) - 5),
-                cv.FONT_HERSHEY_SIMPLEX,
-                0.5,
-                (0, 0, 255),
-                thickness=1,
-            )
-        cv.imshow("show", image)
-        cv.waitKey(0)
-        cv.destroyAllWindows()
-
-
-def single_chakan(image, labels):
-    # 测试图像变换时使用
-    cv.namedWindow("show", cv.WINDOW_NORMAL)
-    image = cv.cvtColor(image, cv.COLOR_RGB2BGR)
-    for i, label in enumerate(labels):
-        x1, y1, x2, y2, _id = [int(i) for i in label]
-        cv.rectangle(image, (x1, y1), (x2, y2), (0, 0, 255), thickness=1)
-        cv.putText(
-            image,
-            f"{_id}",
-            (int(x1), int(y1) - 5),
-            cv.FONT_HERSHEY_SIMPLEX,
-            0.5,
-            (0, 0, 255),
-            thickness=1,
-        )
-    cv.imshow("show", image)
     cv.waitKey(0)
     cv.destroyAllWindows()
 
+    print("Script continued after closing OpenCV window.")
 
-# class Yolo_collate_fn:
-#     def __init__(self, sizes=(320, 416, 512, 608, 640), step=5):
-#         self.sizes = sizes
-#         # self.sizes = [416]
-#         self.imgSize = np.random.choice(self.sizes)
-#         self.step = step
-#         self.count = 0
-#     def __call__(self, batch):
-#         self.count += 1
-#         if self.count % self.step == 0:
-#             self.imgSize = np.random.choice(self.sizes)
-#         # resize + bgr -> rgb
-#         images, labels = map(list, zip(*[resizeCvt(image, label, self.imgSize) for image, label in batch]))
-#         # 随机增强
-#         images, labels = zip(*[randomAug(image, label) for image, label in zip(images, labels)])
-#         #
-#         # chakan(images, labels)
-#         labels = xyxy2xywh(labels)
-#         images, labels = normalizeData(images, labels)
-#         images, labels = ToTensor(images, labels)
-#         return images, labels
-
-# yolo_collate_fn = Yolo_collate_fn()
-
-def yolo_collate_fn(batch):
-    images, labels = map(list, zip(*[resizeCvt(image, label) for image, label in batch]))
+def yolo_collate_fn(batches: List[Any]):
+    total_images = []
+    total_labels = []
+    for batch in batches:
+        image, bboxes, labels = batch
+        # image_show(image, bboxes, labels)
+        total_images.append(image)
+        bboxes = torch.tensor(bboxes)
+        labels = torch.tensor(labels).unsqueeze(-1)
+        bbox_and_label = torch.cat((bboxes, labels), dim=1)
+        total_labels.append(bbox_and_label)
     
-    # chakan(images, labels)
-
-    labels = xyxy2xywh(labels)
-
-    images, labels = normalizeData(images, labels)
-
-    images, labels = totensor(images, labels)
-
-    return images, labels
-
-
-
-if __name__ == "__main__":
-    dataset = YOLODataset()
-    dataloader = DataLoader(dataset, batch_size=128, shuffle=True, collate_fn=yolo_collate_fn)
-    for i, (images, bboxes) in enumerate(dataloader):
-        print(images.shape, bboxes[0].shape)
+    return torch.stack(total_images, dim=0), total_labels
