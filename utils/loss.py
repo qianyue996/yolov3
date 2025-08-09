@@ -8,7 +8,7 @@ class YOLOLOSS:
     def __init__(self, model):
         self.device = next(model.parameters()).device
         self.stride = compute_stride(model, 416, self.device)
-        self.anchors = torch.tensor(model.anchors)
+        self.anchors = torch.tensor(model.anchors).to(self.device)
         self.anchors_mask = model.anchors_mask
         self.class_name = model.class_name
 

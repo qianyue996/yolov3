@@ -92,5 +92,8 @@ if __name__ == "__main__":
                     global_step,
                 )
                 global_step += 1
+                if global_step % 1000 == 0:
+                    losses.append(avg_loss)
+                    save_best_model(losses, model, optimizer, epoch)
         losses.append(avg_loss)
         save_best_model(losses, model, optimizer, epoch)
