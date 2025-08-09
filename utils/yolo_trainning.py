@@ -1,13 +1,14 @@
 import torch
-import torch.nn as nn
 from torch import optim
-from datetime import datetime
 
 import os
 from pathlib import Path
 
+
 class CustomLR:
-    def __init__(self, optimizer, warm_up=(0.001, 0.01, 5), T_max=100, eta_min=1e-4, step=1):
+    def __init__(
+        self, optimizer, warm_up=(0.001, 0.01, 5), T_max=100, eta_min=1e-4, step=1
+    ):
         self.optimizer = optimizer
         self.warm_up = warm_up
         self.T_max = T_max
@@ -44,7 +45,7 @@ class CustomLR:
 
 
 def save_best_model(losses, model, optimizer, epoch):
-    weights_dir = Path('weights')
+    weights_dir = Path("weights")
     weights_dir.mkdir(exist_ok=True)
 
     current_loss = losses[-1]
@@ -57,12 +58,15 @@ def save_best_model(losses, model, optimizer, epoch):
     # 只有当非第一轮，且当前为最优时才保存 best
     if epoch > 0 and len(losses) != 1 and current_loss < min(losses[:-1]):
         torch.save(checkpoint, ".checkpoint.pth")
-        os.replace(".checkpoint.pth", weights_dir / f"{current_loss:.4f}_best_{epoch}.pt")
+        os.replace(
+            ".checkpoint.pth", weights_dir / f"{current_loss:.4f}_best_{epoch}.pt"
+        )
     else:
         torch.save(checkpoint, ".checkpoint.pth")
         os.replace(".checkpoint.pth", weights_dir / f"{current_loss:.4f}_{epoch}.pt")
 
+
 def continue_train(ckp_path, device):
     ckp = torch.load(ckp_path, weights_only=False, map_location=device)
-    model = ckp['model']
+    model = ckp["model"]
     return model

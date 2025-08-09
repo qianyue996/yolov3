@@ -1,4 +1,6 @@
 import time
+import os
+from pathlib import Path
 import torch
 from tqdm import tqdm
 from torch import optim
@@ -9,25 +11,32 @@ from nets.yolov3 import YoloBody
 
 from utils import load_category_config, YOLOLOSS, set_seed, worker_init_fn
 from utils.dataloader import YOLODataset, yolo_collate_fn
-from utils.yolo_trainning import save_best_model, continue_train
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 if __name__ == "__main__":
     set_seed(seed=27)
-    batch_size = 16
+    batch_size = 3
     epochs = 120
     lr = 0.01
+    save_path = Path("weights")
+    os.makedirs(save_path, exist_ok=True)
     class_conf = load_category_config("config/yolo_conf.yaml")
     anchors = [
-        [10, 13], [16, 30], [33, 23],
-        [30, 61], [62, 45], [59, 119],
-        [116, 90], [156, 198], [373, 326],
+        [10, 13],
+        [16, 30],
+        [33, 23],
+        [30, 61],
+        [62, 45],
+        [59, 119],
+        [116, 90],
+        [156, 198],
+        [373, 326],
     ]
     anchors_mask = [[0, 1, 2], [3, 4, 5], [6, 7, 8]]
-    root = r"/mnt/nfs/ai_models/coco2014/train2014"
+    root = r"D:\Python\datasets\coco2014\train2014"
     annotation_file = (
-        r"/mnt/nfs/ai_models/coco2014/annotations/instances_train2014.json"
+        r"D:\Python\datasets\coco2014\annotations\instances_train2014.json"
     )
     dataset = YOLODataset(root=root, annFile=annotation_file)
     dataloader = DataLoader(
@@ -85,15 +94,13 @@ if __name__ == "__main__":
                 )
                 writer.add_scalars(
                     "yolov3",
-                    {
-                        "step_loss": item_loss,
-                        "avg_loss": avg_loss
-                    },
+                    {"step_loss": item_loss, "avg_loss": avg_loss},
                     global_step,
                 )
                 global_step += 1
                 if global_step % 1000 == 0:
-                    losses.append(avg_loss)
-                    save_best_model(losses, model, optimizer, epoch)
-        losses.append(avg_loss)
-        save_best_model(losses, model, optimizer, epoch)
+                    torch.save(model, ".checkpoint.pth")
+                    os.replace(
+                        ".checkpoint.pth",
+                        save_path / f"{global_step}_{avg_loss:.4f}.pth",
+                    )

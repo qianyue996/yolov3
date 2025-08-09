@@ -4,6 +4,7 @@ import numpy as np
 import random
 from .loss import YOLOLOSS
 
+
 def load_category_config(conf_path: str):
     with open(conf_path, "r") as f:
         return yaml.safe_load(f)
@@ -24,6 +25,5 @@ def worker_init_fn(worker_id):
     np.random.seed(seed)
     random.seed(seed)
 
+
 __all__ = ["load_category_config", "YOLOLOSS", "set_seed", "worker_init_fn"]
-
-

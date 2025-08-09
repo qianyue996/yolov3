@@ -4,9 +4,7 @@ import numpy as np
 import torch
 import yaml
 
-from utils.general import check_yaml, non_max_suppression
-from models.yolo import Model
-from utils.tools import multi_class_nms
+from utils.general import non_max_suppression
 
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -15,12 +13,14 @@ imgW = 416
 imgH = 416
 prev_boxes = []
 
-model = torch.load(r"0.9517_best_3.pt", map_location=device, weights_only=False)['model'].to(device)
+model = torch.load(r"0.9517_best_3.pt", map_location=device, weights_only=False)[
+    "model"
+].to(device)
 model.eval()
 
-with open('config/datasets.yaml', encoding="ascii", errors="ignore")as f:
+with open("config/datasets.yaml", encoding="ascii", errors="ignore") as f:
     cfg = yaml.safe_load(f)
-class_names = cfg['voc']['class_name']
+class_names = cfg["voc"]["class_name"]
 
 
 def draw_box(image, results):
@@ -70,11 +70,13 @@ def draw_box(image, results):
             else:
                 prev = prev_boxes[prev_idx]
                 smoothed_box = alpha * curr[:4] + (1 - alpha) * prev[:4]
-                smoothed.append([
-                    *smoothed_box.tolist(),
-                    curr[4],  # 保留当前置信度
-                    curr[5]   # 保留当前类别
-                ])
+                smoothed.append(
+                    [
+                        *smoothed_box.tolist(),
+                        curr[4],  # 保留当前置信度
+                        curr[5],  # 保留当前类别
+                    ]
+                )
         return smoothed
 
     matches = match_boxes(results, prev_boxes)
@@ -84,7 +86,15 @@ def draw_box(image, results):
         score, label = result[4], int(result[-1])
         cv.circle(image, ((x2 + x1) // 2, (y2 + y1) // 2), 3, (0, 0, 255), -1)
         cv.rectangle(image, (x1, y1), (x2, y2), (0, 0, 255), thickness=2)
-        cv.putText(image, f"{score:.2f} {class_names[label]}", (x1, y1 - 5), cv.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), thickness=1)
+        cv.putText(
+            image,
+            f"{score:.2f} {class_names[label]}",
+            (x1, y1 - 5),
+            cv.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            (0, 0, 255),
+            thickness=1,
+        )
     prev_boxes = smoothed_boxes
 
 
@@ -105,7 +115,9 @@ def transport(image):
 
 def detect(image, x):
     outputs = model(x)
-    results = non_max_suppression(outputs, conf_thres=0.7, iou_thres=0.40,agnostic=False, max_det=300)
+    results = non_max_suppression(
+        outputs, conf_thres=0.7, iou_thres=0.40, agnostic=False, max_det=300
+    )
     draw_box(image, results[0])
 
 
@@ -139,7 +151,7 @@ if __name__ == "__main__":
             img, _input = transport(img)  # to tensor
             detect(img, _input)  # outputict
             cv.imwrite("output.jpg", img)
-            print('successfully!!')
+            print("successfully!!")
         elif is_screenshot:
             screen_width, screen_height = 2880, 1800
             size_w, size_h = 640, 640
