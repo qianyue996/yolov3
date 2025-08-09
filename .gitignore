@@ -7,7 +7,6 @@ data
 .gradio
 flagged
 .ruff_cache
-nets
 weights
 .python-version
 models/
