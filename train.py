@@ -15,7 +15,7 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 if __name__ == "__main__":
     set_seed(seed=27)
-    batch_size = 2
+    batch_size = 16
     epochs = 120
     lr = 0.01
     class_conf = load_category_config("config/yolo_conf.yaml")
@@ -25,9 +25,9 @@ if __name__ == "__main__":
         [116, 90], [156, 198], [373, 326],
     ]
     anchors_mask = [[0, 1, 2], [3, 4, 5], [6, 7, 8]]
-    root = r"D:\Python\datasets\coco2014\train2014"
+    root = r"/mnt/nfs/ai_models/coco2014/train2014"
     annotation_file = (
-        r"D:\Python\datasets\coco2014\annotations\instances_train2014.json"
+        r"/mnt/nfs/ai_models/coco2014/annotations/instances_train2014.json"
     )
     dataset = YOLODataset(root=root, annFile=annotation_file)
     dataloader = DataLoader(
@@ -41,7 +41,7 @@ if __name__ == "__main__":
     )
     model = YoloBody(
         anchors=anchors, anchors_mask=anchors_mask, class_name=class_conf["coco"]
-    )
+    ).to(device)
     optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.99, weight_decay=1e-4)
     # optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
     loss_fn = YOLOLOSS(model)

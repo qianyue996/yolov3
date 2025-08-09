@@ -6,8 +6,8 @@ import math
 
 class YOLOLOSS:
     def __init__(self, model):
-        self.model = model
-        self.stride = compute_stride(model)
+        self.device = next(model.parameters()).device
+        self.stride = compute_stride(model, 416, self.device)
         self.anchors = torch.tensor(model.anchors)
         self.anchors_mask = model.anchors_mask
         self.class_name = model.class_name
@@ -48,7 +48,7 @@ class YOLOLOSS:
         anchors_mask = self.anchors_mask[num_layer]
         size_w = predict.shape[2]
         size_h = predict.shape[3]
-        noobj_mask = torch.ones(bs, len(anchors_mask), size_h, size_w)
+        noobj_mask = torch.ones(bs, len(anchors_mask), size_h, size_w).to(self.device)
         box_loss_scale  = torch.zeros(bs, len(anchors_mask), size_w, size_h)
         anchors = self.anchors[anchors_mask]
         for b, target in enumerate(targets):
@@ -202,12 +202,35 @@ def compute_iou(box_a, box_b):
     return iou
 
 
-def compute_stride(model):
-    input_size = 416
-    feature_out = model(torch.randn(1, 3, input_size, input_size))
-    stride1 = input_size / feature_out[0].shape[2]
-    stride2 = input_size / feature_out[1].shape[2]
-    stride3 = input_size / feature_out[2].shape[2]
+def compute_stride(model, input_size, device):
+    """
+    动态计算给定模型在特定输入尺寸下的步长。
 
-    return [int(stride1), int(stride2), int(stride3)]
+    Args:
+        model (torch.nn.Module): 要计算步长的模型。
+        input_size (int): 模型的输入尺寸（高和宽）。
+        device (str): 模型和输入张量所在的设备 ('cpu' 或 'cuda')。
+
+    Returns:
+        list: 一个包含所有特征图步长的整数列表。
+    """
+    # 创建一个随机输入张量并移动到指定的设备
+    dummy_input = torch.randn(1, 3, input_size, input_size).to(device)
+
+    # 运行模型进行前向传播
+    with torch.no_grad():
+        feature_out = model(dummy_input)
+
+    strides = []
+    # 遍历所有输出特征图
+    for feature_map in feature_out:
+        # 确保输出是张量且维度正确
+        if isinstance(feature_map, torch.Tensor) and feature_map.dim() >= 2:
+            stride = input_size / feature_map.shape[2]
+            strides.append(int(stride))
+        else:
+            # 如果输出不是预期的张量，可以跳过或报错
+            print(f"Warning: Unexpected output type or shape: {type(feature_map)}")
+
+    return strides
 
