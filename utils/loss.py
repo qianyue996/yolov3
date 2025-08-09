@@ -58,7 +58,6 @@ class YOLOLOSS:
             batch_target[:, [0, 2]] = target[:, [0, 2]] / size_w
             batch_target[:, [1, 3]] = target[:, [1, 3]] / size_h
             batch_target[:, 4] = target[:, 4]
-            batch_target = batch_target.cpu()
 
             iou = compute_iou(batch_target, anchors)
             best_anchors = torch.argmax(iou, dim=-1)
@@ -67,22 +66,22 @@ class YOLOLOSS:
                 if best_num_anchor not in anchors_mask:
                     continue
                 k = anchors_mask.index(best_num_anchor)
-                x = torch.floor(batch_target[t, 0]).long()
-                y = torch.floor(batch_target[t, 1]).long()
+                i = torch.floor(batch_target[t, 0]).long()
+                j = torch.floor(batch_target[t, 1]).long()
                 c = batch_target[t, 4].long()
 
-                noobj_mask[b, k, x, y] = 0
-                y_true[b, k, x, y, 0] = batch_target[t, 0] % 1
-                y_true[b, k, x, y, 1] = batch_target[t, 1] % 1
-                y_true[b, k, x, y, 2] = math.log(
+                noobj_mask[b, k, i, j] = 0
+                y_true[b, k, i, j, 0] = batch_target[t, 0] % 1
+                y_true[b, k, i, j, 1] = batch_target[t, 1] % 1
+                y_true[b, k, i, j, 2] = math.log(
                     batch_target[t, 2] * size_w / anchors[best_num_anchor][0]
                 )
-                y_true[b, k, x, y, 3] = math.log(
+                y_true[b, k, i, j, 3] = math.log(
                     batch_target[t, 3] * size_h / anchors[best_num_anchor][1]
                 )
-                y_true[b, k, x, y, 4] = 1
-                y_true[b, k, x, y, c + 5] = 1
-                box_loss_scale[b, k, x, y] = batch_target[t, 2] * batch_target[t, 3] / size_w / size_h
+                y_true[b, k, i, j, 4] = 1
+                y_true[b, k, i, j, c + 5] = 1
+                box_loss_scale[b, k, i, j] = batch_target[t, 2] * batch_target[t, 3] / size_w / size_h
 
         return y_true, noobj_mask, box_loss_scale
 
@@ -128,26 +127,18 @@ class YOLOLOSS:
 
 
     def box_giou(self, b1, b2):
-        #----------------------------------------------------#
-        #   求出预测框左上角右下角
-        #----------------------------------------------------#
         b1_xy       = b1[..., :2]
         b1_wh       = b1[..., 2:4]
         b1_wh_half  = b1_wh/2.
         b1_mins     = b1_xy - b1_wh_half
         b1_maxes    = b1_xy + b1_wh_half
-        #----------------------------------------------------#
-        #   求出真实框左上角右下角
-        #----------------------------------------------------#
+        
         b2_xy       = b2[..., :2]
         b2_wh       = b2[..., 2:4]
         b2_wh_half  = b2_wh/2.
         b2_mins     = b2_xy - b2_wh_half
         b2_maxes    = b2_xy + b2_wh_half
 
-        #----------------------------------------------------#
-        #   求真实框和预测框所有的iou
-        #----------------------------------------------------#
         intersect_mins  = torch.max(b1_mins, b2_mins)
         intersect_maxes = torch.min(b1_maxes, b2_maxes)
         intersect_wh    = torch.max(intersect_maxes - intersect_mins, torch.zeros_like(intersect_maxes))
@@ -157,37 +148,14 @@ class YOLOLOSS:
         union_area      = b1_area + b2_area - intersect_area
         iou             = intersect_area / union_area
 
-        #----------------------------------------------------#
-        #   找到包裹两个框的最小框的左上角和右下角
-        #----------------------------------------------------#
         enclose_mins    = torch.min(b1_mins, b2_mins)
         enclose_maxes   = torch.max(b1_maxes, b2_maxes)
         enclose_wh      = torch.max(enclose_maxes - enclose_mins, torch.zeros_like(intersect_maxes))
-        #----------------------------------------------------#
-        #   计算对角线距离
-        #----------------------------------------------------#
+        
         enclose_area    = enclose_wh[..., 0] * enclose_wh[..., 1]
         giou            = iou - (enclose_area - union_area) / enclose_area
         
         return giou
-
-
-def focal_loss(pred, targ, alpha=0.25, gamma=1.5, reduction="mean"):
-    loss = nn.BCEWithLogitsLoss(reduction="none")(pred, targ)
-
-    predicts = torch.sigmoid(pred)
-    p_t = targ * predicts + (1 - targ) * (1 - predicts)
-    alpha_factor = targ * alpha + (1 - targ) * (1 - alpha)
-    modulating_factor = (1.0 - p_t) ** gamma
-    loss *= alpha_factor * modulating_factor
-
-    # 返回平均损失
-    if reduction == "mean":
-        return loss.mean()
-    elif reduction == "sum":
-        return loss.sum()
-    else:
-        return loss
 
 
 def compute_iou(box_a, box_b):
@@ -203,34 +171,33 @@ def compute_iou(box_a, box_b):
 
 
 def compute_stride(model, input_size, device):
-    """
-    动态计算给定模型在特定输入尺寸下的步长。
-
-    Args:
-        model (torch.nn.Module): 要计算步长的模型。
-        input_size (int): 模型的输入尺寸（高和宽）。
-        device (str): 模型和输入张量所在的设备 ('cpu' 或 'cuda')。
-
-    Returns:
-        list: 一个包含所有特征图步长的整数列表。
-    """
-    # 创建一个随机输入张量并移动到指定的设备
     dummy_input = torch.randn(1, 3, input_size, input_size).to(device)
 
-    # 运行模型进行前向传播
     with torch.no_grad():
         feature_out = model(dummy_input)
 
     strides = []
-    # 遍历所有输出特征图
     for feature_map in feature_out:
-        # 确保输出是张量且维度正确
         if isinstance(feature_map, torch.Tensor) and feature_map.dim() >= 2:
             stride = input_size / feature_map.shape[2]
             strides.append(int(stride))
         else:
-            # 如果输出不是预期的张量，可以跳过或报错
             print(f"Warning: Unexpected output type or shape: {type(feature_map)}")
 
     return strides
 
+def focal_loss(pred, targ, alpha=0.25, gamma=1.5, reduction="mean"):
+    loss = nn.BCEWithLogitsLoss(reduction="none")(pred, targ)
+
+    predicts = torch.sigmoid(pred)
+    p_t = targ * predicts + (1 - targ) * (1 - predicts)
+    alpha_factor = targ * alpha + (1 - targ) * (1 - alpha)
+    modulating_factor = (1.0 - p_t) ** gamma
+    loss *= alpha_factor * modulating_factor
+
+    if reduction == "mean":
+        return loss.mean()
+    elif reduction == "sum":
+        return loss.sum()
+    else:
+        return loss
