@@ -75,7 +75,7 @@ if __name__ == "__main__":
                 batch_y = [i.to(device) for i in batch_y]
                 batch_output = model(batch_x)
                 loss = loss_fn(batch_output, batch_y)
-                loss = loss / batch_x.shape[0]
+                # loss = loss / batch_x.shape[0]
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()

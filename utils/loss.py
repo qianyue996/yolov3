@@ -19,7 +19,7 @@ class YOLOLOSS:
         self.cls_ratio = 1
 
     def __call__(self, predicts: List[torch.Tensor], targets: List[torch.Tensor]):
-        loss = 0
+        loss = torch.zeros(1, device=self.device)
         for num_layer, predict in enumerate(predicts):
             y_true, noobj_mask, box_loss_scale = self.build_targets(
                 num_layer, predict, targets
