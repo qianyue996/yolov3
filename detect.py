@@ -14,7 +14,7 @@ imgW = 416
 imgH = 416
 prev_boxes = []
 
-model = torch.load(r"2000_0.0102.pth", map_location=device, weights_only=False)
+model = torch.load(r"checkpoint.pth", map_location=device, weights_only=False)
 class_name = model.class_name
 model.eval()
 
