@@ -82,7 +82,7 @@ class YOLOLOSS:
             batch_target[:, [0, 2]] = target[:, [0, 2]] * size_w
             batch_target[:, [1, 3]] = target[:, [1, 3]] * size_h
             batch_target[:, 4] = target[:, 4]
-            # batch_target = batch_target.cpu()
+            batch_target = batch_target.cpu()
 
             iou = compute_iou(batch_target, anchors)
             best_anchors = torch.argmax(iou, dim=-1)
