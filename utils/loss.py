@@ -85,12 +85,8 @@ class YOLOLOSS:
                 noobj_mask[b, k, i, j] = 0
                 y_true[b, k, i, j, 0] = batch_target[t, 0] % 1
                 y_true[b, k, i, j, 1] = batch_target[t, 1] % 1
-                y_true[b, k, i, j, 2] = math.log(
-                    batch_target[t, 2] * size_w / anchors[best_num_anchor][0]
-                )
-                y_true[b, k, i, j, 3] = math.log(
-                    batch_target[t, 3] * size_h / anchors[best_num_anchor][1]
-                )
+                y_true[b, k, i, j, 2] = batch_target[t, 3] * size_w
+                y_true[b, k, i, j, 3] = batch_target[t, 4] * size_h
                 y_true[b, k, i, j, 4] = 1
                 y_true[b, k, i, j, c + 5] = 1
                 box_loss_scale[b, k, i, j] = (
