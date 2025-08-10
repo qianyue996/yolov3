@@ -5,15 +5,29 @@ description = ""
 readme = "README.md"
 requires-python = ">=3.10, <3.11"
 dependencies = [
-    "albumentations>=2.0.8",
+    "albumentations",
     "loguru>=0.7.3",
     "mss>=10.0.0",
-    "numpy==2.2.6",
-    "opencv-python>=4.12.0.88",
+    "numpy==1.24.4",
+    "opencv-python",
     "pandas>=2.3.1",
     "pycocotools>=2.0.10",
-    "requests>=2.32.4",
     "seaborn>=0.13.2",
-    "setuptools==80.9.0",
     "tensorboard>=2.20.0",
+    "torch==2.3.0",
+    "torchvision==0.18.0",
+    "tqdm>=4.66.5",
 ]
+
+[tool.uv.sources]
+torch = { index = "pytorch" }
+torchvision = { index = "pytorch" }
+
+[[tool.uv.index]]
+name = "pytorch"
+url = "https://download.pytorch.org/whl/cu118"
+explicit = true
+
+[[tool.uv.index]]
+url = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"
+default = true
