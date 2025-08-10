@@ -110,13 +110,16 @@ def yolo_collate_fn(batches: List[Any]) -> Tuple[torch.Tensor, List[torch.Tensor
         image, bboxes, labels = batch
         # image_show(image, bboxes, labels)
         total_images.append(image)
-        bboxes = torch.tensor(bboxes)
-        # xmin,ymin,width,height -> xmin,ymin,xmax,ymax
-        bboxes[:, 2:4] = bboxes[:, 2:4] + bboxes[:, 0:2]
-        # normalize bbox
-        bboxes = bboxes / 416
-        labels = torch.tensor(labels).unsqueeze(-1)
-        bbox_and_label = torch.cat((bboxes, labels), dim=1)
+        if len(bboxes) == 0:
+            bbox_and_label = torch.empty((0, 5))
+        else:
+            bboxes = torch.tensor(bboxes)
+            # xmin,ymin,width,height -> xmin,ymin,xmax,ymax
+            bboxes[:, 2:4] = bboxes[:, 2:4] + bboxes[:, 0:2]
+            # normalize bbox
+            bboxes = bboxes / 416
+            labels = torch.tensor(labels).unsqueeze(-1)
+            bbox_and_label = torch.cat((bboxes, labels), dim=1)
         total_labels.append(bbox_and_label)
 
     return torch.stack(total_images, dim=0), total_labels
