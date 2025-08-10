@@ -48,17 +48,16 @@ class YOLOLOSS:
 
         if n != 0:
             giou = self.box_giou(pred_boxes, y_true[..., :4])
-            loss_loc = (1 - giou)[obj_mask].mean()
+            loss_loc = ((1 - giou)*box_loss_scale)[obj_mask].mean()
 
             pred_cls = predict[..., 5:][obj_mask]
             targ_cls = y_true[..., 5:][obj_mask]
-            loss_cls = self.BCELoss(pred_cls, targ_cls).mean()
+            loss_cls = nn.BCEWithLogitsLoss(reduction="mean")(pred_cls, targ_cls)
             loss += loss_loc * self.box_ratio + loss_cls * self.cls_ratio
 
-        conf = predict[..., 4]
-        loss_conf = self.BCELoss(conf, obj_mask.type_as(conf))[
-            noobj_mask.bool() | obj_mask
-        ].mean()
+        conf = predict[..., 4][noobj_mask.bool() | obj_mask]
+        t_conf = obj_mask.type_as(conf)[noobj_mask.bool() | obj_mask]
+        loss_conf = nn.BCEWithLogitsLoss(reduction="mean")(conf, t_conf)
         loss += loss_conf * self.balance[num_layer] * self.obj_ratio
 
         return loss
