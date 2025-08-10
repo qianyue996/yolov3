@@ -107,7 +107,7 @@ def image_show(image: Image.Image, bboxes: List, labels: List):
 
 def yolo_collate_fn(batches: List[Any]) -> Tuple[torch.Tensor, List[torch.Tensor]]:
     images = []
-    labels = [] # 检测框的坐标信息 min_x, min_y, x_max, y_max, label
+    labels = []  # 检测框的坐标信息 min_x, min_y, x_max, y_max, label
     for batch in batches:
         image, bboxes, label = batch
         # image_show(image, bboxes, label)
@@ -120,7 +120,9 @@ def yolo_collate_fn(batches: List[Any]) -> Tuple[torch.Tensor, List[torch.Tensor
             bboxes[:, 2:4] = bboxes[:, 2:4] + bboxes[:, 0:2]
             # normalize bbox
             bboxes = bboxes / img_w
-            bbox_and_label = np.concatenate((bboxes, np.expand_dims(label, axis=1)), axis=1)
+            bbox_and_label = np.concatenate(
+                (bboxes, np.expand_dims(label, axis=1)), axis=1
+            )
         labels.append(torch.from_numpy(bbox_and_label))
 
     return torch.stack(images, dim=0), labels

@@ -23,6 +23,4 @@ def non_max_suppression(
     conf = prediction[..., 4]
     class_probs = prediction[..., 5:]
 
-    
-
     return 1

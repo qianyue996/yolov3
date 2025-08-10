@@ -18,6 +18,21 @@ class YOLOLOSS:
         self.obj_ratio = 5
         self.cls_ratio = 1
 
+    def clip_by_tensor(self, t, t_min, t_max):
+        t = t.float()
+        result = (t >= t_min).float() * t + (t < t_min).float() * t_min
+        result = (result <= t_max).float() * result + (result > t_max).float() * t_max
+        return result
+
+    def MSELoss(self, pred, target):
+        return torch.pow(pred - target, 2)
+
+    def BCELoss(self, pred, target):
+        epsilon = 1e-7
+        pred = self.clip_by_tensor(pred, epsilon, 1.0 - epsilon)
+        output = -target * torch.log(pred) - (1.0 - target) * torch.log(1.0 - pred)
+        return output
+
     def __call__(self, num_layer, predict: torch.Tensor, targets: List[torch.Tensor]):
         loss = 0
         y_true, noobj_mask, box_loss_scale = self.build_targets(
@@ -37,13 +52,13 @@ class YOLOLOSS:
 
             pred_cls = predict[..., 5:][obj_mask]
             targ_cls = y_true[..., 5:][obj_mask]
-            loss_cls = nn.BCEWithLogitsLoss(reduction="mean")(pred_cls, targ_cls)
+            loss_cls = self.BCELoss(pred_cls, targ_cls).mean()
             loss += loss_loc * self.box_ratio + loss_cls * self.cls_ratio
 
         conf = predict[..., 4]
-        loss_conf = nn.BCEWithLogitsLoss(reduction="none")(
-            conf, obj_mask.type_as(conf)
-        )[noobj_mask.bool() | obj_mask].mean()
+        loss_conf = self.BCELoss(conf, obj_mask.type_as(conf))[
+            noobj_mask.bool() | obj_mask
+        ].mean()
         loss += loss_conf * self.balance[num_layer] * self.obj_ratio
 
         return loss

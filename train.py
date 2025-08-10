@@ -16,7 +16,7 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 if __name__ == "__main__":
     set_seed(seed=27)
-    batch_size = 3
+    batch_size = 16
     epochs = 120
     lr = 0.01
     save_path = Path("weights")
@@ -75,10 +75,10 @@ if __name__ == "__main__":
                 batch_y = [i.to(device) for i in batch_y]
                 outputs = model(batch_x)
 
-                loss_all = 0
+                loss_all = torch.tensor(0.0, device=device)
                 for l, output in enumerate(outputs):
                     loss = loss_fn(l, output, batch_y)
-                    loss_value_all += loss
+                    loss_all += loss
                 loss = loss_all
                 # loss = loss / batch_x.shape[0]
                 optimizer.zero_grad()
