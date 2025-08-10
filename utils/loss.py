@@ -66,8 +66,8 @@ class YOLOLOSS:
             if len(target) == 0:
                 continue
             batch_target = torch.zeros_like(target)
-            batch_target[:, [0, 2]] = target[:, [0, 2]] / size_w
-            batch_target[:, [1, 3]] = target[:, [1, 3]] / size_h
+            batch_target[:, [0, 2]] = target[:, [0, 2]] * size_w
+            batch_target[:, [1, 3]] = target[:, [1, 3]] * size_h
             batch_target[:, 4] = target[:, 4]
             batch_target = batch_target.cpu()
 
@@ -85,8 +85,8 @@ class YOLOLOSS:
                 noobj_mask[b, k, i, j] = 0
                 y_true[b, k, i, j, 0] = batch_target[t, 0] % 1
                 y_true[b, k, i, j, 1] = batch_target[t, 1] % 1
-                y_true[b, k, i, j, 2] = batch_target[t, 3] * size_w
-                y_true[b, k, i, j, 3] = batch_target[t, 4] * size_h
+                y_true[b, k, i, j, 2] = batch_target[t, 3]
+                y_true[b, k, i, j, 3] = batch_target[t, 4]
                 y_true[b, k, i, j, 4] = 1
                 y_true[b, k, i, j, c + 5] = 1
                 box_loss_scale[b, k, i, j] = (
@@ -146,8 +146,8 @@ class YOLOLOSS:
             pred_boxes_for_ignore = pred_boxes[b].view(-1, 4)
             if len(targets[b]) > 0:
                 batch_target = torch.zeros_like(targets[b])
-                batch_target[:, [0, 2]] = targets[b][:, [0, 2]] / size_w
-                batch_target[:, [1, 3]] = targets[b][:, [1, 3]] / size_h
+                batch_target[:, [0, 2]] = targets[b][:, [0, 2]] * size_w
+                batch_target[:, [1, 3]] = targets[b][:, [1, 3]] * size_h
                 batch_target = batch_target[:, :4].type_as(x)
                 anch_ious = compute_iou(batch_target, pred_boxes_for_ignore)
                 anch_ious_max, _ = torch.max(anch_ious, dim=0)
