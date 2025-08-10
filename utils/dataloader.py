@@ -9,6 +9,8 @@ from PIL import ImageDraw, Image
 from utils import load_category_config
 
 class_names = load_category_config("config/yolo_conf.yaml")
+img_w = 416
+img_h = 416
 
 
 class YOLODataset(Dataset):
@@ -22,10 +24,10 @@ class YOLODataset(Dataset):
         self.dataset = coco.CocoDetection(root=root, annFile=annFile)
         self.transform = A.Compose(
             transforms=[
-                A.LongestMaxSize(max_size=416),
+                A.LongestMaxSize(max_size=img_w),
                 A.PadIfNeeded(
-                    min_height=416,
-                    min_width=416,
+                    min_height=img_h,
+                    min_width=img_w,
                     border_mode=cv.BORDER_CONSTANT,
                     fill=0,
                 ),
@@ -104,22 +106,21 @@ def image_show(image: Image.Image, bboxes: List, labels: List):
 
 
 def yolo_collate_fn(batches: List[Any]) -> Tuple[torch.Tensor, List[torch.Tensor]]:
-    total_images = []
-    total_labels = []
+    images = []
+    labels = [] # 检测框的坐标信息 min_x, min_y, x_max, y_max, label
     for batch in batches:
-        image, bboxes, labels = batch
-        # image_show(image, bboxes, labels)
-        total_images.append(image)
+        image, bboxes, label = batch
+        # image_show(image, bboxes, label)
+        images.append(image)
         if len(bboxes) == 0:
-            bbox_and_label = torch.empty((0, 5))
+            bbox_and_label = np.empty((0, 5))
         else:
-            bboxes = torch.tensor(bboxes)
+            bboxes = np.array(bboxes)
             # xmin,ymin,width,height -> xmin,ymin,xmax,ymax
             bboxes[:, 2:4] = bboxes[:, 2:4] + bboxes[:, 0:2]
             # normalize bbox
-            bboxes = bboxes / 416
-            labels = torch.tensor(labels).unsqueeze(-1)
-            bbox_and_label = torch.cat((bboxes, labels), dim=1)
-        total_labels.append(bbox_and_label)
+            bboxes = bboxes / img_w
+            bbox_and_label = np.concatenate((bboxes, np.expand_dims(label, axis=1)), axis=1)
+        labels.append(torch.from_numpy(bbox_and_label))
 
-    return torch.stack(total_images, dim=0), total_labels
+    return torch.stack(images, dim=0), labels
