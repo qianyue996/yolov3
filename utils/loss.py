@@ -18,34 +18,33 @@ class YOLOLOSS:
         self.obj_ratio = 5
         self.cls_ratio = 1
 
-    def __call__(self, predicts: List[torch.Tensor], targets: List[torch.Tensor]):
-        loss = torch.zeros(1, device=self.device)
-        for num_layer, predict in enumerate(predicts):
-            y_true, noobj_mask, box_loss_scale = self.build_targets(
-                num_layer, predict, targets
-            )
-            noobj_mask, pred_boxes = self.get_ignore(
-                num_layer, predict, targets, noobj_mask
-            )
-            box_loss_scale = 2 - box_loss_scale
+    def __call__(self, num_layer, predict: torch.Tensor, targets: List[torch.Tensor]):
+        loss = 0
+        y_true, noobj_mask, box_loss_scale = self.build_targets(
+            num_layer, predict, targets
+        )
+        noobj_mask, pred_boxes = self.get_ignore(
+            num_layer, predict, targets, noobj_mask
+        )
+        box_loss_scale = 2 - box_loss_scale
 
-            obj_mask = y_true[..., 4] == 1
-            n = torch.sum(obj_mask)
+        obj_mask = y_true[..., 4] == 1
+        n = torch.sum(obj_mask)
 
-            if n != 0:
-                giou = self.box_giou(pred_boxes, y_true[..., :4])
-                loss_loc = (1 - giou)[obj_mask].mean()
+        if n != 0:
+            giou = self.box_giou(pred_boxes, y_true[..., :4])
+            loss_loc = (1 - giou)[obj_mask].mean()
 
-                pred_cls = predict[..., 5:][obj_mask]
-                targ_cls = y_true[..., 5:][obj_mask]
-                loss_cls = nn.BCEWithLogitsLoss(reduction="mean")(pred_cls, targ_cls)
-                loss += loss_loc * self.box_ratio + loss_cls * self.cls_ratio
+            pred_cls = predict[..., 5:][obj_mask]
+            targ_cls = y_true[..., 5:][obj_mask]
+            loss_cls = nn.BCEWithLogitsLoss(reduction="mean")(pred_cls, targ_cls)
+            loss += loss_loc * self.box_ratio + loss_cls * self.cls_ratio
 
-            conf = predict[..., 4]
-            loss_conf = nn.BCEWithLogitsLoss(reduction="none")(
-                conf, obj_mask.type_as(conf)
-            )[noobj_mask.bool() | obj_mask].mean()
-            loss += loss_conf * self.balance[num_layer] * self.obj_ratio
+        conf = predict[..., 4]
+        loss_conf = nn.BCEWithLogitsLoss(reduction="none")(
+            conf, obj_mask.type_as(conf)
+        )[noobj_mask.bool() | obj_mask].mean()
+        loss += loss_conf * self.balance[num_layer] * self.obj_ratio
 
         return loss
 

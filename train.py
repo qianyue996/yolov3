@@ -73,8 +73,13 @@ if __name__ == "__main__":
                 batch_x, batch_y = item
                 batch_x = batch_x.to(device)
                 batch_y = [i.to(device) for i in batch_y]
-                batch_output = model(batch_x)
-                loss = loss_fn(batch_output, batch_y)
+                outputs = model(batch_x)
+                
+                loss_all = 0
+                for l, output in enumerate(outputs):
+                    loss = loss_fn(l, output, batch_y)
+                    loss_value_all += loss
+                loss = loss_all
                 # loss = loss / batch_x.shape[0]
                 optimizer.zero_grad()
                 loss.backward()
