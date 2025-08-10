@@ -9,11 +9,11 @@ class YOLOLOSS:
     def __init__(self, model):
         self.device = next(model.parameters()).device
         self.stride = compute_stride(model, 416, self.device)
-        self.anchors = torch.tensor(model.anchors, device=self.device)
+        self.anchors = torch.tensor(model.anchors)
         self.anchors_mask = model.anchors_mask
         self.class_name = model.class_name
 
-        self.balance = [0.4, 1.0, 4]
+        self.balance = [4, 1.0, 0.4]
         self.box_ratio = 0.05
         self.obj_ratio = 5
         self.cls_ratio = 1
@@ -69,6 +69,7 @@ class YOLOLOSS:
             batch_target[:, [0, 2]] = target[:, [0, 2]] / size_w
             batch_target[:, [1, 3]] = target[:, [1, 3]] / size_h
             batch_target[:, 4] = target[:, 4]
+            batch_target = batch_target.cpu()
 
             iou = compute_iou(batch_target, anchors)
             best_anchors = torch.argmax(iou, dim=-1)
@@ -100,10 +101,10 @@ class YOLOLOSS:
 
     def get_ignore(self, num_layer, predict, targets, noobj_mask):
         bs = len(targets)
-        x = predict.sigmoid()[..., 0]
-        y = predict.sigmoid()[..., 1]
-        w = predict[..., 2]
-        h = predict[..., 3]
+        x = predict.sigmoid()[..., 0] * 2 - 0.5
+        y = predict.sigmoid()[..., 1] * 2 - 0.5
+        w = (predict[..., 2].sigmoid() * 2) ** 2
+        h = (predict[..., 3].sigmoid() * 2) ** 2
         size_w = predict.shape[2]
         size_h = predict.shape[3]
         grid_x = (
@@ -122,7 +123,7 @@ class YOLOLOSS:
             .type_as(x)
         )
 
-        scaled_anchors_l = np.array(self.anchors)[self.anchors_mask[num_layer]]
+        scaled_anchors_l = self.anchors[self.anchors_mask[num_layer]]
         anchor_w = (
             torch.Tensor(scaled_anchors_l)
             .index_select(1, torch.LongTensor([0]))
@@ -139,8 +140,8 @@ class YOLOLOSS:
 
         pred_boxes_x = torch.unsqueeze(x + grid_x, -1)
         pred_boxes_y = torch.unsqueeze(y + grid_y, -1)
-        pred_boxes_w = torch.unsqueeze(torch.exp(w) * anchor_w, -1)
-        pred_boxes_h = torch.unsqueeze(torch.exp(h) * anchor_h, -1)
+        pred_boxes_w = torch.unsqueeze(w * anchor_w, -1)
+        pred_boxes_h = torch.unsqueeze(w * anchor_h, -1)
         pred_boxes = torch.cat(
             [pred_boxes_x, pred_boxes_y, pred_boxes_w, pred_boxes_h], dim=-1
         )
@@ -149,8 +150,8 @@ class YOLOLOSS:
             pred_boxes_for_ignore = pred_boxes[b].view(-1, 4)
             if len(targets[b]) > 0:
                 batch_target = torch.zeros_like(targets[b])
-                batch_target[:, [0, 2]] = targets[b][:, [0, 2]] * size_w
-                batch_target[:, [1, 3]] = targets[b][:, [1, 3]] * size_h
+                batch_target[:, [0, 2]] = targets[b][:, [0, 2]] / size_w
+                batch_target[:, [1, 3]] = targets[b][:, [1, 3]] / size_h
                 batch_target = batch_target[:, :4].type_as(x)
                 anch_ious = compute_iou(batch_target, pred_boxes_for_ignore)
                 anch_ious_max, _ = torch.max(anch_ious, dim=0)

@@ -3,6 +3,7 @@ import torch
 import numpy as np
 import random
 from .loss import YOLOLOSS
+from .nms import non_max_suppression
 
 
 def load_category_config(conf_path: str):
@@ -26,4 +27,10 @@ def worker_init_fn(worker_id):
     random.seed(seed)
 
 
-__all__ = ["load_category_config", "YOLOLOSS", "set_seed", "worker_init_fn"]
+__all__ = [
+    "load_category_config",
+    "YOLOLOSS",
+    "set_seed",
+    "worker_init_fn",
+    "non_max_suppression",
+]

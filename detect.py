@@ -2,25 +2,34 @@ import cv2 as cv
 import mss
 import numpy as np
 import torch
-import yaml
+from loguru import logger
+import albumentations as A
+from PIL import Image
 
-from utils.general import non_max_suppression
+from utils import non_max_suppression
 
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
-# device = "cpu"
 imgW = 416
 imgH = 416
 prev_boxes = []
 
-model = torch.load(r"0.9517_best_3.pt", map_location=device, weights_only=False)[
-    "model"
-].to(device)
+model = torch.load(r"2000_0.0102.pth", map_location=device, weights_only=False)
+class_name = model.class_name
 model.eval()
 
-with open("config/datasets.yaml", encoding="ascii", errors="ignore") as f:
-    cfg = yaml.safe_load(f)
-class_names = cfg["voc"]["class_name"]
+transform = A.Compose(
+    transforms=[
+        A.Resize(imgW, imgH),
+        A.HorizontalFlip(p=0.5),
+        A.Normalize(
+            mean=(0.4711, 0.4475, 0.4080),
+            std=(0.2378, 0.2329, 0.2361),
+            max_pixel_value=255.0,
+        ),
+        A.ToTensorV2(),
+    ]
+)
 
 
 def draw_box(image, results):
@@ -88,7 +97,7 @@ def draw_box(image, results):
         cv.rectangle(image, (x1, y1), (x2, y2), (0, 0, 255), thickness=2)
         cv.putText(
             image,
-            f"{score:.2f} {class_names[label]}",
+            f"{score:.2f} {class_name[label]}",
             (x1, y1 - 5),
             cv.FONT_HERSHEY_SIMPLEX,
             0.5,
@@ -113,66 +122,107 @@ def transport(image):
     return nImage, _input
 
 
-def detect(image, x):
-    outputs = model(x)
+def detect(image):
+    outputs = model(image)
+    outputs = torch.cat(
+        [
+            outputs[0].reshape(1, -1, 85),
+            outputs[1].reshape(1, -1, 85),
+            outputs[2].reshape(1, -1, 85),
+        ],
+        dim=1,
+    )
+
     results = non_max_suppression(
         outputs, conf_thres=0.7, iou_thres=0.40, agnostic=False, max_det=300
     )
     draw_box(image, results[0])
 
 
+def camera_detect():
+    cap = cv.VideoCapture(0)
+    while True:
+        ret, img = cap.read()
+        if not ret:
+            logger.error("无法获取帧！")
+            break
+        image = Image.fromarray(img).convert("RGB")
+        input_image = transform(image=np.array(image))["image"]
+        detect(input_image)
+        cv.namedWindow("Camera", cv.WINDOW_NORMAL)
+        cv.imshow("Camera", img)
+        if cv.waitKey(1) == ord("q"):
+            break
+    # 释放资源
+    cap.release()
+    cv.destroyAllWindows()
+    pass
+
+
+def image_detect():
+    test_img = r"img/street.jpg"
+    image = Image.open(test_img)
+    input_image = transform(image=np.array(image))["image"]
+    detect(input_image.unsqueeze(0))
+    pass
+
+
 if __name__ == "__main__":
-    is_cap = True
-    is_img = False
-    is_screenshot = False
-
     with torch.no_grad():
-        if is_cap:
-            cap = cv.VideoCapture(0)
-            # cap.set(cv.CAP_PROP_FRAME_WIDTH, 640)
-            # cap.set(cv.CAP_PROP_FRAME_HEIGHT, 480)
-            while True:
-                ret, img = cap.read()
-                if not ret:
-                    print("无法获取帧！")
-                    break
-                img, _input = transport(img)  # to tensor
-                detect(img, _input)  # outputict
-                cv.namedWindow("Camera", cv.WINDOW_NORMAL)
-                cv.imshow("Camera", img)
-                if cv.waitKey(1) == ord("q"):
-                    break
-            # 释放资源
-            cap.release()
-            cv.destroyAllWindows()
-        elif is_img:
-            test_img = r"img/street.jpg"
-            img = cv.imread(test_img)
-            img, _input = transport(img)  # to tensor
-            detect(img, _input)  # outputict
-            cv.imwrite("output.jpg", img)
-            print("successfully!!")
-        elif is_screenshot:
-            screen_width, screen_height = 2880, 1800
-            size_w, size_h = 640, 640
+        # camera_detect()
+        image_detect()
 
-            # 定义截取的区域
-            monitor = {
-                "top": screen_height // 2 - size_h // 2,  # y坐标
-                "left": screen_width // 2 - size_w // 2,  # x坐标
-                "width": size_w,  # 宽度
-                "height": size_h,  # 高度
-            }
-            while True:
-                with mss.mss() as sct:
-                    # 截图
-                    screenshot = sct.grab(monitor)
-                    img = np.array(screenshot)[:, :, :3]  # BGRA -> BGR
-                    img, _input = transport(img)
-                    detect(img, _input)
-                    # 展示
-                    cv.namedWindow("Crop Screenshot", cv.WINDOW_NORMAL)
-                    cv.imshow("Crop Screenshot", img)
-                    if cv.waitKey(1) == ord("q"):
-                        break
-            cv.destroyAllWindows()
+    # is_cap = True
+    # is_img = False
+    # is_screenshot = False
+
+    # with torch.no_grad():
+    #     if is_cap:
+    #         cap = cv.VideoCapture(0)
+    #         # cap.set(cv.CAP_PROP_FRAME_WIDTH, 640)
+    #         # cap.set(cv.CAP_PROP_FRAME_HEIGHT, 480)
+    #         while True:
+    #             ret, img = cap.read()
+    #             if not ret:
+    #                 print("无法获取帧！")
+    #                 break
+    #             img, _input = transport(img)  # to tensor
+    #             detect(img, _input)  # outputict
+    #             cv.namedWindow("Camera", cv.WINDOW_NORMAL)
+    #             cv.imshow("Camera", img)
+    #             if cv.waitKey(1) == ord("q"):
+    #                 break
+    #         # 释放资源
+    #         cap.release()
+    #         cv.destroyAllWindows()
+    #     elif is_img:
+    #         test_img = r"img/street.jpg"
+    #         img = cv.imread(test_img)
+    #         img, _input = transport(img)  # to tensor
+    #         detect(img, _input)  # outputict
+    #         cv.imwrite("output.jpg", img)
+    #         print("successfully!!")
+    #     elif is_screenshot:
+    #         screen_width, screen_height = 2880, 1800
+    #         size_w, size_h = 640, 640
+
+    #         # 定义截取的区域
+    #         monitor = {
+    #             "top": screen_height // 2 - size_h // 2,  # y坐标
+    #             "left": screen_width // 2 - size_w // 2,  # x坐标
+    #             "width": size_w,  # 宽度
+    #             "height": size_h,  # 高度
+    #         }
+    #         while True:
+    #             with mss.mss() as sct:
+    #                 # 截图
+    #                 screenshot = sct.grab(monitor)
+    #                 img = np.array(screenshot)[:, :, :3]  # BGRA -> BGR
+    #                 img, _input = transport(img)
+    #                 detect(img, _input)
+    #                 # 展示
+    #                 cv.namedWindow("Crop Screenshot", cv.WINDOW_NORMAL)
+    #                 cv.imshow("Crop Screenshot", img)
+    #                 if cv.waitKey(1) == ord("q"):
+    #                     break
+    #         cv.destroyAllWindows()
