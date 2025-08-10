@@ -34,9 +34,9 @@ if __name__ == "__main__":
         [373, 326],
     ]
     anchors_mask = [[0, 1, 2], [3, 4, 5], [6, 7, 8]]
-    root = r"D:\Python\datasets\coco2014\train2014"
+    root = r"/mnt/nfs/ai_models/coco2014/train2014"
     annotation_file = (
-        r"D:\Python\datasets\coco2014\annotations\instances_train2014.json"
+        r"/mnt/nfs/ai_models/coco2014/annotations/instances_train2014.json"
     )
     dataset = YOLODataset(root=root, annFile=annotation_file)
     dataloader = DataLoader(
@@ -74,7 +74,7 @@ if __name__ == "__main__":
                 batch_x = batch_x.to(device)
                 batch_y = [i.to(device) for i in batch_y]
                 outputs = model(batch_x)
-                
+
                 loss_all = 0
                 for l, output in enumerate(outputs):
                     loss = loss_fn(l, output, batch_y)
