@@ -75,11 +75,11 @@ class YOLOLOSS:
         for b, target in enumerate(targets):
             if len(target) == 0:
                 continue
-            batch_target = torch.zeros_like(target)
+            batch_target = torch.zeros_like(target, device=self.device)
             batch_target[:, [0, 2]] = target[:, [0, 2]] * size_w
             batch_target[:, [1, 3]] = target[:, [1, 3]] * size_h
             batch_target[:, 4] = target[:, 4]
-            batch_target = batch_target.cpu()
+            batch_target = batch_target
 
             iou = compute_iou(batch_target, anchors)
             best_anchors = torch.argmax(iou, dim=-1)
@@ -153,7 +153,7 @@ class YOLOLOSS:
         for b in range(bs):
             pred_boxes_for_ignore = pred_boxes[b].view(-1, 4)
             if len(targets[b]) > 0:
-                batch_target = torch.zeros_like(targets[b])
+                batch_target = torch.zeros_like(targets[b], device=self.device)
                 batch_target[:, [0, 2]] = targets[b][:, [0, 2]] * size_w
                 batch_target[:, [1, 3]] = targets[b][:, [1, 3]] * size_h
                 batch_target = batch_target[:, :4].type_as(x)
