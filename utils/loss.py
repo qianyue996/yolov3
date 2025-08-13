@@ -54,9 +54,9 @@ class YOLOLOSS:
                 loss_cls = nn.BCEWithLogitsLoss(reduction="mean")(pred_cls, targ_cls)
                 loss += loss_loc * self.box_ratio + loss_cls * self.cls_ratio
 
-            loss_conf = nn.BCEWithLogitsLoss(reduction="mean")(
+            loss_conf = nn.BCEWithLogitsLoss(reduction="none")(
                 pred_conf, obj_mask.type_as(pred_conf)
-            )[noobj_mask.bool() | obj_mask]
+            )[noobj_mask.bool() | obj_mask].mean()
             loss += loss_conf * self.balance[l] * self.obj_ratio
 
         return loss
