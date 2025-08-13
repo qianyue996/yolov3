@@ -113,14 +113,14 @@ class YOLOLOSS:
         w = (predict[..., 2].sigmoid() * 2) ** 2
         h = (predict[..., 3].sigmoid() * 2) ** 2
         grid_x = (
-            torch.linspace(0, size_w - 1)
+            torch.linspace(0, size_w - 1, size_w)
             .repeat(size_h, 1)
             .repeat(int(bs * len(anchors_mask)), 1, 1)
             .view(x.shape)
             .type_as(x)
         )
         grid_y = (
-            torch.linspace(0, size_h - 1)
+            torch.linspace(0, size_h - 1, size_h)
             .repeat(size_w, 1)
             .t()
             .repeat(int(bs * len(anchors_mask)), 1, 1)
