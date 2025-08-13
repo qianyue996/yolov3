@@ -49,13 +49,13 @@ def make_last_layers(filters_list, in_filters, out_filter):
 
 
 class YoloBody(nn.Module):
-    def __init__(self, anchors, anchors_mask, class_name, pretrained=False):
+    def __init__(self, anchors, anchors_mask, class_names, pretrained=False):
         super().__init__()
         # 注册基本参数
         self.anchors = anchors
         self.anchors_mask = anchors_mask
-        self.class_name = class_name
-        self.num_classes = len(class_name)
+        self.class_names = class_names
+        self.num_classes = len(class_names)
         # ---------------------------------------------------#
         #   生成darknet53的主干模型
         #   获得三个有效特征层，他们的shape分别是：

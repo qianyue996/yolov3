@@ -6,7 +6,7 @@ from .loss import YOLOLOSS
 from .nms import non_max_suppression
 
 
-def load_category_config(conf_path: str):
+def load_classes(conf_path: str):
     with open(conf_path, "r") as f:
         return yaml.safe_load(f)
 
@@ -28,7 +28,7 @@ def worker_init_fn(worker_id):
 
 
 __all__ = [
-    "load_category_config",
+    "load_classes",
     "YOLOLOSS",
     "set_seed",
     "worker_init_fn",

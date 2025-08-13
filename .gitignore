@@ -2,7 +2,7 @@
 .vscode
 __pycache__
 runs
-data
+config/
 .venv
 .gradio
 flagged

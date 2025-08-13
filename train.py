@@ -9,7 +9,7 @@ from torch.utils.tensorboard.writer import SummaryWriter
 
 from nets.yolov3 import YoloBody
 
-from utils import load_category_config, YOLOLOSS, set_seed, worker_init_fn
+from utils import load_classes, YOLOLOSS, set_seed, worker_init_fn
 from utils.dataloader import YOLODataset, yolo_collate_fn
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -21,7 +21,7 @@ if __name__ == "__main__":
     lr = 0.01
     save_path = Path("weights")
     os.makedirs(save_path, exist_ok=True)
-    class_conf = load_category_config("config/yolo_conf.yaml")
+    class_names = load_classes("data/coco_names.yaml")
     anchors = [
         [10, 13],
         [16, 30],
@@ -34,11 +34,7 @@ if __name__ == "__main__":
         [373, 326],
     ]
     anchors_mask = [[0, 1, 2], [3, 4, 5], [6, 7, 8]]
-    root = r"/mnt/nfs/ai_models/coco2014/train2014"
-    annotation_file = (
-        r"/mnt/nfs/ai_models/coco2014/annotations/instances_train2014.json"
-    )
-    dataset = YOLODataset(root=root, annFile=annotation_file)
+    dataset = dataset = YOLODataset("coco_train.txt")
     dataloader = DataLoader(
         dataset=dataset,
         batch_size=batch_size,
@@ -49,7 +45,7 @@ if __name__ == "__main__":
         collate_fn=yolo_collate_fn,
     )
     model = YoloBody(
-        anchors=anchors, anchors_mask=anchors_mask, class_name=class_conf["coco"]
+        anchors=anchors, anchors_mask=anchors_mask, class_names=class_names
     ).to(device)
     optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.99, weight_decay=1e-4)
     # optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
@@ -75,13 +71,10 @@ if __name__ == "__main__":
                 batch_y = [i.to(device) for i in batch_y]
                 outputs = model(batch_x)
 
-                loss_all = torch.tensor(0.0, device=device)
-                for l, output in enumerate(outputs):
-                    loss = loss_fn(l, output, batch_y)
-                    loss_all += loss
-                loss = loss_all
+                loss = loss_fn(outputs, batch_y)
                 # loss = loss / batch_x.shape[0]
                 optimizer.zero_grad()
+                assert isinstance(loss, torch.Tensor)
                 loss.backward()
                 optimizer.step()
 

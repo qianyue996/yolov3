@@ -8,8 +8,8 @@ import math
 class YOLOLOSS:
     def __init__(self, model):
         self.device = next(model.parameters()).device
-        self.stride = compute_stride(model, 416, self.device)
-        self.anchors = torch.tensor(model.anchors).cpu()
+        self.stride = [8, 16, 32]
+        self.anchors = torch.tensor(model.anchors)
         self.anchors_mask = model.anchors_mask
         self.class_name = model.class_name
 
@@ -24,50 +24,47 @@ class YOLOLOSS:
         result = (result <= t_max).float() * result + (result > t_max).float() * t_max
         return result
 
-    def MSELoss(self, pred, target):
-        return torch.pow(pred - target, 2)
-
-    def BCELoss(self, pred, target):
-        epsilon = 1e-7
-        pred = self.clip_by_tensor(pred, epsilon, 1.0 - epsilon)
-        output = -target * torch.log(pred) - (1.0 - target) * torch.log(1.0 - pred)
-        return output
-
-    def __call__(self, num_layer, predict: torch.Tensor, targets: List[torch.Tensor]):
+    def __call__(self, predicts: List[torch.Tensor], targets: List[torch.Tensor]):
         loss = 0
-        y_true, noobj_mask, box_loss_scale = self.build_targets(
-            num_layer, predict, targets
-        )
-        noobj_mask, pred_boxes = self.get_ignore(
-            num_layer, predict, targets, noobj_mask
-        )
-        box_loss_scale = 2 - box_loss_scale
+        for l, pred in enumerate(predicts):
+            bs = pred.shape[0]
+            size_w = pred.shape[2]
+            size_h = pred.shape[3]
+            anchors_mask = self.anchors_mask[l]
 
-        obj_mask = y_true[..., 4] == 1
-        n = torch.sum(obj_mask)
+            pred_cls = pred[..., 5:]
+            pred_conf = pred[..., 4]
+            y_true, noobj_mask, box_loss_scale = self.build_targets(
+                l, bs, size_w, size_h, anchors_mask, pred, targets
+            )
+            noobj_mask, pred_boxes = self.get_ignore(
+                l, bs, size_w, size_h, anchors_mask, pred, targets, noobj_mask
+            )
+            box_loss_scale = 2 - box_loss_scale
 
-        if n != 0:
-            giou = self.box_giou(pred_boxes, y_true[..., :4])
-            loss_loc = ((1 - giou)*box_loss_scale)[obj_mask].mean()
+            obj_mask = y_true[..., 4] == 1
+            n = torch.sum(obj_mask)
 
-            pred_cls = predict[..., 5:][obj_mask]
-            targ_cls = y_true[..., 5:][obj_mask]
-            loss_cls = nn.BCEWithLogitsLoss(reduction="mean")(pred_cls, targ_cls)
-            loss += loss_loc * self.box_ratio + loss_cls * self.cls_ratio
+            if n != 0:
+                giou = self.box_giou(pred_boxes, y_true[..., :4])
+                loss_loc = ((1 - giou) * box_loss_scale)[obj_mask].mean()
 
-        conf = predict[..., 4][noobj_mask.bool() | obj_mask]
-        t_conf = obj_mask.type_as(conf)[noobj_mask.bool() | obj_mask]
-        loss_conf = nn.BCEWithLogitsLoss(reduction="mean")(conf, t_conf)
-        loss += loss_conf * self.balance[num_layer] * self.obj_ratio
+                pred_cls = pred[..., 5:][obj_mask]
+                targ_cls = y_true[..., 5:][obj_mask]
+                loss_cls = nn.BCEWithLogitsLoss(reduction="mean")(pred_cls, targ_cls)
+                loss += loss_loc * self.box_ratio + loss_cls * self.cls_ratio
+
+            loss_conf = nn.BCEWithLogitsLoss(reduction="mean")(
+                pred_conf, obj_mask.type_as(pred_conf)
+            )[noobj_mask.bool() | obj_mask]
+            loss += loss_conf * self.balance[l] * self.obj_ratio
 
         return loss
 
-    def build_targets(self, num_layer, predict, targets):
+    def build_targets(
+        self, num_layer, bs, size_w, size_h, anchors_mask, predict, targets
+    ):
         y_true = torch.zeros_like(predict)
-        bs = len(targets)
-        anchors_mask = self.anchors_mask[num_layer]
-        size_w = predict.shape[2]
-        size_h = predict.shape[3]
         noobj_mask = torch.ones(
             bs, len(anchors_mask), size_h, size_w, device=self.device
         )
@@ -108,49 +105,47 @@ class YOLOLOSS:
 
         return y_true, noobj_mask, box_loss_scale
 
-    def get_ignore(self, num_layer, predict, targets, noobj_mask):
-        bs = len(targets)
+    def get_ignore(
+        self, num_layer, bs, size_w, size_h, anchors_mask, predict, targets, noobj_mask
+    ):
         x = predict.sigmoid()[..., 0] * 2 - 0.5
         y = predict.sigmoid()[..., 1] * 2 - 0.5
         w = (predict[..., 2].sigmoid() * 2) ** 2
         h = (predict[..., 3].sigmoid() * 2) ** 2
-        size_w = predict.shape[2]
-        size_h = predict.shape[3]
         grid_x = (
-            torch.linspace(0, size_w - 1, size_w)
+            torch.linspace(0, size_w - 1)
             .repeat(size_h, 1)
-            .repeat(int(bs * len(self.anchors_mask[num_layer])), 1, 1)
+            .repeat(int(bs * len(anchors_mask)), 1, 1)
             .view(x.shape)
             .type_as(x)
         )
         grid_y = (
-            torch.linspace(0, size_h - 1, size_h)
+            torch.linspace(0, size_h - 1)
             .repeat(size_w, 1)
             .t()
-            .repeat(int(bs * len(self.anchors_mask[num_layer])), 1, 1)
+            .repeat(int(bs * len(anchors_mask)), 1, 1)
             .view(y.shape)
             .type_as(x)
         )
 
-        scaled_anchors_l = self.anchors[self.anchors_mask[num_layer]]
+        scaled_anchors_l = self.anchors[anchors_mask]
         anchor_w = (
-            torch.Tensor(scaled_anchors_l)
-            .index_select(1, torch.LongTensor([0]))
-            .type_as(x)
+            scaled_anchors_l[:, 0]
+            .repeat(bs, 1)
+            .repeat(1, 1, size_w * size_h)
+            .view(w.shape)
         )
         anchor_h = (
-            torch.Tensor(scaled_anchors_l)
-            .index_select(1, torch.LongTensor([1]))
-            .type_as(x)
+            scaled_anchors_l[:, 1]
+            .repeat(bs, 1)
+            .repeat(1, 1, size_w * size_h)
+            .view(h.shape)
         )
-
-        anchor_w = anchor_w.repeat(bs, 1).repeat(1, 1, size_w * size_h).view(w.shape)
-        anchor_h = anchor_h.repeat(bs, 1).repeat(1, 1, size_w * size_h).view(h.shape)
 
         pred_boxes_x = torch.unsqueeze(x + grid_x, -1)
         pred_boxes_y = torch.unsqueeze(y + grid_y, -1)
         pred_boxes_w = torch.unsqueeze(w * anchor_w, -1)
-        pred_boxes_h = torch.unsqueeze(w * anchor_h, -1)
+        pred_boxes_h = torch.unsqueeze(h * anchor_h, -1)
         pred_boxes = torch.cat(
             [pred_boxes_x, pred_boxes_y, pred_boxes_w, pred_boxes_h], dim=-1
         )

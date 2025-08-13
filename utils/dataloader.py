@@ -2,97 +2,98 @@ from typing import List, Tuple, Any
 import torch
 import cv2 as cv
 import numpy as np
-import albumentations as A
+from PIL import ImageDraw, Image, ImageFont
+import copy
+import torchvision.transforms as T
 from torch.utils.data.dataset import Dataset
-import torchvision.datasets.coco as coco
-from PIL import ImageDraw, Image
-from utils import load_category_config
 
-class_names = load_category_config("config/yolo_conf.yaml")
+from utils import load_classes
+
+class_names = load_classes("data/coco_names.yaml")
+
+try:
+    font = ImageFont.truetype("arial.ttf", 15)
+except IOError:
+    # 如果找不到 Arial，可以尝试其他字体或使用默认字体
+    font = ImageFont.load_default()
+
 img_w = 416
 img_h = 416
 
 
 class YOLODataset(Dataset):
-    def __init__(self, root: str, annFile: str):
+    def __init__(self, labels_path: str):
         """
         Args:
             root (string): 图片存放路径
             annFile (string): 标签文件存放路径
         """
         super().__init__()
-        self.dataset = coco.CocoDetection(root=root, annFile=annFile)
-        self.transform = A.Compose(
-            transforms=[
-                A.LongestMaxSize(max_size=img_w),
-                A.PadIfNeeded(
-                    min_height=img_h,
-                    min_width=img_w,
-                    border_mode=cv.BORDER_CONSTANT,
-                    fill=0,
-                ),
-                A.HorizontalFlip(p=0.5),
-                A.Normalize(
-                    mean=(0.4711, 0.4475, 0.4080),
-                    std=(0.2378, 0.2329, 0.2361),
-                    max_pixel_value=255.0,
-                ),
-                A.ToTensorV2(),
-            ],
-            bbox_params=A.BboxParams(format="coco"),
-        )
-
-        # 构建原生类名与类别id映射表
-        self.id2name = {
-            i["id"]: i["name"] for i in self.dataset.coco.dataset["categories"]
-        }
-
-        # 外部类别名称列表
-        self.class_name = class_names["coco"]
+        with open(labels_path, "r") as f:
+            self.dataset = f.readlines()
 
     def __len__(self):
         return len(self.dataset)
 
-    def __getitem__(self, index: int) -> Tuple[Image.Image, List[float], List[int]]:
+    def __getitem__(self, index):
         """
-
         Returns:
-            array: 图像的numpy array数组
-            bboxes List[List[float]]: 检测框的坐标信息 min_x, min_y, width, height
-            labels List[int]: 检测框的类别信息
+            image (Image.Image): 图片
+            targets (List): 检测框的类别信息 x_min, y_min, x_max, y_max, label
         """
-        image, infos = self.dataset[index]
-        info = [
-            {
-                "bbox": element["bbox"],
-                "label": self.class_name.index(self.id2name[element["category_id"]]),
-            }
-            for element in infos
-        ]
-        transform_result = self.transform(
-            image=np.array(image), bboxes=[i["bbox"] for i in info]
+        items = self.dataset[index].strip().split(" ")
+        image = Image.open(items[0]).convert("RGB")
+
+        labels = []
+        for item in items[1:]:
+            bbox_and_label = []
+            item = item.split(",")
+            bbox_and_label.extend(list(map(float, item)))
+            labels.append(bbox_and_label)
+
+        np_targets = np.array(labels)
+
+        return image, np_targets
+
+
+class TransFormer:
+    def __init__(self) -> None:
+        self.transform = T.Compose(
+            [
+                T.Resize((img_w, img_h)),
+                T.ToTensor(),
+                T.Normalize(
+                    mean=(0.4711, 0.4475, 0.4080), std=(0.2378, 0.2329, 0.2361)
+                ),
+            ]
         )
 
-        return (
-            transform_result["image"],
-            transform_result["bboxes"],
-            [i["label"] for i in info],
-        )
+    def __call__(self, image: Image.Image, targets: np.ndarray):
+        scaled_factor_w = image.size[0] / img_w
+        scaled_factor_h = image.size[1] / img_h
+
+        image = self.transform(image)
+
+        targets[:, [0, 2]] = targets[:, [0, 2]] / scaled_factor_w
+        targets[:, [1, 3]] = targets[:, [1, 3]] / scaled_factor_h
+
+        return image, torch.from_numpy(targets)
 
 
-def image_show(image: Image.Image, bboxes: List, labels: List):
-    image = Image.fromarray(image)
+transform = TransFormer()
+
+
+def image_show(image: Image.Image, targets: np.ndarray):
     image_handler = ImageDraw.ImageDraw(image)
 
-    for i, bbox in enumerate(bboxes):
-        label_text = f'{class_names["coco"]["class_name"][labels[i]]} {labels[i]}'
-        x_min, y_min, width, height = list(map(int, bbox))
+    for label in targets:
+        class_id = int(label[4])
+        label_text = f"{class_names[class_id]} {class_id}"
+        x_min, y_min, x_max, y_max = list(map(int, label[:4]))
         text_x = x_min
         text_y = y_min - 15
-        image_handler.rectangle(
-            ((x_min, y_min), (x_min + width, y_min + height)), outline="red"
-        )
-        image_handler.text((text_x, text_y), label_text, fill="green")
+        image_handler.rectangle(((x_min, y_min), (x_max, y_max)), outline="red")
+        image_handler.text((text_x, text_y), label_text, fill="green", font=font)
 
     img_np_rgb = np.array(image)
     img_np_bgr = cv.cvtColor(img_np_rgb, cv.COLOR_RGB2BGR)
@@ -109,20 +110,10 @@ def yolo_collate_fn(batches: List[Any]) -> Tuple[torch.Tensor, List[torch.Tensor
     images = []
     labels = []  # 检测框的坐标信息 min_x, min_y, x_max, y_max, label
     for batch in batches:
-        image, bboxes, label = batch
-        # image_show(image, bboxes, label)
+        image, label = batch
+        # image_show(image, label)
+        image, label = transform(image, label)
         images.append(image)
-        if len(bboxes) == 0:
-            bbox_and_label = np.empty((0, 5))
-        else:
-            bboxes = np.array(bboxes)
-            # xmin,ymin,width,height -> xmin,ymin,xmax,ymax
-            bboxes[:, 2:4] = bboxes[:, 2:4] + bboxes[:, 0:2]
-            # normalize bbox
-            bboxes = bboxes / img_w
-            bbox_and_label = np.concatenate(
-                (bboxes, np.expand_dims(label, axis=1)), axis=1
-            )
-        labels.append(torch.from_numpy(bbox_and_label))
+        labels.append(label)
 
     return torch.stack(images, dim=0), labels
