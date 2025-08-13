@@ -11,7 +11,7 @@ class YOLOLOSS:
         self.stride = [8, 16, 32]
         self.anchors = torch.tensor(model.anchors)
         self.anchors_mask = model.anchors_mask
-        self.class_name = model.class_name
+        self.class_name = model.class_names
 
         self.balance = [4, 1.0, 0.4]
         self.box_ratio = 0.05
