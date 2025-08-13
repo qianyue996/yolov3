@@ -76,8 +76,8 @@ class TransFormer:
 
         targets[:, [0, 2]] = targets[:, [0, 2]] / scaled_factor_w
         targets[:, [1, 3]] = targets[:, [1, 3]] / scaled_factor_h
-        targets = targets[:, [0, 2]] / img_w
-        targets = targets[:, [1, 3]] / img_h
+        targets[:, [0, 2]] = targets[:, [0, 2]] / img_w
+        targets[:, [1, 3]] = targets[:, [1, 3]] / img_h
 
         return image, torch.from_numpy(targets)
 
