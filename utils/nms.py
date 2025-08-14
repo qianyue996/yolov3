@@ -19,8 +19,13 @@ def non_max_suppression(
 
     device = prediction.device
 
-    bbox = prediction[..., :4]
-    conf = prediction[..., 4]
-    class_probs = prediction[..., 5:]
+    bbox = prediction[..., :4].sigmoid()
+    conf = prediction[..., 4].sigmoid()
+    class_probs = prediction[..., 5:].sigmoid()
+
+    conf = conf.unsqueeze(1) * class_probs
+    
+    xy = bbox[:, :2]*2 - 9.5
+    wh = (bbox[:, 2:4]*2)**2
 
     return 1

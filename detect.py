@@ -1,36 +1,38 @@
 import cv2 as cv
 import mss
+import torchvision.transforms as T
 import numpy as np
 import torch
 from loguru import logger
-import albumentations as A
 from PIL import Image
 
 from utils import non_max_suppression
 
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
-imgW = 416
-imgH = 416
+img_w = 416
+img_h = 416
 prev_boxes = []
 
-model = torch.load(r"checkpoint.pth", map_location=device, weights_only=False)
-class_name = model.class_name
+model = torch.load(r"53000_0.3136.pth", map_location=device, weights_only=False)
+class_name = model.class_names
 model.eval()
 
-transform = A.Compose(
-    transforms=[
-        A.Resize(imgW, imgH),
-        A.HorizontalFlip(p=0.5),
-        A.Normalize(
-            mean=(0.4711, 0.4475, 0.4080),
-            std=(0.2378, 0.2329, 0.2361),
-            max_pixel_value=255.0,
+
+resize = T.Resize((img_w, img_h))
+to_tensor = T.Compose(
+    [
+        T.ToTensor(),
+        T.Normalize(
+            mean=(0.4711, 0.4475, 0.4080), std=(0.2378, 0.2329, 0.2361)
         ),
-        A.ToTensorV2(),
     ]
 )
+def transform(image: Image.Image):
+    resized_image = resize(image)
+    to_tensor_image = to_tensor(resized_image)
 
+    return resized_image, to_tensor_image
 
 def draw_box(image, results):
     global prev_boxes
@@ -112,16 +114,6 @@ def normalizeData(images):
     images = (images.astype(np.float32) / 255.0).transpose(0, 3, 1, 2)
     return images
 
-
-def transport(image):
-    nImage = cv.resize(image, (imgW, imgH), interpolation=cv.INTER_AREA)
-
-    image = cv.cvtColor(nImage, cv.COLOR_BGR2RGB)
-    image = normalizeData(image)
-    _input = torch.tensor(image).to(device)
-    return nImage, _input
-
-
 def detect(image):
     outputs = model(image)
     outputs = torch.cat(
@@ -134,7 +126,7 @@ def detect(image):
     )
 
     results = non_max_suppression(
-        outputs, conf_thres=0.7, iou_thres=0.40, agnostic=False, max_det=300
+        outputs
     )
     draw_box(image, results[0])
 
@@ -162,8 +154,8 @@ def camera_detect():
 def image_detect():
     test_img = r"img/street.jpg"
     image = Image.open(test_img)
-    input_image = transform(image=np.array(image))["image"]
-    detect(input_image.unsqueeze(0))
+    resized_image, input_image = transform(image)
+    detect(input_image.unsqueeze(0).to(device))
     pass
 
 
