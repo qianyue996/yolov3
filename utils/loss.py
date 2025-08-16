@@ -30,7 +30,7 @@ class YOLOLOSS:
                 bs, size_w, size_h, anchors_mask, pred, targets
             )
             noobj_mask, pred_boxes = self.get_ignore(
-                l, bs, size_w, size_h, anchors_mask, pred, targets, noobj_mask
+                bs, size_w, size_h, anchors_mask, pred, targets, noobj_mask
             )
             box_loss_scale = 2 - box_loss_scale
 
@@ -71,7 +71,11 @@ class YOLOLOSS:
             batch_target[:, [0, 2]] = target[:, [0, 2]] * size_w
             batch_target[:, [1, 3]] = target[:, [1, 3]] * size_h
             batch_target[:, 4] = target[:, 4]
-            batch_target = batch_target
+            x = ((batch_target[:, 0] + batch_target[:, 2]) / 2).unsqueeze(-1)
+            y = ((batch_target[:, 1] + batch_target[:, 3]) / 2).unsqueeze(-1)
+            w = (batch_target[:, 2] - batch_target[:, 0]).unsqueeze(-1)
+            h = (batch_target[:, 3] - batch_target[:, 1]).unsqueeze(-1)
+            batch_target = torch.cat([x, y, w, h], dim=1)
 
             iou = compute_iou(batch_target, anchors)
             best_anchors = torch.argmax(iou, dim=-1)
@@ -98,14 +102,14 @@ class YOLOLOSS:
         return y_true, noobj_mask, box_loss_scale
 
     def get_ignore(
-        self, num_layer, bs, size_w, size_h, anchors_mask, predict, targets, noobj_mask
+        self, bs, size_w, size_h, anchors_mask, predict, targets, noobj_mask
     ):
         x = predict.sigmoid()[..., 0] * 2 - 0.5
         y = predict.sigmoid()[..., 1] * 2 - 0.5
         w = (predict[..., 2].sigmoid() * 2) ** 2
         h = (predict[..., 3].sigmoid() * 2) ** 2
-        grid_x = torch.arange(size_w).repeat(size_h, 1)
-        grid_y = torch.arange(size_h).unsqueeze(1).repeat(1, size_w)
+        grid_x = torch.arange(size_w, device=self.device).repeat(size_h, 1)
+        grid_y = torch.arange(size_h, device=self.device).unsqueeze(1).repeat(1, size_w)
 
         scaled_anchors_l = self.anchors[anchors_mask]
         anchor_w = (
@@ -136,6 +140,11 @@ class YOLOLOSS:
                 batch_target[:, [0, 2]] = targets[b][:, [0, 2]] * size_w
                 batch_target[:, [1, 3]] = targets[b][:, [1, 3]] * size_h
                 batch_target = batch_target[:, :4].type_as(x)
+                x = ((batch_target[:, 0] + batch_target[:, 2]) / 2).unsqueeze(-1)
+                y = ((batch_target[:, 1] + batch_target[:, 3]) / 2).unsqueeze(-1)
+                w = (batch_target[:, 2] - batch_target[:, 0]).unsqueeze(-1)
+                h = (batch_target[:, 3] - batch_target[:, 1]).unsqueeze(-1)
+                batch_target = torch.cat([x, y, w, h], dim=1)
                 anch_ious = compute_iou(batch_target, pred_boxes_for_ignore)
                 anch_ious_max, _ = torch.max(anch_ious, dim=0)
                 anch_ious_max = anch_ious_max.view(pred_boxes[b].size()[:3])

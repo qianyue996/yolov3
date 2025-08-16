@@ -13,7 +13,7 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 img_w = 416
 img_h = 416
 
-model = torch.load(r"53000_0.3136.pth", map_location=device, weights_only=False)
+model = torch.load(r"3000_0.2839.pth", map_location=device, weights_only=False)
 class_names = model.class_names
 anchors = model.anchors
 anchors_mask = model.anchors_mask
@@ -73,7 +73,7 @@ def secend_stage(outputs):
 def detect(image):
     outputs = model(image)
     outputs = secend_stage(outputs)
-    results = non_max_suppression(outputs, conf_thres=0.25, iou_thres=0.45)
+    results = non_max_suppression(outputs, conf_thres=0.01, iou_thres=0.45)
     return results
 
 
