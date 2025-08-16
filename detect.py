@@ -4,7 +4,7 @@ import torchvision.transforms as T
 import numpy as np
 import torch
 from loguru import logger
-from PIL import Image
+from PIL import Image, ImageDraw
 
 from utils import non_max_suppression
 
@@ -12,10 +12,11 @@ from utils import non_max_suppression
 device = "cuda" if torch.cuda.is_available() else "cpu"
 img_w = 416
 img_h = 416
-prev_boxes = []
 
 model = torch.load(r"53000_0.3136.pth", map_location=device, weights_only=False)
-class_name = model.class_names
+class_names = model.class_names
+anchors = model.anchors
+anchors_mask = model.anchors_mask
 model.eval()
 
 
@@ -23,112 +24,57 @@ resize = T.Resize((img_w, img_h))
 to_tensor = T.Compose(
     [
         T.ToTensor(),
-        T.Normalize(
-            mean=(0.4711, 0.4475, 0.4080), std=(0.2378, 0.2329, 0.2361)
-        ),
+        T.Normalize(mean=(0.4711, 0.4475, 0.4080), std=(0.2378, 0.2329, 0.2361)),
     ]
 )
+
+
 def transform(image: Image.Image):
     resized_image = resize(image)
     to_tensor_image = to_tensor(resized_image)
 
     return resized_image, to_tensor_image
 
-def draw_box(image, results):
-    global prev_boxes
-    results = np.array(results)
 
-    def iou(box1, box2):
-        # box: [x1, y1, x2, y2]
-        xi1 = max(box1[0], box2[0])
-        yi1 = max(box1[1], box2[1])
-        xi2 = min(box1[2], box2[2])
-        yi2 = min(box1[3], box2[3])
-        inter_area = max(0, xi2 - xi1) * max(0, yi2 - yi1)
-
-        box1_area = (box1[2] - box1[0]) * (box1[3] - box1[1])
-        box2_area = (box2[2] - box2[0]) * (box2[3] - box2[1])
-        union_area = box1_area + box2_area - inter_area
-
-        return inter_area / union_area if union_area != 0 else 0
-
-    def match_boxes(curr_boxes, prev_boxes, iou_thresh=0.3):
-        matches = []  # 每个当前框匹配的上一帧索引（或 -1 表示没找到）
-
-        for i, curr in enumerate(curr_boxes):
-            best_iou = 0
-            best_idx = -1
-            for j, prev in enumerate(prev_boxes):
-                iou_score = iou(curr[:4], prev[:4])
-                if iou_score > best_iou:
-                    best_iou = iou_score
-                    best_idx = j
-            if best_iou >= iou_thresh:
-                matches.append((i, best_idx))  # 当前第i个框 匹配上上一帧第best_idx个
-            else:
-                matches.append((i, -1))  # 当前这个框是新来的，没有匹配
-        return matches
-
-    def smooth_matched(curr_boxes, prev_boxes, matches, alpha=0.6):
-        prev_boxes = np.array(prev_boxes)
-        smoothed = []
-
-        for curr_idx, prev_idx in matches:
-            curr = curr_boxes[curr_idx]
-            if prev_idx == -1:
-                # 没有匹配上，不平滑
-                smoothed.append(curr)
-            else:
-                prev = prev_boxes[prev_idx]
-                smoothed_box = alpha * curr[:4] + (1 - alpha) * prev[:4]
-                smoothed.append(
-                    [
-                        *smoothed_box.tolist(),
-                        curr[4],  # 保留当前置信度
-                        curr[5],  # 保留当前类别
-                    ]
-                )
-        return smoothed
-
-    matches = match_boxes(results, prev_boxes)
-    smoothed_boxes = smooth_matched(results, prev_boxes, matches)
-    for i, result in enumerate(smoothed_boxes):
-        x1, y1, x2, y2 = tuple(map(int, result[:4]))
-        score, label = result[4], int(result[-1])
-        cv.circle(image, ((x2 + x1) // 2, (y2 + y1) // 2), 3, (0, 0, 255), -1)
-        cv.rectangle(image, (x1, y1), (x2, y2), (0, 0, 255), thickness=2)
-        cv.putText(
-            image,
-            f"{score:.2f} {class_name[label]}",
-            (x1, y1 - 5),
-            cv.FONT_HERSHEY_SIMPLEX,
-            0.5,
-            (0, 0, 255),
-            thickness=1,
+def secend_stage(outputs):
+    _outputs = []
+    for i, output in enumerate(outputs):
+        output = output.squeeze()
+        na, size_w, size_h, _ = output.shape
+        xy, wh, conf = output.split((2, 2, 1+len(class_names)), 3)
+        xy = xy.sigmoid()*2 - 0.5
+        wh = (wh.sigmoid() * 2) ** 2 * torch.tensor(anchors)[anchors_mask[i]].unsqueeze(1).unsqueeze(1)
+        grid_x = (
+            torch.linspace(0, size_w - 1, size_w)
+            .repeat(size_h, 1)
+            .repeat(int(na), 1)
+            .view(xy.shape[:3])
+            .type_as(xy)
         )
-    prev_boxes = smoothed_boxes
+        grid_y = (
+            torch.linspace(0, size_h - 1, size_h)
+            .repeat(size_w, 1)
+            .t()
+            .repeat(int(na), 1)
+            .view(xy.shape[:3])
+            .type_as(xy)
+        )
+        x = (xy[..., 0] + grid_x).unsqueeze_(-1)
+        y = (xy[..., 1] + grid_y).unsqueeze_(-1)
+        w = wh[..., 0].unsqueeze_(-1)
+        h = wh[..., 1].unsqueeze_(-1)
+        c = conf.sigmoid()
+        output = torch.cat([x, y, w, h, c], dim=-1).view(1, -1, len(class_names)+5)
+        _outputs.append(output)
+    
+    return torch.cat(_outputs, dim=1).squeeze()
 
-
-def normalizeData(images):
-    images = np.expand_dims(images, axis=0)
-    images = (images.astype(np.float32) / 255.0).transpose(0, 3, 1, 2)
-    return images
 
 def detect(image):
     outputs = model(image)
-    outputs = torch.cat(
-        [
-            outputs[0].reshape(1, -1, 85),
-            outputs[1].reshape(1, -1, 85),
-            outputs[2].reshape(1, -1, 85),
-        ],
-        dim=1,
-    )
-
-    results = non_max_suppression(
-        outputs
-    )
-    draw_box(image, results[0])
+    outputs = secend_stage(outputs)
+    results = non_max_suppression(outputs, conf_thres=0.25, iou_thres=0.45)
+    return results
 
 
 def camera_detect():
@@ -139,10 +85,22 @@ def camera_detect():
             logger.error("无法获取帧！")
             break
         image = Image.fromarray(img).convert("RGB")
-        input_image = transform(image=np.array(image))["image"]
-        detect(input_image)
+        resized_image, input_image = transform(image)
+        results = detect(input_image.unsqueeze(0).to(device))
+        image_handler = ImageDraw.ImageDraw(resized_image)
+        for result in results:
+            score = float(result[4])
+            class_id = int(result[5])
+            label_text = f"{class_names[class_id]} {score}"
+            x_min, y_min, x_max, y_max = list(map(int, result[:4]))
+            text_x = x_min
+            text_y = y_min - 15
+            image_handler.rectangle(((x_min, y_min), (x_max, y_max)), outline="red")
+            image_handler.text((text_x, text_y), label_text, fill="green")
+
+        image = np.array(resized_image)
         cv.namedWindow("Camera", cv.WINDOW_NORMAL)
-        cv.imshow("Camera", img)
+        cv.imshow("Camera", image)
         if cv.waitKey(1) == ord("q"):
             break
     # 释放资源
@@ -155,14 +113,26 @@ def image_detect():
     test_img = r"img/street.jpg"
     image = Image.open(test_img)
     resized_image, input_image = transform(image)
-    detect(input_image.unsqueeze(0).to(device))
-    pass
+    results = detect(input_image.unsqueeze(0).to(device))
+
+    image_handler = ImageDraw.ImageDraw(resized_image)
+
+    for result in results:
+        score = float(result[4])
+        class_id = int(result[5])
+        label_text = f"{class_names[class_id]} {score}"
+        x_min, y_min, x_max, y_max = list(map(int, result[:4]))
+        text_x = x_min
+        text_y = y_min - 15
+        image_handler.rectangle(((x_min, y_min), (x_max, y_max)), outline="red")
+        image_handler.text((text_x, text_y), label_text, fill="green")
+
+    resized_image.save("result.png")
 
 
 if __name__ == "__main__":
-    with torch.no_grad():
-        # camera_detect()
-        image_detect()
+    camera_detect()
+    # image_detect()
 
     # is_cap = True
     # is_img = False

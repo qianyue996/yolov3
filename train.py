@@ -16,7 +16,7 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 if __name__ == "__main__":
     set_seed(seed=27)
-    batch_size = 16
+    batch_size = 2
     epochs = 120
     lr = 0.01
     save_path = Path("weights")
@@ -44,9 +44,10 @@ if __name__ == "__main__":
         worker_init_fn=worker_init_fn,
         collate_fn=yolo_collate_fn,
     )
-    model = YoloBody(
-        anchors=anchors, anchors_mask=anchors_mask, class_names=class_names
-    ).to(device)
+    # model = YoloBody(
+    #     anchors=anchors, anchors_mask=anchors_mask, class_names=class_names
+    # ).to(device)
+    model = torch.load(r"53000_0.3136.pth", map_location=device, weights_only=False)
     optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.99, weight_decay=1e-4)
     # optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
     loss_fn = YOLOLOSS(model)

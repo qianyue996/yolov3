@@ -18,12 +18,6 @@ class YOLOLOSS:
         self.obj_ratio = 5
         self.cls_ratio = 1
 
-    def clip_by_tensor(self, t, t_min, t_max):
-        t = t.float()
-        result = (t >= t_min).float() * t + (t < t_min).float() * t_min
-        result = (result <= t_max).float() * result + (result > t_max).float() * t_max
-        return result
-
     def __call__(self, predicts: List[torch.Tensor], targets: List[torch.Tensor]):
         loss = 0
         for l, pred in enumerate(predicts):
@@ -95,8 +89,8 @@ class YOLOLOSS:
                 noobj_mask[b, k, i, j] = 0
                 y_true[b, k, i, j, 0] = batch_target[t, 0] % 1
                 y_true[b, k, i, j, 1] = batch_target[t, 1] % 1
-                y_true[b, k, i, j, 2] = batch_target[t, 3]
-                y_true[b, k, i, j, 3] = batch_target[t, 4]
+                y_true[b, k, i, j, 2] = batch_target[t, 2]
+                y_true[b, k, i, j, 3] = batch_target[t, 3]
                 y_true[b, k, i, j, 4] = 1
                 y_true[b, k, i, j, c + 5] = 1
                 box_loss_scale[b, k, i, j] = (
