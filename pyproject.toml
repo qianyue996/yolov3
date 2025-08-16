@@ -31,3 +31,6 @@ explicit = true
 [[tool.uv.index]]
 url = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"
 default = true
+
+[tool.uv]
+python-install-mirror = "https://ghproxy.cfd/https://github.com/astral-sh/python-build-standalone/releases/download"
