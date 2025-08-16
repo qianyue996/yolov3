@@ -32,7 +32,7 @@ class YOLOLOSS:
                 bs, size_w, size_h, anchors_mask, pred, targets
             )
             noobj_mask, pred_boxes = self.get_ignore(
-                bs, size_w, size_h, anchors_mask, pred, targets, noobj_mask
+               bs, size_w, size_h, anchors_mask, pred, targets, noobj_mask
             )
             box_loss_scale = 2 - box_loss_scale
 

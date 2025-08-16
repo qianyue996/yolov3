@@ -13,9 +13,9 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 img_w = 416
 img_h = 416
 
-model = torch.load(r"3000_0.2839.pth", map_location=device, weights_only=False)
+model = torch.load(r"1000_0.2988.pth", map_location=device, weights_only=False)
 class_names = model.class_names
-anchors = model.anchors
+anchors = torch.tensor(model.anchors, device=device)
 anchors_mask = model.anchors_mask
 model.eval()
 
@@ -39,34 +39,26 @@ def transform(image: Image.Image):
 def secend_stage(outputs):
     _outputs = []
     for i, output in enumerate(outputs):
-        output = output.squeeze()
-        na, size_w, size_h, _ = output.shape
-        xy, wh, conf = output.split((2, 2, 1 + len(class_names)), 3)
-        xy = xy.sigmoid() * 2 - 0.5
-        wh = (wh.sigmoid() * 2) ** 2 * torch.tensor(anchors)[anchors_mask[i]].unsqueeze(
-            1
-        ).unsqueeze(1)
-        grid_x = (
-            torch.linspace(0, size_w - 1, size_w)
-            .repeat(size_h, 1)
-            .repeat(int(na), 1)
-            .view(xy.shape[:3])
-            .type_as(xy)
+        _, _, size_w, size_h, _ = output.shape
+        stride = img_w / size_w
+        x = output.sigmoid()[..., 0] * 2 - 0.5
+        y = output.sigmoid()[..., 1] * 2 - 0.5
+        w = (output.sigmoid()[..., 2] * 2) ** 2
+        h = (output.sigmoid()[..., 3] * 2) ** 2
+        c = output.sigmoid()[..., 4:]
+        grid_y, grid_x = torch.meshgrid(
+            torch.arange(size_h, device=device),
+            torch.arange(size_w, device=device),
+            indexing="ij",
         )
-        grid_y = (
-            torch.linspace(0, size_h - 1, size_h)
-            .repeat(size_w, 1)
-            .t()
-            .repeat(int(na), 1)
-            .view(xy.shape[:3])
-            .type_as(xy)
-        )
-        x = (xy[..., 0] + grid_x).unsqueeze_(-1)
-        y = (xy[..., 1] + grid_y).unsqueeze_(-1)
-        w = wh[..., 0].unsqueeze_(-1)
-        h = wh[..., 1].unsqueeze_(-1)
-        c = conf.sigmoid()
-        output = torch.cat([x, y, w, h, c], dim=-1).view(1, -1, len(class_names) + 5)
+        scaled_anchors_l = anchors[anchors_mask[i]]
+        anchor_w = scaled_anchors_l[:, 0].view(1, -1, 1, 1).expand_as(w)
+        anchor_h = scaled_anchors_l[:, 1].view(1, -1, 1, 1).expand_as(h)
+        x = torch.unsqueeze(x + grid_x, -1) * stride
+        y = torch.unsqueeze(y + grid_y, -1) * stride
+        w = torch.unsqueeze(w * anchor_w, -1) * stride
+        h = torch.unsqueeze(h * anchor_h, -1) * stride
+        output = torch.cat([x, y, w, h, c], dim=-1).view(1, len(scaled_anchors_l)*size_w*size_h, len(class_names) + 5)
         _outputs.append(output)
 
     return torch.cat(_outputs, dim=1).squeeze()

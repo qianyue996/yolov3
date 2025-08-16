@@ -1,7 +1,5 @@
-import time
 import torch
 from torchvision.ops import nms
-from loguru import logger
 
 
 def non_max_suppression(prediction, conf_thres=0.25, iou_thres=0.45):
@@ -60,5 +58,10 @@ def non_max_suppression(prediction, conf_thres=0.25, iou_thres=0.45):
             ).squeeze()
         )
 
-    print(f"最终检测到的物体总数：{len(final_detections)}")
-    return final_detections
+    if final_detections:
+        final_detections = torch.cat(final_detections, -1)
+        print(f"最终检测到的物体总数：{len(final_detections)}")
+        return final_detections
+    else:
+        print("没有检测到物体")
+        return torch.tensor([])
