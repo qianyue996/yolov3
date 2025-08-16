@@ -41,9 +41,11 @@ def secend_stage(outputs):
     for i, output in enumerate(outputs):
         output = output.squeeze()
         na, size_w, size_h, _ = output.shape
-        xy, wh, conf = output.split((2, 2, 1+len(class_names)), 3)
-        xy = xy.sigmoid()*2 - 0.5
-        wh = (wh.sigmoid() * 2) ** 2 * torch.tensor(anchors)[anchors_mask[i]].unsqueeze(1).unsqueeze(1)
+        xy, wh, conf = output.split((2, 2, 1 + len(class_names)), 3)
+        xy = xy.sigmoid() * 2 - 0.5
+        wh = (wh.sigmoid() * 2) ** 2 * torch.tensor(anchors)[anchors_mask[i]].unsqueeze(
+            1
+        ).unsqueeze(1)
         grid_x = (
             torch.linspace(0, size_w - 1, size_w)
             .repeat(size_h, 1)
@@ -64,9 +66,9 @@ def secend_stage(outputs):
         w = wh[..., 0].unsqueeze_(-1)
         h = wh[..., 1].unsqueeze_(-1)
         c = conf.sigmoid()
-        output = torch.cat([x, y, w, h, c], dim=-1).view(1, -1, len(class_names)+5)
+        output = torch.cat([x, y, w, h, c], dim=-1).view(1, -1, len(class_names) + 5)
         _outputs.append(output)
-    
+
     return torch.cat(_outputs, dim=1).squeeze()
 
 

@@ -1,6 +1,7 @@
 from typing import List
 import torch
 import torch.nn as nn
+from .yolo_trainning import xyxy2xywh
 
 
 class YOLOLOSS:
@@ -16,12 +17,13 @@ class YOLOLOSS:
         self.obj_ratio = 5
         self.cls_ratio = 1
 
-    def __call__(self, predicts: List[torch.Tensor], targets: List[torch.Tensor]):
+    def __call__(self, predicts: List[torch.Tensor], all_targets: List[torch.Tensor]):
         loss = 0
         for l, pred in enumerate(predicts):
             bs = pred.shape[0]
             size_w = pred.shape[2]
             size_h = pred.shape[3]
+            targets = xyxy2xywh(all_targets, size_w, size_h)
             anchors_mask = self.anchors_mask[l]
 
             pred_cls = pred[..., 5:]
@@ -53,9 +55,7 @@ class YOLOLOSS:
 
         return loss
 
-    def build_targets(
-        self, bs, size_w, size_h, anchors_mask, predict, targets
-    ):
+    def build_targets(self, bs, size_w, size_h, anchors_mask, predict, targets):
         y_true = torch.zeros_like(predict)
         noobj_mask = torch.ones(
             bs, len(anchors_mask), size_w, size_h, device=self.device
@@ -67,36 +67,25 @@ class YOLOLOSS:
         for b, target in enumerate(targets):
             if len(target) == 0:
                 continue
-            batch_target = torch.zeros_like(target, device=self.device)
-            batch_target[:, [0, 2]] = target[:, [0, 2]] * size_w
-            batch_target[:, [1, 3]] = target[:, [1, 3]] * size_h
-            batch_target[:, 4] = target[:, 4]
-            x = ((batch_target[:, 0] + batch_target[:, 2]) / 2).unsqueeze(-1)
-            y = ((batch_target[:, 1] + batch_target[:, 3]) / 2).unsqueeze(-1)
-            w = (batch_target[:, 2] - batch_target[:, 0]).unsqueeze(-1)
-            h = (batch_target[:, 3] - batch_target[:, 1]).unsqueeze(-1)
-            batch_target = torch.cat([x, y, w, h], dim=1)
 
-            iou = compute_iou(batch_target, anchors)
+            iou = compute_iou(target, anchors)
             best_anchors = torch.argmax(iou, dim=-1)
 
             for t, best_num_anchor in enumerate(best_anchors):
-                if best_num_anchor not in anchors_mask:
-                    continue
                 k = anchors_mask.index(best_num_anchor)
-                x = torch.floor(batch_target[t, 0]).long()
-                y = torch.floor(batch_target[t, 1]).long()
-                c = batch_target[t, 4].long()
+                x = torch.floor(target[t, 0]).long()
+                y = torch.floor(target[t, 1]).long()
+                c = target[t, 4].long()
 
                 noobj_mask[b, k, x, y] = 0
-                y_true[b, k, x, y, 0] = batch_target[t, 0] % 1
-                y_true[b, k, x, y, 1] = batch_target[t, 1] % 1
-                y_true[b, k, x, y, 2] = batch_target[t, 2]
-                y_true[b, k, x, y, 3] = batch_target[t, 3]
+                y_true[b, k, x, y, 0] = target[t, 0] % 1
+                y_true[b, k, x, y, 1] = target[t, 1] % 1
+                y_true[b, k, x, y, 2] = target[t, 2]
+                y_true[b, k, x, y, 3] = target[t, 3]
                 y_true[b, k, x, y, 4] = 1
                 y_true[b, k, x, y, c + 5] = 1
                 box_loss_scale[b, k, x, y] = (
-                    batch_target[t, 2] * batch_target[t, 3] / size_w / size_h
+                    target[t, 2] * target[t, 3] / size_w / size_h
                 )
 
         return y_true, noobj_mask, box_loss_scale
@@ -108,22 +97,15 @@ class YOLOLOSS:
         y = predict.sigmoid()[..., 1] * 2 - 0.5
         w = (predict[..., 2].sigmoid() * 2) ** 2
         h = (predict[..., 3].sigmoid() * 2) ** 2
-        grid_x = torch.arange(size_w, device=self.device).repeat(size_h, 1)
-        grid_y = torch.arange(size_h, device=self.device).unsqueeze(1).repeat(1, size_w)
+        grid_y, grid_x = torch.meshgrid(
+            torch.arange(size_h, device=self.device),
+            torch.arange(size_w, device=self.device),
+            indexing="ij",
+        )
 
         scaled_anchors_l = self.anchors[anchors_mask]
-        anchor_w = (
-            scaled_anchors_l[:, 0]
-            .repeat(bs, 1)
-            .repeat(1, 1, size_w * size_h)
-            .view(w.shape)
-        )
-        anchor_h = (
-            scaled_anchors_l[:, 1]
-            .repeat(bs, 1)
-            .repeat(1, 1, size_w * size_h)
-            .view(h.shape)
-        )
+        anchor_w = scaled_anchors_l[:, 0].view(1, -1, 1, 1).expand_as(w)
+        anchor_h = scaled_anchors_l[:, 1].view(1, -1, 1, 1).expand_as(h)
 
         pred_boxes_x = torch.unsqueeze(x + grid_x, -1)
         pred_boxes_y = torch.unsqueeze(y + grid_y, -1)
@@ -136,15 +118,7 @@ class YOLOLOSS:
         for b in range(bs):
             pred_boxes_for_ignore = pred_boxes[b].view(-1, 4)
             if len(targets[b]) > 0:
-                batch_target = torch.zeros_like(targets[b], device=self.device)
-                batch_target[:, [0, 2]] = targets[b][:, [0, 2]] * size_w
-                batch_target[:, [1, 3]] = targets[b][:, [1, 3]] * size_h
-                batch_target = batch_target[:, :4].type_as(x)
-                x = ((batch_target[:, 0] + batch_target[:, 2]) / 2).unsqueeze(-1)
-                y = ((batch_target[:, 1] + batch_target[:, 3]) / 2).unsqueeze(-1)
-                w = (batch_target[:, 2] - batch_target[:, 0]).unsqueeze(-1)
-                h = (batch_target[:, 3] - batch_target[:, 1]).unsqueeze(-1)
-                batch_target = torch.cat([x, y, w, h], dim=1)
+                batch_target = targets[b]
                 anch_ious = compute_iou(batch_target, pred_boxes_for_ignore)
                 anch_ious_max, _ = torch.max(anch_ious, dim=0)
                 anch_ious_max = anch_ious_max.view(pred_boxes[b].size()[:3])
@@ -159,12 +133,13 @@ class YOLOLOSS:
         b1_mins = b1_xy - b1_wh_half
         b1_maxes = b1_xy + b1_wh_half
 
-        batch_size, num_anchors, size_h, size_w = b2.shape[:4]
+        _, _, size_w, size_h = b2.shape[:4]
 
-        grid_x = torch.arange(size_w, device=b2.device, dtype=b2.dtype)
-        grid_y = torch.arange(size_h, device=b2.device, dtype=b2.dtype)
-        grid_x = grid_x.view(1, 1, 1, size_w).expand(batch_size, num_anchors, size_h, size_w)
-        grid_y = grid_y.view(1, 1, size_h, 1).expand(batch_size, num_anchors, size_h, size_w)
+        grid_y, grid_x = torch.meshgrid(
+            torch.arange(size_h, device=self.device),
+            torch.arange(size_w, device=self.device),
+            indexing="ij",
+        )
 
         b2_x = b2[..., 0] + grid_x
         b2_y = b2[..., 1] + grid_y
