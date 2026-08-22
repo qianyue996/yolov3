@@ -2,7 +2,9 @@ import torch
 from torchvision.ops import nms
 
 
-def non_max_suppression(prediction, conf_thres=0.25, iou_thres=0.45):
+def non_max_suppression(
+    prediction: torch.Tensor, conf_thres: float = 0.25, iou_thres: float = 0.45
+) -> torch.Tensor:
     scores = prediction[:, 4]
     class_scores = prediction[:, 5:]
 
@@ -59,9 +61,5 @@ def non_max_suppression(prediction, conf_thres=0.25, iou_thres=0.45):
         )
 
     if final_detections:
-        final_detections = torch.cat(final_detections, -1)
-        print(f"最终检测到的物体总数：{len(final_detections)}")
-        return final_detections
-    else:
-        print("没有检测到物体")
-        return torch.tensor([])
+        return torch.cat(final_detections, dim=0)
+    return torch.empty((0, 6), dtype=torch.float32, device=prediction.device)

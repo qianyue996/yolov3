@@ -1,24 +1,55 @@
-import time
+import argparse
 import os
+import time
 from pathlib import Path
+
 import torch
-from tqdm import tqdm
 from torch import optim
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.tensorboard.writer import SummaryWriter
+from tqdm import tqdm
 
 from nets.yolov3 import YoloBody
-
-from utils import load_classes, YOLOLOSS, set_seed, worker_init_fn
-from utils.dataloader import YOLODataset, yolo_collate_fn
+from utils import YOLOLOSS, load_classes, set_seed, worker_init_fn
+from utils.dataloader import CocoDataset, YOLODataset, yolo_collate_fn
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="YOLOv3 训练脚本")
+    parser.add_argument(
+        "--data",
+        type=str,
+        default="coco_train.txt",
+        help="标签文本文件路径（由 stratified_sampler 生成）",
+    )
+    parser.add_argument(
+        "--annotation",
+        type=str,
+        default="",
+        help="直接使用 COCO JSON 时指定，优先级高于 --data",
+    )
+    parser.add_argument(
+        "--image-root",
+        type=str,
+        default="",
+        help="图片根目录，与 --annotation 配合使用",
+    )
+    parser.add_argument("--batch-size", type=int, default=2)
+    parser.add_argument("--epochs", type=int, default=120)
+    parser.add_argument("--lr", type=float, default=0.01)
+    parser.add_argument(
+        "--checkpoint",
+        type=str,
+        default=None,
+        help="预训练权重路径，为 null 时从随机权重开始训练",
+    )
+    args = parser.parse_args()
+
     set_seed(seed=27)
-    batch_size = 2
-    epochs = 120
-    lr = 0.01
+    batch_size = args.batch_size
+    epochs = args.epochs
+    lr = args.lr
     save_path = Path("weights")
     os.makedirs(save_path, exist_ok=True)
     class_names = load_classes("data/coco_names.yaml")
@@ -34,7 +65,19 @@ if __name__ == "__main__":
         [373, 326],
     ]
     anchors_mask = [[0, 1, 2], [3, 4, 5], [6, 7, 8]]
-    dataset = dataset = YOLODataset("coco_train.txt")
+
+    # 根据参数选择数据集
+    if args.annotation:
+        dataset = CocoDataset(
+            annotation_path=args.annotation, image_root=args.image_root
+        )
+    else:
+        dataset = YOLODataset(labels_path=args.data)
+
+    print(
+        f"Dataset: {len(dataset)} images (from {args.data if not args.annotation else args.annotation})"
+    )
+
     dataloader = DataLoader(
         dataset=dataset,
         batch_size=batch_size,
@@ -47,7 +90,14 @@ if __name__ == "__main__":
     # model = YoloBody(
     #     anchors=anchors, anchors_mask=anchors_mask, class_names=class_names
     # ).to(device)
-    model = torch.load(r"53000_0.3136.pth", map_location=device, weights_only=False)
+    if args.checkpoint and args.checkpoint.lower() != "null":
+        model = torch.load(
+            rf"{args.checkpoint}", map_location=device, weights_only=False
+        )
+    else:
+        model = YoloBody(
+            anchors=anchors, anchors_mask=anchors_mask, class_names=class_names
+        ).to(device)
     optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.99, weight_decay=1e-4)
     # optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
     loss_fn = YOLOLOSS(model)
@@ -56,8 +106,6 @@ if __name__ == "__main__":
         f"{writer_path}/{time.strftime('%Y-%m-%d-%H-%M-%S', time.localtime())}"
     )
     start_epoch = 0
-    # train
-    losses = []
     global_step = 0
     for epoch in range(start_epoch, epochs):
         model.train()
@@ -66,23 +114,21 @@ if __name__ == "__main__":
         total_loss = 0
 
         with tqdm(dataloader) as pbar:
-            for n_batch, item in enumerate(pbar):
+            for _n_batch, item in enumerate(pbar):
                 batch_x, batch_y = item
                 batch_x = batch_x.to(device)
                 batch_y = [i.to(device) for i in batch_y]
                 outputs = model(batch_x)
 
                 loss = loss_fn(outputs, batch_y)
-                # loss = loss / batch_x.shape[0]
                 optimizer.zero_grad()
-                assert isinstance(loss, torch.Tensor)
                 loss.backward()
                 optimizer.step()
 
-                batch_size = batch_x.shape[0]
+                batch_sz = batch_x.shape[0]
                 item_loss = loss.item()
-                total_loss += item_loss * batch_size
-                total_samples += batch_size
+                total_loss += item_loss * batch_sz
+                total_samples += batch_sz
                 avg_loss = total_loss / total_samples
                 pbar.set_postfix(
                     {

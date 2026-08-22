@@ -1,10 +1,11 @@
-from typing import List, Tuple, Any
-import torch
+import json
+from typing import Any
+
 import cv2 as cv
 import numpy as np
-from PIL import ImageDraw, Image, ImageFont
-import copy
-import torchvision.transforms as T
+import torch
+import torchvision.transforms as transforms
+from PIL import Image, ImageDraw, ImageFont
 from torch.utils.data.dataset import Dataset
 
 from utils import load_classes
@@ -13,8 +14,7 @@ class_names = load_classes("data/coco_names.yaml")
 
 try:
     font = ImageFont.truetype("arial.ttf", 15)
-except IOError:
-    # 如果找不到 Arial，可以尝试其他字体或使用默认字体
+except OSError:
     font = ImageFont.load_default()
 
 img_w = 416
@@ -22,58 +22,115 @@ img_h = 416
 
 
 class YOLODataset(Dataset):
-    def __init__(self, labels_path: str):
-        """
-        Args:
-            root (string): 图片存放路径
-            annFile (string): 标签文件存放路径
-        """
+    """读取采样工具输出的文本标签文件，格式与 label_util/coco_util.py 一致。
+
+    每行格式：
+        /path/to/img.jpg x_min,y_min,x_max,y_max,class_id x_min,y_min,...
+
+    训练时配合 label_util/stratified_sampler.py 生成的采样文件使用，
+    也可用于全量标签文件（如 coco_train.txt）。
+    """
+
+    def __init__(self, labels_path: str) -> None:
         super().__init__()
-        with open(labels_path, "r") as f:
+        with open(labels_path) as f:
             self.dataset = f.readlines()
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.dataset)
 
-    def __getitem__(self, index):
-        """
-        Returns:
-            image (Image.Image): 图片
-            targets (List): 检测框的类别信息 x_min, y_min, x_max, y_max, label
-        """
+    def __getitem__(self, index: int) -> tuple[Image.Image, np.ndarray]:
         items = self.dataset[index].strip().split(" ")
         image = Image.open(items[0]).convert("RGB")
 
         labels = []
         for item in items[1:]:
-            bbox_and_label = []
-            item = item.split(",")
-            bbox_and_label.extend(list(map(float, item)))
-            labels.append(bbox_and_label)
+            parts = item.split(",")
+            labels.append(list(map(float, parts)))
 
-        np_targets = np.array(labels)
+        np_targets = (
+            np.array(labels, dtype=np.float32)
+            if labels
+            else np.empty((0, 5), dtype=np.float32)
+        )
+        return image, np_targets
 
+
+class CocoDataset(Dataset):
+    """直接读取 COCO JSON 标注的训练数据集，无需预先导出为文本文件。"""
+
+    def __init__(self, annotation_path: str, image_root: str) -> None:
+        super().__init__()
+        with open(annotation_path) as f:
+            coco_data = json.load(f)
+
+        self.image_root = image_root
+        self.img_id_to_path = {
+            img["id"]: img["file_name"] for img in coco_data["images"]
+        }
+        self.img_id_to_anns: dict[int, list] = {}
+        for ann in coco_data["annotations"]:
+            self.img_id_to_anns.setdefault(ann["image_id"], []).append(ann)
+        self.img_ids = list(self.img_id_to_path.keys())
+
+        self.cat_id_to_label = {}
+        for cat in coco_data["categories"]:
+            self.cat_id_to_label[cat["id"]] = cat["name"]
+
+    def __len__(self) -> int:
+        return len(self.img_ids)
+
+    def __getitem__(self, index: int) -> tuple[Image.Image, np.ndarray]:
+        img_id = self.img_ids[index]
+        img_path = self.img_id_to_path[img_id]
+        image = Image.open(f"{self.image_root}/{img_path}").convert("RGB")
+
+        anns = self.img_id_to_anns.get(img_id, [])
+        if not anns:
+            targets = np.empty((0, 5), dtype=np.float32)
+            return image, targets
+
+        labels = []
+        for ann in anns:
+            x, y, w, h = ann["bbox"]
+            label_name = self.cat_id_to_label.get(
+                ann["category_id"], ann["category_id"]
+            )
+            label_idx = (
+                class_names.index(label_name)
+                if label_name in class_names
+                else ann["category_id"] - 1
+            )
+            labels.append([x, y, x + w, y + h, float(label_idx)])
+
+        np_targets = np.array(labels, dtype=np.float32)
         return image, np_targets
 
 
 class TransFormer:
     def __init__(self) -> None:
-        self.transform = T.Compose(
+        self.transform = transforms.Compose(
             [
-                T.Resize((img_w, img_h)),
-                T.ToTensor(),
-                T.Normalize(
+                transforms.Resize((img_w, img_h)),
+                transforms.ToTensor(),
+                transforms.Normalize(
                     mean=(0.4711, 0.4475, 0.4080), std=(0.2378, 0.2329, 0.2361)
                 ),
             ]
         )
 
-    def __call__(self, image: Image.Image, targets: np.ndarray):
+    def __call__(
+        self, image: Image.Image, targets: np.ndarray
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         scaled_factor_w = image.size[0] / img_w
         scaled_factor_h = image.size[1] / img_h
 
         image = self.transform(image)
 
+        if targets.shape[0] == 0:
+            return image, torch.empty((0, 5), dtype=torch.float32)
+
+        targets = targets.copy()
         targets[:, [0, 2]] = targets[:, [0, 2]] / scaled_factor_w
         targets[:, [1, 3]] = targets[:, [1, 3]] / scaled_factor_h
         targets[:, [0, 2]] = targets[:, [0, 2]] / img_w
@@ -85,7 +142,7 @@ class TransFormer:
 transform = TransFormer()
 
 
-def image_show(image: Image.Image, targets: np.ndarray):
+def image_show(image: Image.Image, targets: np.ndarray) -> None:
     image_handler = ImageDraw.ImageDraw(image)
 
     for label in targets:
@@ -108,12 +165,11 @@ def image_show(image: Image.Image, targets: np.ndarray):
     print("Script continued after closing OpenCV window.")
 
 
-def yolo_collate_fn(batches: List[Any]) -> Tuple[torch.Tensor, List[torch.Tensor]]:
+def yolo_collate_fn(batches: list[Any]) -> tuple[torch.Tensor, list[torch.Tensor]]:
     images = []
-    labels = []  # 检测框的坐标信息 min_x, min_y, x_max, y_max, label
+    labels = []
     for batch in batches:
         image, label = batch
-        # image_show(image, label)
         image, label = transform(image, label)
         images.append(image)
         labels.append(label)

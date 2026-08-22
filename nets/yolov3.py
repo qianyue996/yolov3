@@ -6,7 +6,7 @@ import torch.nn as nn
 from nets.darknet import darknet53
 
 
-def conv2d(filter_in, filter_out, kernel_size):
+def conv2d(filter_in: int, filter_out: int, kernel_size: int) -> nn.Sequential:
     pad = (kernel_size - 1) // 2 if kernel_size else 0
     return nn.Sequential(
         OrderedDict(
@@ -33,7 +33,9 @@ def conv2d(filter_in, filter_out, kernel_size):
 #   make_last_layers里面一共有七个卷积，前五个用于提取特征。
 #   后两个用于获得yolo网络的预测结果
 # ------------------------------------------------------------------------#
-def make_last_layers(filters_list, in_filters, out_filter):
+def make_last_layers(
+    filters_list: list[int], in_filters: int, out_filter: int
+) -> nn.Sequential:
     m = nn.Sequential(
         conv2d(in_filters, filters_list[0], 1),
         conv2d(filters_list[0], filters_list[1], 3),
@@ -49,7 +51,13 @@ def make_last_layers(filters_list, in_filters, out_filter):
 
 
 class YoloBody(nn.Module):
-    def __init__(self, anchors, anchors_mask, class_names, pretrained=False):
+    def __init__(
+        self,
+        anchors: list[list[int]],
+        anchors_mask: list[list[int]],
+        class_names: list[str],
+        pretrained: bool = False,
+    ) -> None:
         super().__init__()
         # 注册基本参数
         self.anchors = anchors
@@ -98,7 +106,9 @@ class YoloBody(nn.Module):
             len(anchors_mask[2]) * (self.num_classes + 5),
         )
 
-    def forward(self, x):
+    def forward(
+        self, x: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         # ---------------------------------------------------#
         #   获得三个有效特征层，他们的shape分别是：
         #   52,52,256；26,26,512；13,13,1024

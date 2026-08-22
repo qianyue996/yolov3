@@ -1,0 +1,41 @@
+target-version = "py312"
+exclude = ["third_party", ".venv", ".git"]
+
+[lint]
+select = [
+    "E",   # pycodestyle (error)
+    "F",   # pyflakes
+    "B",   # flake8-bugbear
+    "S",   # flake8-bandit
+    "N",   # pep8-naming
+    "C4",  # flake8-comprehensions
+    "SIM", # flake8-simplify
+    "I",   # isort
+    "UP",  # pyupgrade
+    "PIE", # flake8-pie
+    "PGH", # pygrep-hooks
+    "PYI", # flake8-pyi
+    "ANN", # flake8-annotations
+    "D",   # pydocstyle（Google 风格，见 [lint.pydocstyle]）
+]
+ignore = [
+    "ANN401", # allow typing.Any
+    "E501",   # line-too-long
+    "S104",   # allow all ip socket
+    "D100",   # 缺模块 docstring
+    "D101",   # 缺类 docstring
+    "D102",   # 缺公开方法 docstring
+    "D103",   # 缺函数 docstring
+    "D104",   # 缺包 docstring
+    "D105",   # 缺魔术方法 docstring
+    "D106",   # 缺嵌套类 docstring
+    "D107",   # 缺 __init__ docstring
+    "D415",   # 中文 docstring 句末用「。」，D415 只认 ASCII
+]
+
+[lint.pydocstyle]
+convention = "google"
+
+[lint.per-file-ignores]
+"/**/tests/**/*.py" = ["S101"]
+"steins-test/**/*.py" = ["S101"]

@@ -1,11 +1,11 @@
-from typing import List
 import torch
 import torch.nn as nn
+
 from .yolo_trainning import xyxy2xywh
 
 
 class YOLOLOSS:
-    def __init__(self, model):
+    def __init__(self, model: nn.Module) -> None:
         self.device = next(model.parameters()).device
         self.stride = [8, 16, 32]
         self.anchors = torch.tensor(model.anchors, device=self.device)
@@ -17,14 +17,16 @@ class YOLOLOSS:
         self.obj_ratio = 5
         self.cls_ratio = 1
 
-    def __call__(self, predicts: List[torch.Tensor], all_targets: List[torch.Tensor]):
+    def __call__(
+        self, predicts: list[torch.Tensor], all_targets: list[torch.Tensor]
+    ) -> torch.Tensor:
         loss = 0
-        for l, pred in enumerate(predicts):
+        for layer_idx, pred in enumerate(predicts):
             bs = pred.shape[0]
             size_w = pred.shape[2]
             size_h = pred.shape[3]
             targets = xyxy2xywh(all_targets, size_w, size_h)
-            anchors_mask = self.anchors_mask[l]
+            anchors_mask = self.anchors_mask[layer_idx]
 
             pred_cls = pred[..., 5:]
             pred_conf = pred[..., 4]
@@ -32,7 +34,7 @@ class YOLOLOSS:
                 bs, size_w, size_h, anchors_mask, pred, targets
             )
             noobj_mask, pred_boxes = self.get_ignore(
-               bs, size_w, size_h, anchors_mask, pred, targets, noobj_mask
+                bs, size_w, size_h, anchors_mask, pred, targets, noobj_mask
             )
             box_loss_scale = 2 - box_loss_scale
 
@@ -51,11 +53,19 @@ class YOLOLOSS:
             loss_conf = nn.BCEWithLogitsLoss(reduction="none")(
                 pred_conf, obj_mask.type_as(pred_conf)
             )[noobj_mask.bool() | obj_mask].mean()
-            loss += loss_conf * self.balance[l] * self.obj_ratio
+            loss += loss_conf * self.balance[layer_idx] * self.obj_ratio
 
         return loss
 
-    def build_targets(self, bs, size_w, size_h, anchors_mask, predict, targets):
+    def build_targets(
+        self,
+        bs: int,
+        size_w: int,
+        size_h: int,
+        anchors_mask: list[int],
+        predict: torch.Tensor,
+        targets: list[torch.Tensor],
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         y_true = torch.zeros_like(predict)
         noobj_mask = torch.ones(
             bs, len(anchors_mask), size_w, size_h, device=self.device
@@ -72,7 +82,20 @@ class YOLOLOSS:
             best_anchors = torch.argmax(iou, dim=-1)
 
             for t, best_num_anchor in enumerate(best_anchors):
-                k = anchors_mask.index(best_num_anchor)
+                anchor_idx = int(best_num_anchor)
+                # anchors_mask 可能是 list of lists 或 tensor，遍历查找所属 group
+                k = None
+                for i, group in enumerate(anchors_mask):
+                    if anchor_idx in (
+                        list(group)
+                        if hasattr(group, "__iter__")
+                        and not isinstance(group, (str, bytes))
+                        else [group]
+                    ):
+                        k = i
+                        break
+                if k is None:
+                    continue
                 x = torch.floor(target[t, 0]).long()
                 y = torch.floor(target[t, 1]).long()
                 c = target[t, 4].long()
@@ -91,8 +114,15 @@ class YOLOLOSS:
         return y_true, noobj_mask, box_loss_scale
 
     def get_ignore(
-        self, bs, size_w, size_h, anchors_mask, predict, targets, noobj_mask
-    ):
+        self,
+        bs: int,
+        size_w: int,
+        size_h: int,
+        anchors_mask: list[int],
+        predict: torch.Tensor,
+        targets: list[torch.Tensor],
+        noobj_mask: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         x = predict.sigmoid()[..., 0] * 2 - 0.5
         y = predict.sigmoid()[..., 1] * 2 - 0.5
         w = (predict[..., 2].sigmoid() * 2) ** 2
@@ -126,7 +156,7 @@ class YOLOLOSS:
 
         return noobj_mask, pred_boxes
 
-    def box_giou(self, b1, b2):
+    def box_giou(self, b1: torch.Tensor, b2: torch.Tensor) -> torch.Tensor:
         b1_xy = b1[..., :2]
         b1_wh = b1[..., 2:4]
         b1_wh_half = b1_wh / 2.0
@@ -173,7 +203,7 @@ class YOLOLOSS:
         return giou
 
 
-def compute_iou(box_a, box_b):
+def compute_iou(box_a: torch.Tensor, box_b: torch.Tensor) -> torch.Tensor:
     boxa_wh = box_a[:, 2:4].unsqueeze(1)
     area_w = torch.min(boxa_wh[..., 0], box_b[..., 0])
     area_h = torch.min(boxa_wh[..., 1], box_b[..., 1])
@@ -185,7 +215,9 @@ def compute_iou(box_a, box_b):
     return iou
 
 
-def compute_stride(model, input_size, device):
+def compute_stride(
+    model: nn.Module, input_size: int, device: torch.device
+) -> list[int]:
     dummy_input = torch.randn(1, 3, input_size, input_size, device=device)
 
     with torch.no_grad():
@@ -202,7 +234,13 @@ def compute_stride(model, input_size, device):
     return strides
 
 
-def focal_loss(pred, targ, alpha=0.25, gamma=1.5, reduction="mean"):
+def focal_loss(
+    pred: torch.Tensor,
+    targ: torch.Tensor,
+    alpha: float = 0.25,
+    gamma: float = 1.5,
+    reduction: str = "mean",
+) -> torch.Tensor:
     loss = nn.BCEWithLogitsLoss(reduction="none")(pred, targ)
 
     predicts = torch.sigmoid(pred)

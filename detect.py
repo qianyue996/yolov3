@@ -1,42 +1,56 @@
 import cv2 as cv
-import mss
-import torchvision.transforms as T
 import numpy as np
 import torch
+import torchvision.transforms as transforms
 from loguru import logger
 from PIL import Image, ImageDraw
 
 from utils import non_max_suppression
 
-
 device = "cuda" if torch.cuda.is_available() else "cpu"
 img_w = 416
 img_h = 416
 
-model = torch.load(r"1000_0.2988.pth", map_location=device, weights_only=False)
-class_names = model.class_names
-anchors = torch.tensor(model.anchors, device=device)
-anchors_mask = model.anchors_mask
-model.eval()
+class_names: list[str] = []
+anchors: torch.Tensor | None = None
+anchors_mask: list[list[int]] = []
+_model = None
 
 
-resize = T.Resize((img_w, img_h))
-to_tensor = T.Compose(
+def _load_model(path: str = "1000_0.2988.pth") -> None:
+    global _model, class_names, anchors, anchors_mask
+    if _model is not None:
+        return
+    _model = torch.load(path, map_location=device, weights_only=False)
+    class_names = _model.class_names
+    anchors = torch.tensor(_model.anchors, device=device)
+    anchors_mask = _model.anchors_mask
+    _model.eval()
+
+
+resize = transforms.Resize((img_w, img_h))
+to_tensor = transforms.Compose(
     [
-        T.ToTensor(),
-        T.Normalize(mean=(0.4711, 0.4475, 0.4080), std=(0.2378, 0.2329, 0.2361)),
+        transforms.ToTensor(),
+        transforms.Normalize(
+            mean=(0.4711, 0.4475, 0.4080), std=(0.2378, 0.2329, 0.2361)
+        ),
     ]
 )
 
 
-def transform(image: Image.Image):
+def transform(image: Image.Image) -> tuple[Image.Image, torch.Tensor]:
     resized_image = resize(image)
     to_tensor_image = to_tensor(resized_image)
-
     return resized_image, to_tensor_image
 
 
-def secend_stage(outputs):
+def _get_model() -> torch.nn.Module:
+    _load_model()
+    return _model
+
+
+def secend_stage(outputs: list[torch.Tensor]) -> torch.Tensor:
     _outputs = []
     for i, output in enumerate(outputs):
         _, _, size_w, size_h, _ = output.shape
@@ -58,20 +72,22 @@ def secend_stage(outputs):
         y = torch.unsqueeze(y + grid_y, -1) * stride
         w = torch.unsqueeze(w * anchor_w, -1) * stride
         h = torch.unsqueeze(h * anchor_h, -1) * stride
-        output = torch.cat([x, y, w, h, c], dim=-1).view(1, len(scaled_anchors_l)*size_w*size_h, len(class_names) + 5)
+        output = torch.cat([x, y, w, h, c], dim=-1).view(
+            1, len(scaled_anchors_l) * size_w * size_h, len(class_names) + 5
+        )
         _outputs.append(output)
 
     return torch.cat(_outputs, dim=1).squeeze()
 
 
-def detect(image):
-    outputs = model(image)
+def detect(image: torch.Tensor) -> torch.Tensor:
+    outputs = _get_model()(image)
     outputs = secend_stage(outputs)
     results = non_max_suppression(outputs, conf_thres=0.01, iou_thres=0.45)
     return results
 
 
-def camera_detect():
+def camera_detect() -> None:
     cap = cv.VideoCapture(0)
     while True:
         ret, img = cap.read()
@@ -100,85 +116,8 @@ def camera_detect():
     # 释放资源
     cap.release()
     cv.destroyAllWindows()
-    pass
-
-
-def image_detect():
-    test_img = r"img/street.jpg"
-    image = Image.open(test_img)
-    resized_image, input_image = transform(image)
-    results = detect(input_image.unsqueeze(0).to(device))
-
-    image_handler = ImageDraw.ImageDraw(resized_image)
-
-    for result in results:
-        score = float(result[4])
-        class_id = int(result[5])
-        label_text = f"{class_names[class_id]} {score}"
-        x_min, y_min, x_max, y_max = list(map(int, result[:4]))
-        text_x = x_min
-        text_y = y_min - 15
-        image_handler.rectangle(((x_min, y_min), (x_max, y_max)), outline="red")
-        image_handler.text((text_x, text_y), label_text, fill="green")
-
-    resized_image.save("result.png")
 
 
 if __name__ == "__main__":
+    _load_model()
     camera_detect()
-    # image_detect()
-
-    # is_cap = True
-    # is_img = False
-    # is_screenshot = False
-
-    # with torch.no_grad():
-    #     if is_cap:
-    #         cap = cv.VideoCapture(0)
-    #         # cap.set(cv.CAP_PROP_FRAME_WIDTH, 640)
-    #         # cap.set(cv.CAP_PROP_FRAME_HEIGHT, 480)
-    #         while True:
-    #             ret, img = cap.read()
-    #             if not ret:
-    #                 print("无法获取帧！")
-    #                 break
-    #             img, _input = transport(img)  # to tensor
-    #             detect(img, _input)  # outputict
-    #             cv.namedWindow("Camera", cv.WINDOW_NORMAL)
-    #             cv.imshow("Camera", img)
-    #             if cv.waitKey(1) == ord("q"):
-    #                 break
-    #         # 释放资源
-    #         cap.release()
-    #         cv.destroyAllWindows()
-    #     elif is_img:
-    #         test_img = r"img/street.jpg"
-    #         img = cv.imread(test_img)
-    #         img, _input = transport(img)  # to tensor
-    #         detect(img, _input)  # outputict
-    #         cv.imwrite("output.jpg", img)
-    #         print("successfully!!")
-    #     elif is_screenshot:
-    #         screen_width, screen_height = 2880, 1800
-    #         size_w, size_h = 640, 640
-
-    #         # 定义截取的区域
-    #         monitor = {
-    #             "top": screen_height // 2 - size_h // 2,  # y坐标
-    #             "left": screen_width // 2 - size_w // 2,  # x坐标
-    #             "width": size_w,  # 宽度
-    #             "height": size_h,  # 高度
-    #         }
-    #         while True:
-    #             with mss.mss() as sct:
-    #                 # 截图
-    #                 screenshot = sct.grab(monitor)
-    #                 img = np.array(screenshot)[:, :, :3]  # BGRA -> BGR
-    #                 img, _input = transport(img)
-    #                 detect(img, _input)
-    #                 # 展示
-    #                 cv.namedWindow("Crop Screenshot", cv.WINDOW_NORMAL)
-    #                 cv.imshow("Crop Screenshot", img)
-    #                 if cv.waitKey(1) == ord("q"):
-    #                     break
-    #         cv.destroyAllWindows()

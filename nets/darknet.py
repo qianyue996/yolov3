@@ -1,6 +1,7 @@
 import math
 from collections import OrderedDict
 
+import torch
 import torch.nn as nn
 
 
@@ -10,8 +11,8 @@ import torch.nn as nn
 #   最后接上一个残差边
 # ---------------------------------------------------------------------#
 class BasicBlock(nn.Module):
-    def __init__(self, inplanes, planes):
-        super(BasicBlock, self).__init__()
+    def __init__(self, inplanes: int, planes: list) -> None:
+        super().__init__()
         self.conv1 = nn.Conv2d(
             inplanes, planes[0], kernel_size=1, stride=1, padding=0, bias=False
         )
@@ -24,7 +25,7 @@ class BasicBlock(nn.Module):
         self.bn2 = nn.BatchNorm2d(planes[1])
         self.relu2 = nn.LeakyReLU(0.1)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         residual = x
 
         out = self.conv1(x)
@@ -40,8 +41,8 @@ class BasicBlock(nn.Module):
 
 
 class DarkNet(nn.Module):
-    def __init__(self, layers):
-        super(DarkNet, self).__init__()
+    def __init__(self, layers: list[int]) -> None:
+        super().__init__()
         self.inplanes = 32
         # 416,416,3 -> 416,416,32
         self.conv1 = nn.Conv2d(
@@ -76,7 +77,7 @@ class DarkNet(nn.Module):
     #   在每一个layer里面，首先利用一个步长为2的3x3卷积进行下采样
     #   然后进行残差结构的堆叠
     # ---------------------------------------------------------------------#
-    def _make_layer(self, planes, blocks):
+    def _make_layer(self, planes: list, blocks: int) -> nn.Sequential:
         layers = []
         # 下采样，步长为2，卷积核大小为3
         layers.append(
@@ -96,11 +97,13 @@ class DarkNet(nn.Module):
         layers.append(("ds_relu", nn.LeakyReLU(0.1)))
         # 加入残差结构
         self.inplanes = planes[1]
-        for i in range(0, blocks):
-            layers.append(("residual_{}".format(i), BasicBlock(self.inplanes, planes)))
+        for i in range(blocks):
+            layers.append((f"residual_{i}", BasicBlock(self.inplanes, planes)))
         return nn.Sequential(OrderedDict(layers))
 
-    def forward(self, x):
+    def forward(
+        self, x: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         x = self.conv1(x)
         x = self.bn1(x)
         x = self.relu1(x)
@@ -114,6 +117,6 @@ class DarkNet(nn.Module):
         return out3, out4, out5
 
 
-def darknet53():
+def darknet53() -> DarkNet:
     model = DarkNet([1, 2, 8, 8, 4])
     return model

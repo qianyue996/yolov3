@@ -3,8 +3,10 @@ import torch.nn as nn
 
 
 class CBL(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel=3, stride=1):
-        super(CBL, self).__init__()
+    def __init__(
+        self, in_channels: int, out_channels: int, kernel: int = 3, stride: int = 1
+    ) -> None:
+        super().__init__()
         padding = (kernel - 1) // 2
         self.layers = nn.Sequential(
             nn.Conv2d(
@@ -19,13 +21,13 @@ class CBL(nn.Module):
             nn.LeakyReLU(0.1),
         )
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.layers(x)
 
 
 class Backbone(nn.Module):
-    def __init__(self):
-        super(Backbone, self).__init__()
+    def __init__(self) -> None:
+        super().__init__()
 
         self.layer1 = CBL(3, 16, 3, 1)
         self.layer2 = nn.MaxPool2d(2, 2)
@@ -46,7 +48,7 @@ class Backbone(nn.Module):
         self.layer12 = nn.ZeroPad2d([0, 1, 0, 1])
         self.layer13 = nn.MaxPool2d(2, 1)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         x = self.layer1(x)
         x = self.layer2(x)
         x = self.layer3(x)
@@ -66,8 +68,8 @@ class Backbone(nn.Module):
 
 
 class YOLOv3Neck(nn.Module):
-    def __init__(self):
-        super(YOLOv3Neck, self).__init__()
+    def __init__(self) -> None:
+        super().__init__()
         self.layer1 = CBL(512, 1024, 3, 1)
         self.layer2 = CBL(1024, 256, 1, 1)
         self.layer3 = CBL(256, 512, 3, 1)
@@ -75,7 +77,9 @@ class YOLOv3Neck(nn.Module):
         self.layer5 = nn.Upsample(None, scale_factor=2, mode="nearest")
         self.layer6 = CBL(256, 256, 3, 1)
 
-    def forward(self, x_small, x_large):
+    def forward(
+        self, x_small: torch.Tensor, x_large: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         x = self.layer1(x_large)
         x = self.layer2(x)
         x_small_upsample = x
@@ -90,12 +94,14 @@ class YOLOv3Neck(nn.Module):
 
 
 class YOLOv3Head(nn.Module):
-    def __init__(self, num_classes=None):
-        super(YOLOv3Head, self).__init__()
+    def __init__(self, num_classes: int | None = None) -> None:
+        super().__init__()
         self.layer_large = nn.Conv2d(512, 3 * (5 + num_classes), 1, 1)
         self.layer_small = nn.Conv2d(256, 3 * (5 + num_classes), 1, 1)
 
-    def forward(self, x_large, x_small):
+    def forward(
+        self, x_large: torch.Tensor, x_small: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         x_large = self.layer_large(x_large)
         x_small = self.layer_small(x_small)
 
@@ -103,13 +109,13 @@ class YOLOv3Head(nn.Module):
 
 
 class YOLOv3Tiny(nn.Module):
-    def __init__(self, num_classes=None):
-        super(YOLOv3Tiny, self).__init__()
+    def __init__(self, num_classes: int | None = None) -> None:
+        super().__init__()
         self.backbone = Backbone()
         self.neck = YOLOv3Neck()
         self.head = YOLOv3Head(num_classes=num_classes)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         x_small, x_large = self.backbone(x)
         x_large, x_small = self.neck(x_small, x_large)
         x_large, x_small = self.head(x_large, x_small)
