@@ -57,20 +57,22 @@ uv run train.py \
 训练日志 → `runs/<timestamp>/`（TensorBoard）
 Checkpoint 每 1000 步保存至 `weights/<step>_<loss>.pth`
 
-### 3. 推理
+### 3. 图片检测
 
 ```bash
-# 摄像头实时检测（默认入口）
-uv run detect.py
-
-# 图片检测
-uv run python -c "
-import detect
-detect.image_detect()
-"
+uv run image_detect.py img/street.jpg
+uv run image_detect.py img/street.jpg --output result.png --checkpoint my_model.pth
 ```
 
-推理前需更新 `detect.py` 中的权重路径（默认 `1000_0.2988.pth`）。
+检测结果默认保存至 `outputs/result_<原文件名>.png`
+
+### 4. 摄像头实时检测
+
+```bash
+uv run detect.py
+```
+
+推理前需在项目根目录放置模型权重（如 `1000_0.2988.pth`）。
 
 ## 数据集格式
 

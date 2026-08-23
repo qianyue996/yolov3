@@ -21,7 +21,7 @@ if __name__ == "__main__":
         "--data",
         type=str,
         default="coco_train.txt",
-        help="标签文本文件路径（由 stratified_sampler 生成）",
+        help="标签文本文件路径（由 utils/stratified_sampler 生成）",
     )
     parser.add_argument(
         "--annotation",
@@ -43,6 +43,22 @@ if __name__ == "__main__":
         type=str,
         default=None,
         help="预训练权重路径，为 null 时从随机权重开始训练",
+    )
+    parser.add_argument(
+        "--save-every",
+        type=int,
+        default=1000,
+        help="每隔多少步保存一次 checkpoint（默认 1000）",
+    )
+    parser.add_argument(
+        "--save-best",
+        action="store_true",
+        help="额外保存 avg_loss 最低的模型到 weights/best.pth",
+    )
+    parser.add_argument(
+        "--freeze-backbone",
+        action="store_true",
+        help="冻结 Darknet-53 主干，只训练 FPN + 检测头（需先加载 backbone 预训练权重）",
     )
     args = parser.parse_args()
 
@@ -98,7 +114,16 @@ if __name__ == "__main__":
         model = YoloBody(
             anchors=anchors, anchors_mask=anchors_mask, class_names=class_names
         ).to(device)
-    optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.99, weight_decay=1e-4)
+    if args.freeze_backbone:
+        for p in model.backbone.parameters():
+            p.requires_grad = False
+        print("Backbone 已冻结，只训练 FPN + 检测头")
+    optimizer = optim.SGD(
+        (p for p in model.parameters() if p.requires_grad),
+        lr=lr,
+        momentum=0.99,
+        weight_decay=1e-4,
+    )
     # optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
     loss_fn = YOLOLOSS(model)
     writer_path = "runs"
@@ -107,6 +132,28 @@ if __name__ == "__main__":
     )
     start_epoch = 0
     global_step = 0
+    best_loss = float("inf")
+
+    # ── 数据流向速查 ─────────────────────────────────────────────────────
+    # 1. DataLoader 输出 TransformedBatch
+    #       batch_x : ModelInput         (B, 3, 416, 416) float32
+    #       batch_y : list[Tensor(N,5)]  xyxy 格式，归一化到 [0,1]（除以 416）
+    #
+    # 2. 模型前向 RawPredicts
+    #       outputs[i] : (B, 3, Hi, Wi, 5+C)  每个 cell 3 个 anchor 的原始 logit
+    #       其中 (H0,W0)=(13,13) stride=32 大尺度，(H2,W2)=(52,52) stride=8 小尺度
+    #
+    # 3. YOLOLOSS 内部
+    #       xyxy2xywh   : batch_y → FeatureTargets (cx,cy,w,h) 归一化到 grid
+    #       build_targets: FeatureTargets → TargetBuild (y_true, noobj_mask, box_loss_scale)
+    #       get_ignore  : RawPredicts → PredDecode (noobj_mask, pred_boxes grid单位)
+    #       box_giou    : PredDecode vs y_true → GIoU → loss_loc
+    #       各 BCE      : 计算 loss_conf / loss_cls
+    #
+    # 4. 返回
+    #       total_loss : scalar
+    #       detail     : {layer0: LayerMetrics, layer1: ..., layer2: ...}
+    # ─────────────────────────────────────────────────────────────────────
     for epoch in range(start_epoch, epochs):
         model.train()
         avg_loss = 0
@@ -115,12 +162,12 @@ if __name__ == "__main__":
 
         with tqdm(dataloader) as pbar:
             for _n_batch, item in enumerate(pbar):
-                batch_x, batch_y = item
+                batch_x, batch_y = item   # TransformedBatch
                 batch_x = batch_x.to(device)
                 batch_y = [i.to(device) for i in batch_y]
-                outputs = model(batch_x)
+                outputs = model(batch_x)  # RawPredicts
 
-                loss = loss_fn(outputs, batch_y)
+                loss, detail = loss_fn(outputs, batch_y)
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
@@ -142,8 +189,27 @@ if __name__ == "__main__":
                     {"step_loss": item_loss, "avg_loss": avg_loss},
                     global_step,
                 )
+                for layer_idx, layer_detail in detail.items():
+                    prefix = f"yolov3/{layer_idx}"
+                    writer.add_scalars(
+                        prefix,
+                        {
+                            "loc_loss": layer_detail["loss_loc"],
+                            "conf_loss": layer_detail["loss_conf"],
+                            "cls_loss": layer_detail["loss_cls"],
+                            "center_diff": layer_detail["center_diff"],
+                            "wh_diff": layer_detail["wh_diff"],
+                            "conf_diff": layer_detail["conf_diff"],
+                        },
+                        global_step,
+                    )
                 global_step += 1
-                if global_step % 1000 == 0:
+                if args.save_best and avg_loss < best_loss:
+                    best_loss = avg_loss
+                    torch.save(model, ".checkpoint.pth")
+                    os.replace(".checkpoint.pth", save_path / "best.pth")
+                    print(f"  [best] avg_loss={avg_loss:.4f} → weights/best.pth")
+                if global_step % args.save_every == 0:
                     torch.save(model, ".checkpoint.pth")
                     os.replace(
                         ".checkpoint.pth",

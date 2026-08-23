@@ -5,11 +5,11 @@ r"""按目标类别相同比例切分 COCO 数据集，生成小型子集。
   2. 比例填充：剩余名额按全局类别 annotation 比例贪心选取，使各类别 annotation
      占比与全集一致
 
-输出格式与 label_util/coco_util.py 一致：
+输出格式与 utils/dataloader.py 一致：
     /path/to/img.jpg x_min,y_min,x_max,y_max,class_id x_min,y_min,...
 
 用法示例：
-    uv run label_util/stratified_sampler.py \\
+    uv run -m utils.stratified_sampler \\
         --annotation /mnt/ai_models/coco2014/annotations/instances_train2014.json \\
         --image-root /mnt/ai_models/coco2014/train2014 \\
         --ratio 0.1 \\
@@ -24,7 +24,6 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -33,11 +32,6 @@ from tqdm import tqdm
 from utils import load_classes
 
 ROOT = Path(__file__).resolve().parent.parent
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
-# 每个类别至少采样多少张（确保稀有类别也有代表）
-MIN_PER_CAT = 3
 
 
 def build_image_index(
@@ -142,7 +136,7 @@ def stratified_sample(
             iid for iid in remaining_ids if cat_id in img_cat_counter[iid]
         ]
         random.shuffle(cat_candidates)
-        for iid in cat_candidates[:MIN_PER_CAT]:
+        for iid in cat_candidates[:3]:
             selected_ids.append(iid)
             selected_cat_counter = Counter(img_cat_counter[iid])
             for cid, cval in selected_cat_counter.items():
