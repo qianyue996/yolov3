@@ -118,6 +118,10 @@ if __name__ == "__main__":
         for p in model.backbone.parameters():
             p.requires_grad = False
         print("Backbone 已冻结，只训练 FPN + 检测头")
+    else:
+        for p in model.backbone.parameters():
+            p.requires_grad = True
+        print("Backbone 可训练")
     optimizer = optim.SGD(
         (p for p in model.parameters() if p.requires_grad),
         lr=lr,
