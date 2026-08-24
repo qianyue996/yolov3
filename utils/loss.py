@@ -12,7 +12,7 @@ class YOLOLOSS:
     def __init__(self, model: nn.Module) -> None:
         self.device = next(model.parameters()).device
         self.stride = [8, 16, 32]
-        self.anchors = torch.tensor(model.anchors, device=self.device)
+        self.anchors = torch.tensor(model.anchors, device=self.device, dtype=torch.float32)
         self.anchors_mask = model.anchors_mask
         self.class_name = model.class_names
 
@@ -71,9 +71,14 @@ class YOLOLOSS:
             valid_mask = noobj_mask.bool() | obj_mask
             pred_conf_flat = pred[..., 4][valid_mask]
             conf_target = obj_mask.type_as(pred_conf_flat)[valid_mask]
-            loss_conf = nn.BCEWithLogitsLoss(reduction="none")(
+            # 正负样本极度不均衡（~10 正 vs ~10000 负），
+            # 用 pos_weight 放大正样本梯度，避免模型学成「全输出低置信度」
+            n_pos_valid = conf_target.sum()
+            n_neg_valid = conf_target.numel() - n_pos_valid
+            pos_weight = (n_neg_valid / n_pos_valid.clamp(min=1)).clamp(max=50.0)
+            loss_conf = nn.BCEWithLogitsLoss(reduction="mean", pos_weight=pos_weight)(
                 pred_conf_flat, conf_target
-            ).mean()
+            )
             conf_diff = (pred_conf_flat.sigmoid() - conf_target).abs().mean()
 
             total_loss = total_loss + loss_loc * self.box_ratio
@@ -101,9 +106,12 @@ class YOLOLOSS:
         anchors_mask: list[int],
         predict: torch.Tensor,
         targets: list[torch.Tensor],
-        iou_threshold: float = 0.3,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """为每个检测层构建 ground truth 张量 y_true，返回 (y_true, noobj_mask, box_loss_scale)。"""
+        """为每个检测层构建 ground truth 张量 y_true，返回 (y_true, noobj_mask, box_loss_scale)。
+
+        每个 GT 都分配到本层最优 anchor（宽高经 exp 缩放回归，不要求
+        与 anchor 的原始 IoU 高）；歧义负样本由 get_ignore 处理。
+        """
         y_true = torch.zeros_like(predict)
         noobj_mask = torch.ones(
             bs, len(anchors_mask), size_w, size_h, device=self.device
@@ -118,15 +126,11 @@ class YOLOLOSS:
                 continue
             iou = compute_iou_with_anchors(target[:, :4], anchors)
             best_anchors = torch.argmax(iou, dim=-1)
-            best_iou_values, _ = torch.max(iou, dim=-1)
 
             for t, best_num_anchor in enumerate(best_anchors):
                 # argmax 得到的是层内 anchor 索引（0~len(anchors_mask)-1），
                 # 直接对应 y_true 第 1 维的 grid 下标 k
                 k = int(best_num_anchor)
-
-                if best_iou_values[t] < iou_threshold:
-                    continue  # 这个目标被忽略，不分配任何 anchor
 
                 x = torch.floor(target[t, 0]).long()
                 y = torch.floor(target[t, 1]).long()
