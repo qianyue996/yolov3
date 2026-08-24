@@ -40,6 +40,8 @@ def worker_init_fn(worker_id: int) -> None:
     seed = torch.initial_seed() % 2**32 + worker_id
     np.random.seed(seed)
     random.seed(seed)
+    # 每个 worker 只用 1 个线程，避免 N 个 worker × 全核 OpenMP 线程互相争抢
+    torch.set_num_threads(1)
 
 
 __all__ = [

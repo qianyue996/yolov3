@@ -57,6 +57,11 @@ if __name__ == "__main__":
         help="checkpoint 输出目录（默认 weights）",
     )
     parser.add_argument(
+        "--no-save-epoch",
+        action="store_true",
+        help="关闭按 epoch 保存（默认每个 epoch 结束保存一次）",
+    )
+    parser.add_argument(
         "--save-best",
         action="store_true",
         help="额外保存 avg_loss 最低的模型到 <weights-dir>/best.pth",
@@ -65,6 +70,18 @@ if __name__ == "__main__":
         "--freeze-backbone",
         action="store_true",
         help="冻结 Darknet-53 主干，只训练 FPN + 检测头（需先加载 backbone 预训练权重）",
+    )
+    parser.add_argument(
+        "--num-workers",
+        type=int,
+        default=4,
+        help="DataLoader 工作进程数（默认 4，数据加载慢可调大）",
+    )
+    parser.add_argument(
+        "--log-every",
+        type=int,
+        default=10,
+        help="每隔多少步写一次 TensorBoard 标量（默认 10，降低主进程开销）",
     )
     args = parser.parse_args()
 
@@ -104,8 +121,9 @@ if __name__ == "__main__":
         dataset=dataset,
         batch_size=batch_size,
         shuffle=True,
-        num_workers=4,
-        persistent_workers=True,
+        num_workers=args.num_workers,
+        persistent_workers=args.num_workers > 0,
+        pin_memory=True,
         worker_init_fn=worker_init_fn,
         collate_fn=yolo_collate_fn,
     )
@@ -173,8 +191,9 @@ if __name__ == "__main__":
         with tqdm(dataloader) as pbar:
             for _n_batch, item in enumerate(pbar):
                 batch_x, batch_y = item   # TransformedBatch
-                batch_x = batch_x.to(device)
-                batch_y = [i.to(device) for i in batch_y]
+                # pin_memory + non_blocking：H2D 拷贝异步化，不阻塞主进程
+                batch_x = batch_x.to(device, non_blocking=True)
+                batch_y = [i.to(device, non_blocking=True) for i in batch_y]
                 outputs = model(batch_x)  # RawPredicts
 
                 loss, detail = loss_fn(outputs, batch_y)
@@ -194,25 +213,26 @@ if __name__ == "__main__":
                         "avg_loss": f"{avg_loss:.6f}",
                     }
                 )
-                writer.add_scalars(
-                    "yolov3",
-                    {"step_loss": item_loss, "avg_loss": avg_loss},
-                    global_step,
-                )
-                for layer_idx, layer_detail in detail.items():
-                    prefix = f"yolov3/{layer_idx}"
+                if global_step % args.log_every == 0:
                     writer.add_scalars(
-                        prefix,
-                        {
-                            "loc_loss": layer_detail["loss_loc"],
-                            "conf_loss": layer_detail["loss_conf"],
-                            "cls_loss": layer_detail["loss_cls"],
-                            "center_diff": layer_detail["center_diff"],
-                            "wh_diff": layer_detail["wh_diff"],
-                            "conf_diff": layer_detail["conf_diff"],
-                        },
+                        "yolov3",
+                        {"step_loss": item_loss, "avg_loss": avg_loss},
                         global_step,
                     )
+                    for layer_idx, layer_detail in detail.items():
+                        prefix = f"yolov3/{layer_idx}"
+                        writer.add_scalars(
+                            prefix,
+                            {
+                                "loc_loss": layer_detail["loss_loc"],
+                                "conf_loss": layer_detail["loss_conf"],
+                                "cls_loss": layer_detail["loss_cls"],
+                                "center_diff": layer_detail["center_diff"],
+                                "wh_diff": layer_detail["wh_diff"],
+                                "conf_diff": layer_detail["conf_diff"],
+                            },
+                            global_step,
+                        )
                 global_step += 1
                 if args.save_best and avg_loss < best_loss:
                     best_loss = avg_loss
@@ -225,3 +245,9 @@ if __name__ == "__main__":
                         ".checkpoint.pth",
                         save_path / f"{global_step}_{avg_loss:.4f}.pth",
                     )
+
+        if not args.no_save_epoch:
+            epoch_path = save_path / f"epoch{epoch}_{avg_loss:.4f}.pth"
+            torch.save(model, ".checkpoint.pth")
+            os.replace(".checkpoint.pth", epoch_path)
+            print(f"[epoch {epoch}] avg_loss={avg_loss:.4f} → {epoch_path}")

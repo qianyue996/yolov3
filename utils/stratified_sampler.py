@@ -24,14 +24,18 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 
 from tqdm import tqdm
 
-from utils import load_classes
-
+# 允许按路径直接执行：uv run utils/stratified_sampler.py
 ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from utils import load_classes  # noqa: E402  必须在 sys.path 注入之后导入
 
 
 def build_image_index(
