@@ -51,9 +51,15 @@ if __name__ == "__main__":
         help="每隔多少步保存一次 checkpoint（默认 1000）",
     )
     parser.add_argument(
+        "--weights-dir",
+        type=str,
+        default="weights",
+        help="checkpoint 输出目录（默认 weights）",
+    )
+    parser.add_argument(
         "--save-best",
         action="store_true",
-        help="额外保存 avg_loss 最低的模型到 weights/best.pth",
+        help="额外保存 avg_loss 最低的模型到 <weights-dir>/best.pth",
     )
     parser.add_argument(
         "--freeze-backbone",
@@ -66,7 +72,7 @@ if __name__ == "__main__":
     batch_size = args.batch_size
     epochs = args.epochs
     lr = args.lr
-    save_path = Path("weights")
+    save_path = Path(args.weights_dir)
     os.makedirs(save_path, exist_ok=True)
     class_names = load_classes("data/coco_names.yaml")
     anchors = [
