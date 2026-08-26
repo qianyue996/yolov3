@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 
+from .config import IMG_W
+from .decode import decode_preds
 from .models import xyxy2xywh
 
 # 模型原始输出：每个 cell 3 个 anchor，每 anchor 输出 (5+C) 个 logit
@@ -29,16 +31,16 @@ class YOLOLOSS:
         detail = {}
         for layer_idx, pred in enumerate(predicts):
             bs = pred.shape[0]
-            size_w = pred.shape[2]
-            size_h = pred.shape[3]
-            targets = xyxy2xywh(all_targets, size_w, size_h)
+            feat_h = pred.shape[2]
+            feat_w = pred.shape[3]
+            targets = xyxy2xywh(all_targets, feat_h, feat_w)
             anchors_mask = self.anchors_mask[layer_idx]
 
             y_true, noobj_mask, box_loss_scale = self.build_targets(
-                bs, size_w, size_h, anchors_mask, pred, targets
+                bs, feat_h, feat_w, anchors_mask, pred, targets
             )
-            noobj_mask, pred_boxes = self.get_ignore(
-                bs, size_w, size_h, anchors_mask, pred, targets, noobj_mask
+            noobj_mask, pred_boxes, grid_x, grid_y = self.get_ignore(
+                bs, feat_h, feat_w, anchors_mask, pred, targets, noobj_mask
             )
             box_loss_scale = 2 - box_loss_scale
 
@@ -47,7 +49,7 @@ class YOLOLOSS:
 
             layer_detail: dict = {}
             if n != 0:
-                giou = self.box_giou(pred_boxes, y_true[..., :4])
+                giou = self.box_giou(pred_boxes, y_true[..., :4], grid_x, grid_y)
                 loss_loc = ((1 - giou) * box_loss_scale)[obj_mask].mean()
 
                 center_diff = (
@@ -73,12 +75,13 @@ class YOLOLOSS:
             conf_target = obj_mask.type_as(pred_conf_flat)[valid_mask]
             # 正负样本极度不均衡（~10 正 vs ~10000 负），
             # 用 pos_weight 放大正样本梯度，避免模型学成「全输出低置信度」
-            n_pos_valid = conf_target.sum()
-            n_neg_valid = conf_target.numel() - n_pos_valid
-            pos_weight = (n_neg_valid / n_pos_valid.clamp(min=1)).clamp(max=50.0)
-            loss_conf = nn.BCEWithLogitsLoss(reduction="mean", pos_weight=pos_weight)(
-                pred_conf_flat, conf_target
-            )
+            # n_pos_valid = conf_target.sum()
+            # n_neg_valid = conf_target.numel() - n_pos_valid
+            # pos_weight = (n_neg_valid / n_pos_valid.clamp(min=1)).clamp(max=50.0)
+            # loss_conf = nn.BCEWithLogitsLoss(reduction="mean", pos_weight=pos_weight)(
+            #     pred_conf_flat, conf_target
+            # )
+            loss_conf = focal_loss(pred_conf_flat, conf_target)
             conf_diff = (pred_conf_flat.sigmoid() - conf_target).abs().mean()
 
             total_loss = total_loss + loss_loc * self.box_ratio
@@ -101,8 +104,8 @@ class YOLOLOSS:
     def build_targets(
         self,
         bs: int,
-        size_w: int,
-        size_h: int,
+        feat_h: int,
+        feat_w: int,
         anchors_mask: list[int],
         predict: torch.Tensor,
         targets: list[torch.Tensor],
@@ -114,12 +117,12 @@ class YOLOLOSS:
         """
         y_true = torch.zeros_like(predict)
         noobj_mask = torch.ones(
-            bs, len(anchors_mask), size_w, size_h, device=self.device
+            bs, len(anchors_mask), feat_h, feat_w, device=self.device
         )
         box_loss_scale = torch.zeros(
-            bs, len(anchors_mask), size_w, size_h, device=self.device
+            bs, len(anchors_mask), feat_h, feat_w, device=self.device
         )
-        anchors = self.anchors[anchors_mask]
+        anchors = self.anchors[anchors_mask] / (IMG_W / feat_h)
 
         for b, target in enumerate(targets):
             if len(target) == 0:
@@ -132,19 +135,20 @@ class YOLOLOSS:
                 # 直接对应 y_true 第 1 维的 grid 下标 k
                 k = int(best_num_anchor)
 
+                # target[t,0]=cx(沿 dim3=x)，target[t,1]=cy(沿 dim2=y)
                 x = torch.floor(target[t, 0]).long()
                 y = torch.floor(target[t, 1]).long()
                 c = target[t, 4].long()
 
-                noobj_mask[b, k, x, y] = 0
-                y_true[b, k, x, y, 0] = target[t, 0] % 1
-                y_true[b, k, x, y, 1] = target[t, 1] % 1
-                y_true[b, k, x, y, 2] = target[t, 2]
-                y_true[b, k, x, y, 3] = target[t, 3]
-                y_true[b, k, x, y, 4] = 1
-                y_true[b, k, x, y, c + 5] = 1
-                box_loss_scale[b, k, x, y] = (
-                    target[t, 2] * target[t, 3] / size_w / size_h
+                noobj_mask[b, k, y, x] = 0
+                y_true[b, k, y, x, 0] = target[t, 0] % 1
+                y_true[b, k, y, x, 1] = target[t, 1] % 1
+                y_true[b, k, y, x, 2] = target[t, 2]
+                y_true[b, k, y, x, 3] = target[t, 3]
+                y_true[b, k, y, x, 4] = 1
+                y_true[b, k, y, x, c + 5] = 1
+                box_loss_scale[b, k, y, x] = (
+                    target[t, 2] * target[t, 3] / feat_h / feat_w
                 )
 
         return y_true, noobj_mask, box_loss_scale
@@ -152,33 +156,24 @@ class YOLOLOSS:
     def get_ignore(
         self,
         bs: int,
-        size_w: int,
-        size_h: int,
+        feat_h: int,
+        feat_w: int,
         anchors_mask: list[int],
         predict: torch.Tensor,
         targets: list[torch.Tensor],
         noobj_mask: torch.Tensor,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        """从模型输出 decode 出预测框坐标，并标记 IoU > 0.5 的背景 cell 为忽略，返回 (noobj_mask, pred_boxes)。"""
-        cx = predict.sigmoid()[..., 0] * 2 - 0.5
-        cy = predict.sigmoid()[..., 1] * 2 - 0.5
-        w = (predict[..., 2].sigmoid() * 2) ** 2
-        h = (predict[..., 3].sigmoid() * 2) ** 2
-        grid_y, grid_x = torch.meshgrid(
-            torch.arange(size_h, device=self.device),
-            torch.arange(size_w, device=self.device),
-            indexing="ij",
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """从模型输出 decode 出预测框坐标，并标记 IoU > 0.5 的背景 cell 为忽略，返回 (noobj_mask, pred_boxes, grid_x, grid_y)。"""
+        scaled_anchors = self.anchors[anchors_mask] / (IMG_W / feat_h)
+        cx, cy, w, h, grid_x, grid_y = decode_preds(
+            predict, scaled_anchors, feat_h, feat_w, self.device
         )
 
-        scaled_anchors = self.anchors[anchors_mask]
-        anchor_w = scaled_anchors[:, 0].view(1, -1, 1, 1).expand_as(w)
-        anchor_h = scaled_anchors[:, 1].view(1, -1, 1, 1).expand_as(h)
-
         pred_boxes = torch.cat([
-            (cx + grid_x).unsqueeze(-1),
-            (cy + grid_y).unsqueeze(-1),
-            (w * anchor_w).unsqueeze(-1),
-            (h * anchor_h).unsqueeze(-1),
+            cx.unsqueeze(-1),
+            cy.unsqueeze(-1),
+            w.unsqueeze(-1),
+            h.unsqueeze(-1),
         ], dim=-1)
 
         for b in range(bs):
@@ -189,20 +184,20 @@ class YOLOLOSS:
                 anch_ious_max = anch_ious_max.view(pred_boxes[b].size()[:3])
                 noobj_mask[b][anch_ious_max > 0.5] = 0
 
-        return noobj_mask, pred_boxes
+        return noobj_mask, pred_boxes, grid_x, grid_y
 
-    def box_giou(self, b1: torch.Tensor, b2: torch.Tensor) -> torch.Tensor:
+    def box_giou(
+        self,
+        b1: torch.Tensor,
+        b2: torch.Tensor,
+        grid_x: torch.Tensor,
+        grid_y: torch.Tensor,
+    ) -> torch.Tensor:
         """计算两个框集合的 GIoU，输入为 (bs, N, H, W, 4) 形状的 (cx,cy,w,h) 框，返回同形状 GIoU。"""
         b1_wh_half = b1[..., 2:4] / 2.0
         b1_mins = b1[..., :2] - b1_wh_half
         b1_maxes = b1[..., :2] + b1_wh_half
 
-        _, _, size_w, size_h = b2.shape[:4]
-        grid_y, grid_x = torch.meshgrid(
-            torch.arange(size_h, device=self.device),
-            torch.arange(size_w, device=self.device),
-            indexing="ij",
-        )
         b2_xy = b2[..., :2] + torch.stack([grid_x, grid_y], dim=-1)
         b2_wh_half = b2[..., 2:4] / 2.0
         b2_mins = b2_xy - b2_wh_half

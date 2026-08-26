@@ -57,7 +57,7 @@ def non_max_suppression(
                     class_labels.unsqueeze(1),
                 ],
                 dim=1,
-            ).squeeze()
+            )
         )
 
     if final_detections:

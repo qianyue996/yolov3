@@ -30,20 +30,22 @@ class TransformedBatch(NamedTuple):
 
 
 def xyxy2xywh(
-    targets: list[torch.Tensor], size_w: int, size_h: int
+    targets: list[torch.Tensor], feat_h: int, feat_w: int
 ) -> list[torch.Tensor]:
     """将归一化 xyxy 格式的标注转换为 grid 坐标系下的 cx,cy,w,h 格式。
 
     targets:  每个元素 (Ni, 5)  xyxy ∈ [0,1]
-    size_w:   当前特征图宽度（如 13, 26, 52）
-    size_h:   当前特征图高度
+    feat_h:   当前特征图高度（dim2 = 行数 = y 轴，如 13/26/52）
+    feat_w:   当前特征图宽度（dim3 = 列数 = x 轴，如 13/26/52）
     返回:     每个元素 (Ni, 5)  cx,cy,w,h ∈ grid 单位
     """
     _targets = []
     for _target in targets:
         target = copy.deepcopy(_target)
-        target[:, [0, 2]] = target[:, [0, 2]] * size_w
-        target[:, [1, 3]] = target[:, [1, 3]] * size_h
+        # 模型输出为 (B, nA, H, W, C)：dim2=H=行=y 轴，dim3=W=列=x 轴。
+        # 因此 x 坐标沿 dim3（共 feat_w 个 cell），y 坐标沿 dim2（共 feat_h 个 cell）。
+        target[:, [0, 2]] = target[:, [0, 2]] * feat_w
+        target[:, [1, 3]] = target[:, [1, 3]] * feat_h
         x = ((target[:, 0] + target[:, 2]) / 2).unsqueeze(1)
         y = ((target[:, 1] + target[:, 3]) / 2).unsqueeze(1)
         w = (target[:, 2] - target[:, 0]).unsqueeze(1)

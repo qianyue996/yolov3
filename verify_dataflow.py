@@ -87,13 +87,13 @@ def main() -> None:
     from utils.models import xyxy2xywh
     loss_fn = YOLOLOSS(model)
     for layer_idx, pred in enumerate(outputs):
-        size_w = pred.shape[2]
-        size_h = pred.shape[3]
-        feature_targets = xyxy2xywh(batch_y, size_w, size_h)
-        step(f"step5-layer{layer_idx}: xyxy2xywh(batch_y, size_w={size_w}, size_h={size_h})",
+        feat_h = pred.shape[2]
+        feat_w = pred.shape[3]
+        feature_targets = xyxy2xywh(batch_y, feat_h, feat_w)
+        step(f"step5-layer{layer_idx}: xyxy2xywh(batch_y, feat_h={feat_h}, feat_w={feat_w})",
              (f"layer{layer_idx}_targets", feature_targets))
-        print("  格式: [cx, cy, w, h, class_id]  单位: grid cell (0~size_w/size_h)")
-        # 验证：cx 应该在 [0, size_w) 范围内
+        print("  格式: [cx, cy, w, h, class_id]  单位: grid cell (0~feat_w/feat_h)")
+        # 验证：cx 应该在 [0, feat_w) 范围内
         if feature_targets[0].shape[0] > 0:
             t = feature_targets[0]
             print(f"  验证: cx∈[{t[:,0].min():.2f}, {t[:,0].max():.2f}], "
