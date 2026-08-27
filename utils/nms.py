@@ -47,7 +47,7 @@ def non_max_suppression(
         # 将结果（边界框、分数、类别）存储起来
         # 你可能还需要添加类别标签
         class_labels = torch.full(
-            (len(final_scores_per_class),), i, dtype=torch.float32
+            (len(final_scores_per_class),), i, dtype=torch.float32, device=prediction.device
         )
         final_detections.append(
             torch.cat(
