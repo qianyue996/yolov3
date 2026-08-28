@@ -14,7 +14,9 @@ class YOLOLOSS:
     def __init__(self, model: nn.Module) -> None:
         self.device = next(model.parameters()).device
         self.stride = [8, 16, 32]
-        self.anchors = torch.tensor(model.anchors, device=self.device, dtype=torch.float32)
+        self.anchors = torch.tensor(
+            model.anchors, device=self.device, dtype=torch.float32
+        )
         self.anchors_mask = model.anchors_mask
         self.class_name = model.class_names
 
@@ -53,12 +55,12 @@ class YOLOLOSS:
                 loss_loc = ((1 - giou) * box_loss_scale)[obj_mask].mean()
 
                 center_diff = (
-                    (pred_boxes[..., 0] - y_true[..., 0]).abs() +
-                    (pred_boxes[..., 1] - y_true[..., 1]).abs()
+                    (pred_boxes[..., 0] - y_true[..., 0]).abs()
+                    + (pred_boxes[..., 1] - y_true[..., 1]).abs()
                 )[obj_mask].mean()
                 wh_diff = (
-                    (pred_boxes[..., 2] - y_true[..., 2]).abs() +
-                    (pred_boxes[..., 3] - y_true[..., 3]).abs()
+                    (pred_boxes[..., 2] - y_true[..., 2]).abs()
+                    + (pred_boxes[..., 3] - y_true[..., 3]).abs()
                 )[obj_mask].mean()
 
                 pred_cls = pred[..., 5:][obj_mask]
@@ -73,29 +75,25 @@ class YOLOLOSS:
             valid_mask = noobj_mask.bool() | obj_mask
             pred_conf_flat = pred[..., 4][valid_mask]
             conf_target = obj_mask.type_as(pred_conf_flat)[valid_mask]
-            # 正负样本极度不均衡（~10 正 vs ~10000 负），
-            # 用 pos_weight 放大正样本梯度，避免模型学成「全输出低置信度」
-            # n_pos_valid = conf_target.sum()
-            # n_neg_valid = conf_target.numel() - n_pos_valid
-            # pos_weight = (n_neg_valid / n_pos_valid.clamp(min=1)).clamp(max=50.0)
-            # loss_conf = nn.BCEWithLogitsLoss(reduction="mean", pos_weight=pos_weight)(
-            #     pred_conf_flat, conf_target
-            # )
-            loss_conf = focal_loss(pred_conf_flat, conf_target)
+            loss_conf = focal_loss(
+                pred_conf_flat, conf_target, alpha=0.25, gamma=1.5, num_pos=int(n)
+            )
             conf_diff = (pred_conf_flat.sigmoid() - conf_target).abs().mean()
 
             total_loss = total_loss + loss_loc * self.box_ratio
             total_loss = total_loss + loss_cls * self.cls_ratio
-            total_loss = total_loss + loss_conf * self.balance[layer_idx] * self.obj_ratio
+            total_loss = (
+                total_loss + loss_conf * self.balance[layer_idx] * self.obj_ratio
+            )
 
             layer_detail = {
-                "loss_loc":    loss_loc.item(),
-                "loss_conf":   loss_conf.item(),
-                "loss_cls":    loss_cls.item(),
+                "loss_loc": loss_loc.item(),
+                "loss_conf": loss_conf.item(),
+                "loss_cls": loss_cls.item(),
                 "center_diff": center_diff.item(),
-                "wh_diff":     wh_diff.item(),
-                "conf_diff":   conf_diff.item(),
-                "n_pos":       n.item(),
+                "wh_diff": wh_diff.item(),
+                "conf_diff": conf_diff.item(),
+                "n_pos": n.item(),
             }
             detail[f"layer{layer_idx}"] = layer_detail
 
@@ -169,12 +167,15 @@ class YOLOLOSS:
             predict, scaled_anchors, feat_h, feat_w, self.device
         )
 
-        pred_boxes = torch.cat([
-            cx.unsqueeze(-1),
-            cy.unsqueeze(-1),
-            w.unsqueeze(-1),
-            h.unsqueeze(-1),
-        ], dim=-1)
+        pred_boxes = torch.cat(
+            [
+                cx.unsqueeze(-1),
+                cy.unsqueeze(-1),
+                w.unsqueeze(-1),
+                h.unsqueeze(-1),
+            ],
+            dim=-1,
+        )
 
         for b in range(bs):
             pred_flat = pred_boxes[b].view(-1, 4)
@@ -205,7 +206,9 @@ class YOLOLOSS:
 
         intersect_mins = torch.max(b1_mins, b2_mins)
         intersect_maxes = torch.min(b1_maxes, b2_maxes)
-        intersect_wh = torch.max(intersect_maxes - intersect_mins, torch.zeros_like(intersect_maxes))
+        intersect_wh = torch.max(
+            intersect_maxes - intersect_mins, torch.zeros_like(intersect_maxes)
+        )
         intersect_area = intersect_wh[..., 0] * intersect_wh[..., 1]
 
         b1_area = b1[..., 2:4].prod(dim=-1)
@@ -215,7 +218,9 @@ class YOLOLOSS:
 
         enclose_mins = torch.min(b1_mins, b2_mins)
         enclose_maxes = torch.max(b1_maxes, b2_maxes)
-        enclose_wh = torch.max(enclose_maxes - enclose_mins, torch.zeros_like(intersect_maxes))
+        enclose_wh = torch.max(
+            enclose_maxes - enclose_mins, torch.zeros_like(intersect_maxes)
+        )
         enclose_area = enclose_wh[..., 0] * enclose_wh[..., 1]
 
         giou = iou - (enclose_area - union_area) / enclose_area
@@ -236,8 +241,12 @@ def compute_iou(box_a: torch.Tensor, box_b: torch.Tensor) -> torch.Tensor:
     b_min = box_b[:, :2].unsqueeze(0) - b_wh / 2
     b_max = box_b[:, :2].unsqueeze(0) + b_wh / 2
 
-    inter_w = torch.min(a_max[..., 0], b_max[..., 0]) - torch.max(a_min[..., 0], b_min[..., 0])
-    inter_h = torch.min(a_max[..., 1], b_max[..., 1]) - torch.max(a_min[..., 1], b_min[..., 1])
+    inter_w = torch.min(a_max[..., 0], b_max[..., 0]) - torch.max(
+        a_min[..., 0], b_min[..., 0]
+    )
+    inter_h = torch.min(a_max[..., 1], b_max[..., 1]) - torch.max(
+        a_min[..., 1], b_min[..., 1]
+    )
     inter = torch.clamp(inter_w, min=0) * torch.clamp(inter_h, min=0)
 
     area_a = a_wh[..., 0] * a_wh[..., 1]
@@ -259,10 +268,13 @@ def compute_iou_with_anchors(
     n, m = boxes.shape[0], anchors.shape[0]
     if n == 0 or m == 0:
         return torch.zeros(n, m, device=boxes.device, dtype=boxes.dtype)
-    anchor_boxes = torch.cat([
-        torch.zeros(m, 2, device=boxes.device, dtype=boxes.dtype),
-        anchors,
-    ], dim=-1)
+    anchor_boxes = torch.cat(
+        [
+            torch.zeros(m, 2, device=boxes.device, dtype=boxes.dtype),
+            anchors,
+        ],
+        dim=-1,
+    )
     return compute_iou(boxes, anchor_boxes)
 
 
@@ -288,6 +300,7 @@ def focal_loss(
     alpha: float = 0.25,
     gamma: float = 1.5,
     reduction: str = "mean",
+    num_pos: int | None = None,
 ) -> torch.Tensor:
     """Focal Loss：在 BCE 基础上乘以调制因子降低易分类样本权重，pred/targ 为 logits 和 0/1 标签。"""
     loss = nn.BCEWithLogitsLoss(reduction="none")(pred, targ)
@@ -297,6 +310,8 @@ def focal_loss(
     modulating_factor = (1.0 - p_t) ** gamma
     loss = loss * alpha_factor * modulating_factor
 
+    if num_pos is not None:
+        return loss.sum() / max(1, num_pos)
     if reduction == "mean":
         return loss.mean()
     elif reduction == "sum":
