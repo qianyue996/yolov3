@@ -10,6 +10,7 @@
        ↓  YOLOLOSS.__call__ 内 xyxy2xywh
   FeatureTargets: (N,5) float32  cx,cy,w,h 归一化到当前特征图网格（stride=8/16/32）
 """
+
 from __future__ import annotations
 
 import copy
@@ -20,12 +21,14 @@ import torch
 
 class RawTargets(NamedTuple):
     """Dataset.__getitem__ 返回的原始标注，单位：像素。"""
+
     boxes: torch.Tensor  # (N, 5)  [x1, y1, x2, y2, class_id]
 
 
 class TransformedBatch(NamedTuple):
     """yolo_collate_fn 的输出，进入模型前的最终形态。"""
-    images: torch.Tensor      # (B, 3, 416, 416)  ToTensor + Normalize
+
+    images: torch.Tensor  # (B, 3, 416, 416)  ToTensor + Normalize
     targets: list[torch.Tensor]  # list of (Ni, 5)  xyxy ∈ [0,1]，class_id
 
 

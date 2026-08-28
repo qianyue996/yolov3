@@ -11,6 +11,7 @@ from utils.transforms import transform
 
 try:
     import yaml
+
     with open("data/coco_names.yaml") as _f:
         class_names = yaml.safe_load(_f)
 except Exception:

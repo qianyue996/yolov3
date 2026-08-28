@@ -3,6 +3,7 @@
 将模型原始输出解码为 grid 单位的 (cx, cy, w, h) 坐标，
 供 loss.py 和 postprocess.py 复用，消除重复代码。
 """
+
 import torch
 
 
@@ -12,7 +13,9 @@ def decode_preds(
     feat_h: int,
     feat_w: int,
     device: torch.device,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> tuple[
+    torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor
+]:
     """将模型原始输出解码为 grid 单位的 (cx, cy, w, h) 坐标。
 
     Args:

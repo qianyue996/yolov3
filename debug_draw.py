@@ -11,6 +11,7 @@
     m    切换显示模式
     q    退出
 """
+
 import os
 from pathlib import Path
 
@@ -24,10 +25,10 @@ from utils.postprocess import _load_model, detect
 from utils.transforms import image_transform
 
 # ====== 可在下方修改这些常量来切换文件和权重 ======
-LABEL_FILE      = "data/coco_train_1pct.txt"
+LABEL_FILE = "data/coco_train_1pct.txt"
 CLASS_NAMES_FILE = "data/coco_names.yaml"
-WEIGHT_PATH     = "1000_0.2988.pth"   # 模型权重路径，为空则只展示 GT
-OUTPUT_DIR      = "output"
+WEIGHT_PATH = "1000_0.2988.pth"  # 模型权重路径，为空则只展示 GT
+OUTPUT_DIR = "output"
 
 # 显示模式：GT_ONLY / PRED_ONLY / BOTH
 SHOW_MODE = "GT_ONLY"
@@ -73,16 +74,27 @@ def draw_boxes_and_save(
     bgr = cv.cvtColor(np.array(image), cv.COLOR_RGB2BGR)
     for box in boxes:
         x1, y1, x2, y2, class_id = box
-        name = (class_names[int(class_id)]
-                if int(class_id) < len(class_names)
-                else str(int(class_id)))
+        name = (
+            class_names[int(class_id)]
+            if int(class_id) < len(class_names)
+            else str(int(class_id))
+        )
         color = class_id_to_color(int(class_id))
         cv.rectangle(bgr, (int(x1), int(y1)), (int(x2), int(y2)), color, 2)
         label = f"{name} {int(class_id)}"
         (tw, th), _ = cv.getTextSize(label, cv.FONT_HERSHEY_SIMPLEX, 0.55, 1)
-        cv.rectangle(bgr, (int(x1), int(y1) - th - 4), (int(x1) + tw, int(y1)), color, -1)
-        cv.putText(bgr, label, (int(x1), int(y1) - 4),
-                   cv.FONT_HERSHEY_SIMPLEX, 0.55, (0, 0, 0), 1)
+        cv.rectangle(
+            bgr, (int(x1), int(y1) - th - 4), (int(x1) + tw, int(y1)), color, -1
+        )
+        cv.putText(
+            bgr,
+            label,
+            (int(x1), int(y1) - 4),
+            cv.FONT_HERSHEY_SIMPLEX,
+            0.55,
+            (0, 0, 0),
+            1,
+        )
 
     os.makedirs(Path(output_path).parent, exist_ok=True)
     cv.imwrite(output_path, bgr)
@@ -90,35 +102,63 @@ def draw_boxes_and_save(
     return bgr
 
 
-def draw_gt_boxes(image: np.ndarray, boxes: list[list[float]],
-                  class_names: list[str]) -> np.ndarray:
+def draw_gt_boxes(
+    image: np.ndarray, boxes: list[list[float]], class_names: list[str]
+) -> np.ndarray:
     """绘制 ground truth 框，颜色按类别区分。"""
     for box in boxes:
         x1, y1, x2, y2, class_id = box
-        name = class_names[int(class_id)] if int(class_id) < len(class_names) else str(int(class_id))
+        name = (
+            class_names[int(class_id)]
+            if int(class_id) < len(class_names)
+            else str(int(class_id))
+        )
         color = class_id_to_color(int(class_id))
         cv.rectangle(image, (int(x1), int(y1)), (int(x2), int(y2)), color, 2)
         label = f"{name} {int(class_id)}"
         (tw, th), _ = cv.getTextSize(label, cv.FONT_HERSHEY_SIMPLEX, 0.55, 1)
-        cv.rectangle(image, (int(x1), int(y1) - th - 4), (int(x1) + tw, int(y1)), color, -1)
-        cv.putText(image, label, (int(x1), int(y1) - 4),
-                   cv.FONT_HERSHEY_SIMPLEX, 0.55, (0, 0, 0), 1)
+        cv.rectangle(
+            image, (int(x1), int(y1) - th - 4), (int(x1) + tw, int(y1)), color, -1
+        )
+        cv.putText(
+            image,
+            label,
+            (int(x1), int(y1) - 4),
+            cv.FONT_HERSHEY_SIMPLEX,
+            0.55,
+            (0, 0, 0),
+            1,
+        )
     return image
 
 
-def draw_pred_boxes(image: np.ndarray, results: torch.Tensor,
-                    class_names: list[str]) -> np.ndarray:
+def draw_pred_boxes(
+    image: np.ndarray, results: torch.Tensor, class_names: list[str]
+) -> np.ndarray:
     """绘制模型预测框，带置信度。"""
     for row in results:
         x1, y1, x2, y2, score, class_id = [float(v) for v in row]
-        name = class_names[int(class_id)] if int(class_id) < len(class_names) else str(int(class_id))
+        name = (
+            class_names[int(class_id)]
+            if int(class_id) < len(class_names)
+            else str(int(class_id))
+        )
         color = class_id_to_color(int(class_id))
         cv.rectangle(image, (int(x1), int(y1)), (int(x2), int(y2)), color, 2)
         label = f"{name} {score:.2f}"
         (tw, th), _ = cv.getTextSize(label, cv.FONT_HERSHEY_SIMPLEX, 0.55, 1)
-        cv.rectangle(image, (int(x1), int(y1) - th - 4), (int(x1) + tw, int(y1)), color, -1)
-        cv.putText(image, label, (int(x1), int(y1) - 4),
-                   cv.FONT_HERSHEY_SIMPLEX, 0.55, (0, 0, 0), 1)
+        cv.rectangle(
+            image, (int(x1), int(y1) - th - 4), (int(x1) + tw, int(y1)), color, -1
+        )
+        cv.putText(
+            image,
+            label,
+            (int(x1), int(y1) - 4),
+            cv.FONT_HERSHEY_SIMPLEX,
+            0.55,
+            (0, 0, 0),
+            1,
+        )
     return image
 
 
@@ -173,8 +213,10 @@ def run() -> None:
             image = draw_pred_boxes(image, preds, class_names)
 
         h, w = image.shape[:2]
-        info = (f"[{idx}/{total}]  {Path(img_path).name}  "
-                f"({w}x{h})  GT={len(gt_boxes)}  mode={show_mode}")
+        info = (
+            f"[{idx}/{total}]  {Path(img_path).name}  "
+            f"({w}x{h})  GT={len(gt_boxes)}  mode={show_mode}"
+        )
         cv.putText(image, info, (10, 30), cv.FONT_HERSHEY_SIMPLEX, 0.65, (0, 255, 0), 2)
 
         cv.imshow("debug_draw", image)
@@ -190,13 +232,13 @@ def run() -> None:
             cur = MODES.index(show_mode)
             show_mode = MODES[(cur + 1) % len(MODES)]
             print(f"切换到模式: {show_mode}")
-        elif key in (ord("\t"), 8):      # Tab / Backspace
+        elif key in (ord("\t"), 8):  # Tab / Backspace
             idx = (idx - 1) % total
-        elif key == ord(" "):            # Space
+        elif key == ord(" "):  # Space
             idx = (idx + 1) % total
-        elif key == 2555671:             # Left arrow
+        elif key == 2555671:  # Left arrow
             idx = (idx - 1) % total
-        elif key == 2555923:             # Right arrow
+        elif key == 2555923:  # Right arrow
             idx = (idx + 1) % total
 
     cv.destroyAllWindows()

@@ -9,6 +9,7 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 try:
     with open("data/coco_names.yaml") as _f:
         import yaml
+
         class_names = yaml.safe_load(_f)
 except Exception:
     class_names = []

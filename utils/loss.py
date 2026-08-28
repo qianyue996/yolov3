@@ -75,8 +75,12 @@ class YOLOLOSS:
             valid_mask = noobj_mask.bool() | obj_mask
             pred_conf_flat = pred[..., 4][valid_mask]
             conf_target = obj_mask.type_as(pred_conf_flat)[valid_mask]
-            loss_conf = focal_loss(
-                pred_conf_flat, conf_target, alpha=0.25, gamma=1.5, num_pos=int(n)
+            loss_conf = (
+                focal_loss(
+                    pred_conf_flat, conf_target, alpha=0.25, gamma=1.5, reduction="sum"
+                )
+                / max(1, n)
+                / max(1, bs)
             )
             conf_diff = (pred_conf_flat.sigmoid() - conf_target).abs().mean()
 
@@ -110,8 +114,8 @@ class YOLOLOSS:
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """为每个检测层构建 ground truth 张量 y_true，返回 (y_true, noobj_mask, box_loss_scale)。
 
-        每个 GT 都分配到本层最优 anchor（宽高经 exp 缩放回归，不要求
-        与 anchor 的原始 IoU 高）；歧义负样本由 get_ignore 处理。
+        在全部 9 个 anchor 中选出全局最优 anchor，仅当最优 anchor 属于本层时才分配；
+        歧义负样本由 get_ignore 处理。
         """
         y_true = torch.zeros_like(predict)
         noobj_mask = torch.ones(
@@ -120,22 +124,26 @@ class YOLOLOSS:
         box_loss_scale = torch.zeros(
             bs, len(anchors_mask), feat_h, feat_w, device=self.device
         )
-        anchors = self.anchors[anchors_mask] / (IMG_W / feat_h)
+        stride = IMG_W / feat_h
 
         for b, target in enumerate(targets):
             if len(target) == 0:
                 continue
-            iou = compute_iou_with_anchors(target[:, :4], anchors)
-            best_anchors = torch.argmax(iou, dim=-1)
+            # target[:, 2:4] 在 grid 单位，乘 stride 转换到 416 像素尺度与全部 9 个 anchor 匹配
+            target_wh_pixels = target[:, 2:4] * stride
+            iou_all = compute_iou_with_anchors(target_wh_pixels, self.anchors)
+            best_anchor_all = torch.argmax(iou_all, dim=-1)
 
-            for t, best_num_anchor in enumerate(best_anchors):
-                # argmax 得到的是层内 anchor 索引（0~len(anchors_mask)-1），
-                # 直接对应 y_true 第 1 维的 grid 下标 k
-                k = int(best_num_anchor)
+            for t, best_a in enumerate(best_anchor_all):
+                best_a_idx = int(best_a.item())
+                # 只有当该目标的全局最佳 anchor 属于当前检测层时，才分配给本层
+                if best_a_idx not in anchors_mask:
+                    continue
+                k = anchors_mask.index(best_a_idx)
 
                 # target[t,0]=cx(沿 dim3=x)，target[t,1]=cy(沿 dim2=y)
-                x = torch.floor(target[t, 0]).long()
-                y = torch.floor(target[t, 1]).long()
+                x = torch.floor(target[t, 0]).long().clamp(0, feat_w - 1)
+                y = torch.floor(target[t, 1]).long().clamp(0, feat_h - 1)
                 c = target[t, 4].long()
 
                 noobj_mask[b, k, y, x] = 0
@@ -259,15 +267,23 @@ def compute_iou(box_a: torch.Tensor, box_b: torch.Tensor) -> torch.Tensor:
 def compute_iou_with_anchors(
     boxes: torch.Tensor, anchors: torch.Tensor
 ) -> torch.Tensor:
-    """计算目标框与 anchor 的 IoU（anchor 只有宽高，以原点为中心构造虚拟框）。
+    """计算目标框与 anchor 的宽高 IoU（以原点为中心构造虚拟框）。
 
-    boxes:    (N, 4)  cx,cy,w,h
+    boxes:    (N, 4) 或 (N, 2)  cx,cy,w,h 或 w,h
     anchors:  (M, 2)  w,h
     返回: (N, M)
     """
     n, m = boxes.shape[0], anchors.shape[0]
     if n == 0 or m == 0:
         return torch.zeros(n, m, device=boxes.device, dtype=boxes.dtype)
+    boxes_wh = boxes[:, 2:4] if boxes.shape[-1] >= 4 else boxes[:, :2]
+    boxes_zero = torch.cat(
+        [
+            torch.zeros(n, 2, device=boxes.device, dtype=boxes.dtype),
+            boxes_wh,
+        ],
+        dim=-1,
+    )
     anchor_boxes = torch.cat(
         [
             torch.zeros(m, 2, device=boxes.device, dtype=boxes.dtype),
@@ -275,7 +291,7 @@ def compute_iou_with_anchors(
         ],
         dim=-1,
     )
-    return compute_iou(boxes, anchor_boxes)
+    return compute_iou(boxes_zero, anchor_boxes)
 
 
 def compute_stride(
@@ -300,7 +316,6 @@ def focal_loss(
     alpha: float = 0.25,
     gamma: float = 1.5,
     reduction: str = "mean",
-    num_pos: int | None = None,
 ) -> torch.Tensor:
     """Focal Loss：在 BCE 基础上乘以调制因子降低易分类样本权重，pred/targ 为 logits 和 0/1 标签。"""
     loss = nn.BCEWithLogitsLoss(reduction="none")(pred, targ)
@@ -310,8 +325,6 @@ def focal_loss(
     modulating_factor = (1.0 - p_t) ** gamma
     loss = loss * alpha_factor * modulating_factor
 
-    if num_pos is not None:
-        return loss.sum() / max(1, num_pos)
     if reduction == "mean":
         return loss.mean()
     elif reduction == "sum":

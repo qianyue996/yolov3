@@ -12,6 +12,7 @@ from utils.models import RawTargets, TransformedBatch
 try:
     with open("data/coco_names.yaml") as _f:
         import yaml
+
         class_names = yaml.safe_load(_f)
 except Exception:
     class_names = []
@@ -43,16 +44,16 @@ class TransFormer:
     def __init__(self) -> None:
         pass
 
-    def __call__(
-        self, image: Image.Image, raw: RawTargets
-    ) -> TransformedBatch:
+    def __call__(self, image: Image.Image, raw: RawTargets) -> TransformedBatch:
         scaled_factor_w = image.size[0] / IMG_W
         scaled_factor_h = image.size[1] / IMG_H
 
         tensor_image = _preprocess(image)
 
         if raw.boxes.shape[0] == 0:
-            return TransformedBatch(tensor_image, [torch.empty((0, 5), dtype=torch.float32)])
+            return TransformedBatch(
+                tensor_image, [torch.empty((0, 5), dtype=torch.float32)]
+            )
 
         targets = raw.boxes.numpy().copy()
         targets[:, [0, 2]] = targets[:, [0, 2]] / scaled_factor_w / IMG_W

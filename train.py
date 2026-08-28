@@ -190,7 +190,7 @@ if __name__ == "__main__":
 
         with tqdm(dataloader) as pbar:
             for _n_batch, item in enumerate(pbar):
-                batch_x, batch_y = item   # TransformedBatch
+                batch_x, batch_y = item  # TransformedBatch
                 # pin_memory + non_blocking：H2D 拷贝异步化，不阻塞主进程
                 batch_x = batch_x.to(device, non_blocking=True)
                 batch_y = [i.to(device, non_blocking=True) for i in batch_y]
