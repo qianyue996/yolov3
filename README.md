@@ -68,8 +68,8 @@ uv run train.py \
 | `--lr` | `0.01` | SGD 学习率 |
 | `--checkpoint` | `None` | 预训练权重路径；传 `null` 从随机权重开始 |
 | `--weights-dir` | `weights` | checkpoint 输出目录 |
-| `--save-every` | `1000` | 每隔多少步保存一次 `<step>_<loss>.pth` |
-| `--no-save-epoch` | 关 | 关闭按 epoch 保存（默认开启，存为 `epoch<N>_<loss>.pth`） |
+| `--save-epoch` | `1` | 按 epoch 保存的间隔（默认每个 epoch 保存一次，设为 0 关闭） |
+| `--save-every` | `None` | 按 step 步数保存的间隔（指定后自动关闭按 epoch 保存） |
 | `--save-best` | 关 | 额外保存 avg_loss 最低的 `best.pth` |
 | `--freeze-backbone` | 关 | 冻结 Darknet-53 主干，只训练 FPN + 检测头 |
 | `--num-workers` | `4` | DataLoader 工作进程数 |
@@ -77,23 +77,24 @@ uv run train.py \
 
 训练日志 → `runs/<timestamp>/`（TensorBoard）
 
-> **重要**：loss 已修复正样本分配 bug 并加入 conf 正负样本加权（pos_weight）。
-> 用旧代码训练的 checkpoints 与新代码训练动态不兼容，建议重新训练。
+> **重要**：损失函数已完成全面升级：
+> 1. 修复坐标转置与 Anchor 宽高对齐 IoU Bug，实现全局 9-Anchor 跨尺度精准匹配；
+> 2. 置信度采用针对目标检测优化的标准 **Focal Loss**（$\alpha=0.75, \gamma=1.5$），引入 RetinaNet 先验偏置初始化（$b=-4.6$）与 `max(bs, num_pos)` 批次防护，从根本上解决置信度偏低与训练数值溢出（NaN）问题；
+> 3. 用旧代码训练的 checkpoints 与新代码不兼容，需重新训练。
 
-### 3. 图片检测
-
-```bash
-uv run image_detect.py img/street.jpg
-uv run image_detect.py img/street.jpg --output result.png --checkpoint my_model.pth
-```
-
-检测结果默认保存至 `outputs/result_<原文件名>.png`
-
-### 4. 摄像头实时检测
+### 3. 目标检测（图片 / 摄像头自动识别）
 
 ```bash
+# 摄像头实时检测（默认读取 0 号摄像头）
 uv run detect.py
+uv run detect.py 0 --checkpoint weights/best.pth
+
+# 单张图片检测
+uv run detect.py img/street.jpg
+uv run detect.py img/street.jpg --output result.png --checkpoint weights/best.pth
 ```
+
+图片检测结果默认保存至 `outputs/result_<原文件名>.png`。
 
 推理前需在项目根目录放置模型权重（默认读取 `1000_0.2988.pth`）。
 
@@ -108,18 +109,20 @@ uv run detect.py
 ## 架构
 
 ```
-nets/yolov3.py            YoloBody（Darknet-53 + FPN + 3 头）
+detect.py                 统一目标检测入口（自动支持图片与摄像头视频流）
+nets/yolov3.py            YoloBody（Darknet-53 + FPN + 3 检测头，置信度先验偏置初始化）
 nets/yolov3_tiny.py       YOLOv3Tiny 轻量版（独立模块，未接入训练流程）
 nets/darknet.py           DarkNet-53 主干
 utils/
 ├── config.py             常量：IMG_W/IMG_H、归一化 mean/std
+├── decode.py             公共解码逻辑（decode_preds，供训练 loss 与推理后处理复用）
 ├── models.py             数据类型（RawTargets/TransformedBatch）+ xyxy2xywh 坐标转换
 ├── loss_types.py         loss 内部数据结构（TargetBuild/PredDecode/LayerMetrics）
 ├── transforms.py         图像归一化/变换（TransFormer、image_transform、image_show）
 ├── dataloader.py         YOLODataset / CocoDataset / yolo_collate_fn
-├── loss.py               YOLOLOSS（GIoU + BCE，conf 带 pos_weight，ignore 机制）
+├── loss.py               YOLOLOSS（GIoU + 稳定版 Focal Loss + BCE 分类，全局 9-Anchor 分配）
 ├── postprocess.py        推理后处理（模型加载、secend_stage 解码、detect 流程）
-├── nms.py                non_max_suppression
+├── nms.py                non_max_suppression（非极大值抑制）
 ├── stratified_sampler.py COCO 分层采样工具
 └── __init__.py           统一导出（load_classes / set_seed / worker_init_fn 等）
 ```
@@ -130,8 +133,8 @@ utils/
 图片+标注 → RawTargets(像素 xyxy)
     → yolo_collate_fn/TransFormer 归一化到 416×416 → TransformedBatch([0,1] xyxy)
     → YoloBody 前向 → 三层 (B,3,H,W,5+C) logit
-    → YOLOLOSS：xyxy2xywh 到各层 grid → build_targets/get_ignore → GIoU+BCE
-推理：YoloBody → secend_stage 解码到像素 → non_max_suppression
+    → YOLOLOSS：xyxy2xywh 到各层 grid → build_targets (全局 9-Anchor)/get_ignore → GIoU+FocalLoss+BCE
+推理：YoloBody → decode_preds/secend_stage 解码到像素 → non_max_suppression → 绘图输出
 ```
 
 ## 性能调优（GPU 训练时 CPU 单核吃满）

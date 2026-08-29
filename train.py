@@ -45,21 +45,22 @@ if __name__ == "__main__":
         help="预训练权重路径，为 null 时从随机权重开始训练",
     )
     parser.add_argument(
+        "--save-epoch",
+        type=int,
+        default=1,
+        help="按 epoch 保存 checkpoint 的间隔（默认 1，每个 epoch 结束保存一次；设为 0 关闭）",
+    )
+    parser.add_argument(
         "--save-every",
         type=int,
-        default=1000,
-        help="每隔多少步保存一次 checkpoint（默认 1000）",
+        default=None,
+        help="按 step 步数保存 checkpoint 的间隔（设置后将自动关闭按 epoch 保存）",
     )
     parser.add_argument(
         "--weights-dir",
         type=str,
         default="weights",
         help="checkpoint 输出目录（默认 weights）",
-    )
-    parser.add_argument(
-        "--no-save-epoch",
-        action="store_true",
-        help="关闭按 epoch 保存（默认每个 epoch 结束保存一次）",
     )
     parser.add_argument(
         "--save-best",
@@ -149,7 +150,7 @@ if __name__ == "__main__":
     optimizer = optim.SGD(
         (p for p in model.parameters() if p.requires_grad),
         lr=lr,
-        momentum=0.99,
+        momentum=0.937,
         weight_decay=1e-4,
     )
     # optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
@@ -199,6 +200,7 @@ if __name__ == "__main__":
                 loss, detail = loss_fn(outputs, batch_y)
                 optimizer.zero_grad()
                 loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=10.0)
                 optimizer.step()
 
                 batch_sz = batch_x.shape[0]
@@ -238,16 +240,17 @@ if __name__ == "__main__":
                     best_loss = avg_loss
                     torch.save(model, ".checkpoint.pth")
                     os.replace(".checkpoint.pth", save_path / "best.pth")
-                    print(f"  [best] avg_loss={avg_loss:.4f} → weights/best.pth")
-                if global_step % args.save_every == 0:
+                    print(f"  [best] avg_loss={avg_loss:.4f} → {save_path / 'best.pth'}")
+                if args.save_every and global_step % args.save_every == 0:
+                    step_path = save_path / f"step{global_step}_{avg_loss:.4f}.pth"
                     torch.save(model, ".checkpoint.pth")
-                    os.replace(
-                        ".checkpoint.pth",
-                        save_path / f"{global_step}_{avg_loss:.4f}.pth",
-                    )
+                    os.replace(".checkpoint.pth", step_path)
+                    print(f"  [step {global_step}] avg_loss={avg_loss:.4f} → {step_path}")
 
-        if not args.no_save_epoch:
+        # 仅在未指定 --save-every 时按 epoch 周期保存
+        if not args.save_every and args.save_epoch > 0 and (epoch + 1) % args.save_epoch == 0:
             epoch_path = save_path / f"epoch{epoch}_{avg_loss:.4f}.pth"
             torch.save(model, ".checkpoint.pth")
             os.replace(".checkpoint.pth", epoch_path)
+            print(f"[epoch {epoch}] avg_loss={avg_loss:.4f} → {epoch_path}")
             print(f"[epoch {epoch}] avg_loss={avg_loss:.4f} → {epoch_path}")

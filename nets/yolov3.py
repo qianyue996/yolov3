@@ -106,6 +106,14 @@ class YoloBody(nn.Module):
             len(anchors_mask[2]) * (self.num_classes + 5),
         )
 
+        # Focal Loss 专属初始先验偏置 (RetinaNet 论文第 4.1 节)：
+        # 将检测头置信度输出通道的 bias 初始化为 b = log(pi / (1 - pi)) = -4.6 (即 pi = 0.01)
+        # 避免随机初始化时全图数万个背景格子产生巨大累积损失和梯度爆炸 (NaN)
+        for layer in [self.last_layer0[-1], self.last_layer1[-1], self.last_layer2[-1]]:
+            if isinstance(layer, nn.Conv2d) and layer.bias is not None:
+                b = layer.bias.view(-1, self.num_classes + 5)
+                b.data[:, 4] = -4.6
+
     def forward(
         self, x: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:

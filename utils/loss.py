@@ -20,10 +20,10 @@ class YOLOLOSS:
         self.anchors_mask = model.anchors_mask
         self.class_name = model.class_names
 
-        self.balance = [4, 1.0, 0.4]
+        self.balance = [4.0, 1.0, 0.4]
         self.box_ratio = 0.05
-        self.obj_ratio = 5
-        self.cls_ratio = 1
+        self.obj_ratio = 1.0
+        self.cls_ratio = 1.0
 
     def __call__(
         self, predicts: RawPredicts, all_targets: list[torch.Tensor]
@@ -75,12 +75,13 @@ class YOLOLOSS:
             valid_mask = noobj_mask.bool() | obj_mask
             pred_conf_flat = pred[..., 4][valid_mask]
             conf_target = obj_mask.type_as(pred_conf_flat)[valid_mask]
-            loss_conf = (
-                focal_loss(
-                    pred_conf_flat, conf_target, alpha=0.25, gamma=1.5, reduction="sum"
-                )
-                / max(1, n)
-                / max(1, bs)
+            loss_conf = focal_loss(
+                pred_conf_flat,
+                conf_target,
+                alpha=0.75,
+                gamma=1.5,
+                num_pos=int(n),
+                bs=bs,
             )
             conf_diff = (pred_conf_flat.sigmoid() - conf_target).abs().mean()
 
@@ -222,7 +223,7 @@ class YOLOLOSS:
         b1_area = b1[..., 2:4].prod(dim=-1)
         b2_area = b2[..., 2:4].prod(dim=-1)
         union_area = b1_area + b2_area - intersect_area
-        iou = intersect_area / union_area
+        iou = intersect_area / (union_area + 1e-7)
 
         enclose_mins = torch.min(b1_mins, b2_mins)
         enclose_maxes = torch.max(b1_maxes, b2_maxes)
@@ -231,8 +232,8 @@ class YOLOLOSS:
         )
         enclose_area = enclose_wh[..., 0] * enclose_wh[..., 1]
 
-        giou = iou - (enclose_area - union_area) / enclose_area
-        return giou
+        giou = iou - (enclose_area - union_area) / (enclose_area + 1e-7)
+        return giou.clamp(min=-1.0, max=1.0)
 
 
 def compute_iou(box_a: torch.Tensor, box_b: torch.Tensor) -> torch.Tensor:
@@ -260,7 +261,7 @@ def compute_iou(box_a: torch.Tensor, box_b: torch.Tensor) -> torch.Tensor:
     area_a = a_wh[..., 0] * a_wh[..., 1]
     area_b = b_wh[..., 0] * b_wh[..., 1]
     union = area_a + area_b - inter
-    iou = inter / union
+    iou = inter / (union + 1e-7)
     return iou
 
 
@@ -313,9 +314,11 @@ def compute_stride(
 def focal_loss(
     pred: torch.Tensor,
     targ: torch.Tensor,
-    alpha: float = 0.25,
+    alpha: float = 0.75,
     gamma: float = 1.5,
     reduction: str = "mean",
+    num_pos: int | None = None,
+    bs: int = 1,
 ) -> torch.Tensor:
     """Focal Loss：在 BCE 基础上乘以调制因子降低易分类样本权重，pred/targ 为 logits 和 0/1 标签。"""
     loss = nn.BCEWithLogitsLoss(reduction="none")(pred, targ)
@@ -325,6 +328,8 @@ def focal_loss(
     modulating_factor = (1.0 - p_t) ** gamma
     loss = loss * alpha_factor * modulating_factor
 
+    if num_pos is not None:
+        return loss.sum() / max(bs, num_pos)
     if reduction == "mean":
         return loss.mean()
     elif reduction == "sum":

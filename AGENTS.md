@@ -14,11 +14,13 @@ ruff check .             # lint
 ```
 
 ## Architecture
-- `nets/yolov3.py` — `YoloBody` (Darknet-53 backbone + FPN + 3 YOLO heads); also stores `anchors`, `anchors_mask`, `class_names` on the model instance
-- `utils/dataloader.py` — `YOLODataset` reads one-line-per-image label files; `transform` resizes to **416×416** and normalises with hardcoded mean/std
-- `utils/loss.py` — `YOLOLOSS`
+- `nets/yolov3.py` — `YoloBody` (Darknet-53 backbone + FPN + 3 YOLO heads with RetinaNet prior bias init)
+- `utils/decode.py` — `decode_preds` shared decoding logic for loss and postprocess
+- `utils/dataloader.py` — `YOLODataset` / `CocoDataset` / `yolo_collate_fn`
+- `utils/loss.py` — `YOLOLOSS` (GIoU + Focal Loss + global 9-anchor matching)
 - `utils/nms.py` — `non_max_suppression`
-- `detect.py` — `secend_stage()` post-processes raw model output (decoder); used by both webcam and image detection
+- `utils/postprocess.py` — `secend_stage()` post-processes raw model output into pixel coordinates
+- `detect.py` — Unified detection entrypoint (auto-detects webcam index vs image file path)
 - `label_util/` — COCO/VOC annotation-to-text converters
 
 ## Dataset Format
