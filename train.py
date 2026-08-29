@@ -253,4 +253,3 @@ if __name__ == "__main__":
             torch.save(model, ".checkpoint.pth")
             os.replace(".checkpoint.pth", epoch_path)
             print(f"[epoch {epoch}] avg_loss={avg_loss:.4f} → {epoch_path}")
-            print(f"[epoch {epoch}] avg_loss={avg_loss:.4f} → {epoch_path}")
