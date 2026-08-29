@@ -7,6 +7,7 @@ from typing import NamedTuple
 import numpy as np
 import torch
 import torchvision.ops as ops
+from torch.utils.data.dataloader import DataLoader
 from tqdm import tqdm
 
 from utils.decode import decode_preds
@@ -232,14 +233,15 @@ def evaluate_batch(
     )
 
 
-@torch.no_grad()
+@torch.inference_mode()
 def evaluate_dataset(
     model: torch.nn.Module,
-    dataloader: torch.utils.data.DataLoader,
+    dataloader: DataLoader,
     device: torch.device,
     class_names: list[str] | None = None,
     conf_thres: float = 0.001,
     iou_thres: float = 0.6,
+    desc: str = "Validating",
 ) -> EvalResult:
     """在整个数据集上运行验证并输出完整的 mAP 评测指标。"""
     model.eval()
@@ -253,7 +255,7 @@ def evaluate_dataset(
     anchors = torch.tensor(model.anchors, device=device, dtype=torch.float32)
     anchors_mask = model.anchors_mask
 
-    for batch in tqdm(dataloader, desc="Validating", leave=False):
+    for batch in tqdm(dataloader, desc=desc, leave=False):
         images, targets = batch  # TransformedBatch
         images = images.to(device, non_blocking=True)
         outputs = model(images)

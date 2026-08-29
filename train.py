@@ -305,7 +305,12 @@ def main() -> None:
             val_total_loss = 0.0
             val_samples = 0
             with torch.no_grad():
-                for val_item in val_dataloader:
+                val_pbar = tqdm(
+                    val_dataloader,
+                    desc=f"Epoch {epoch} Val Loss",
+                    leave=False,
+                )
+                for val_item in val_pbar:
                     v_bx, v_by = val_item
                     v_bx = v_bx.to(device, non_blocking=True)
                     v_by = [i.to(device, non_blocking=True) for i in v_by]
@@ -314,6 +319,7 @@ def main() -> None:
                     v_bs = v_bx.shape[0]
                     val_total_loss += v_loss.item() * v_bs
                     val_samples += v_bs
+                    val_pbar.set_postfix({"v_loss": f"{v_loss.item():.4f}"})
 
             val_avg_loss = val_total_loss / max(1, val_samples)
             writer.add_scalar("val/loss", val_avg_loss, epoch)
@@ -324,6 +330,7 @@ def main() -> None:
                     dataloader=val_dataloader,
                     device=device,
                     class_names=class_names,
+                    desc=f"Epoch {epoch} mAP Eval",
                 )
                 writer.add_scalar("val/mAP@0.5", eval_res.map50, epoch)
                 writer.add_scalar("val/mAP@0.5:0.95", eval_res.map50_95, epoch)
