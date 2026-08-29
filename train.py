@@ -63,8 +63,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--eval-every",
         type=int,
-        default=1,
-        help="每隔多少个 epoch 执行一次完整的 mAP 评测（设为 0 关闭）",
+        default=0,
+        help="每隔多少个 epoch 执行一次完整的 mAP 评测（默认 0 关闭；设为 1 或 N 开启）",
     )
     parser.add_argument("--batch-size", type=int, default=2, help="训练 batch 大小")
     parser.add_argument("--epochs", type=int, default=120, help="训练轮数")
@@ -297,7 +297,7 @@ def main() -> None:
                     step_path = save_path / f"step{global_step}_{avg_loss:.4f}.pth"
                     torch.save(model, ".checkpoint.pth")
                     Path(".checkpoint.pth").replace(step_path)
-                    print(f"  [step {global_step}] avg_loss={avg_loss:.4f} → {step_path}")
+                    tqdm.write(f"  [step {global_step}] avg_loss={avg_loss:.4f} → {step_path}")
 
         # 5. 每个 Epoch 结束后的验证与评估
         if val_dataloader is not None:
@@ -307,7 +307,7 @@ def main() -> None:
             with torch.no_grad():
                 val_pbar = tqdm(
                     val_dataloader,
-                    desc=f"Epoch {epoch} Val Loss",
+                    desc=f"Epoch {epoch} Val",
                     leave=False,
                 )
                 for val_item in val_pbar:
@@ -319,10 +319,17 @@ def main() -> None:
                     v_bs = v_bx.shape[0]
                     val_total_loss += v_loss.item() * v_bs
                     val_samples += v_bs
-                    val_pbar.set_postfix({"v_loss": f"{v_loss.item():.4f}"})
+                    avg_eval = val_total_loss / max(1, val_samples)
+                    val_pbar.set_postfix(
+                        {
+                            "val_loss": f"{v_loss.item():.4f}",
+                            "avg_eval": f"{avg_eval:.4f}",
+                        }
+                    )
 
             val_avg_loss = val_total_loss / max(1, val_samples)
             writer.add_scalar("val/loss", val_avg_loss, epoch)
+            tqdm.write(f"[val epoch {epoch}] avg_eval={val_avg_loss:.4f}")
 
             if args.eval_every > 0 and (epoch + 1) % args.eval_every == 0:
                 eval_res = evaluate_dataset(
@@ -336,9 +343,8 @@ def main() -> None:
                 writer.add_scalar("val/mAP@0.5:0.95", eval_res.map50_95, epoch)
                 writer.add_scalar("val/Precision", eval_res.mp, epoch)
                 writer.add_scalar("val/Recall", eval_res.mr, epoch)
-                print(
-                    f"\n[val epoch {epoch}] val_loss={val_avg_loss:.4f}, "
-                    f"P={eval_res.mp:.4f}, R={eval_res.mr:.4f}, "
+                tqdm.write(
+                    f"[eval epoch {epoch}] P={eval_res.mp:.4f}, R={eval_res.mr:.4f}, "
                     f"mAP@0.5={eval_res.map50:.4f}, mAP@0.5:0.95={eval_res.map50_95:.4f}"
                 )
 
@@ -346,24 +352,24 @@ def main() -> None:
                     best_map = eval_res.map50
                     torch.save(model, ".checkpoint.pth")
                     Path(".checkpoint.pth").replace(save_path / "best.pth")
-                    print(f"  [best] mAP@0.5={eval_res.map50:.4f} → {save_path / 'best.pth'}")
+                    tqdm.write(f"  [best] mAP@0.5={eval_res.map50:.4f} → {save_path / 'best.pth'}")
             elif args.save_best and val_avg_loss < best_loss:
                 best_loss = val_avg_loss
                 torch.save(model, ".checkpoint.pth")
                 Path(".checkpoint.pth").replace(save_path / "best.pth")
-                print(f"  [best] val_loss={val_avg_loss:.4f} → {save_path / 'best.pth'}")
+                tqdm.write(f"  [best] avg_eval={val_avg_loss:.4f} → {save_path / 'best.pth'}")
         elif args.save_best and avg_loss < best_loss:
             best_loss = avg_loss
             torch.save(model, ".checkpoint.pth")
             Path(".checkpoint.pth").replace(save_path / "best.pth")
-            print(f"  [best] avg_loss={avg_loss:.4f} → {save_path / 'best.pth'}")
+            tqdm.write(f"  [best] avg_loss={avg_loss:.4f} → {save_path / 'best.pth'}")
 
         # 6. 按 Epoch 周期保存 checkpoint
         if not args.save_every and args.save_epoch > 0 and (epoch + 1) % args.save_epoch == 0:
             epoch_path = save_path / f"epoch{epoch}_{avg_loss:.4f}.pth"
             torch.save(model, ".checkpoint.pth")
             Path(".checkpoint.pth").replace(epoch_path)
-            print(f"[epoch {epoch}] avg_loss={avg_loss:.4f} → {epoch_path}")
+            tqdm.write(f"[epoch {epoch}] avg_loss={avg_loss:.4f} → {epoch_path}")
 
 
 if __name__ == "__main__":

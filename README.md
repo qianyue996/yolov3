@@ -70,7 +70,7 @@ uv run train.py \
 | `--annotation` / `--image-root` | 空 | 直接读 COCO JSON 训练集，优先于 `--data` |
 | `--val-data` | 空 | 验证集文本标签文件 |
 | `--val-annotation` / `--val-image-root` | 空 | 直接读 COCO JSON 验证集 |
-| `--eval-every` | `1` | 每隔多少个 epoch 执行一次 mAP 评测（设为 0 关闭） |
+| `--eval-every` | `0` | 每隔多少个 epoch 执行一次 mAP 评测（默认 0 关闭；设为 1 或 N 开启） |
 | `--batch-size` | `2` | batch 大小 |
 | `--epochs` | `120` | 训练轮数 |
 | `--lr` | `0.01` | SGD 学习率 |
