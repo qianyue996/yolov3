@@ -11,6 +11,22 @@ RawPredicts = list[torch.Tensor]
 
 
 class YOLOLOSS:
+    """YOLOv3 损失函数计算器（GIoU + 稳定版 Focal Loss + BCE 分类）。
+
+    各项损失的【理想值】与【训练各阶段实际参考值】：
+    ┌──────────────┬──────────────┬──────────────┬──────────────┬──────────────┐
+    │ 损失 / 指标项 │ 理想值(完美) │ 随机初始化初期│ 训练中期(20ep)│ 充分收敛期   │
+    ├──────────────┼──────────────┼──────────────┼──────────────┼──────────────┤
+    │ loss_loc     │ 0.0000       │ 1.80 ~ 3.50  │ 0.60 ~ 1.20  │ 0.20 ~ 0.45  │
+    │ loss_conf    │ 0.0000       │ 1.50 ~ 5.00  │ 0.30 ~ 0.80  │ 0.01 ~ 0.08  │
+    │ loss_cls     │ 0.0000       │ 0.70 ~ 1.00  │ 0.15 ~ 0.35  │ 0.01 ~ 0.06  │
+    │ center_diff  │ 0.00 格      │ 15.0 ~ 35.0格│ 2.0 ~ 5.0 格 │ < 0.8 格     │
+    │ wh_diff      │ 0.00 格      │ 10.0 ~ 30.0格│ 2.0 ~ 6.0 格 │ < 1.2 格     │
+    │ conf_diff    │ 0.0000       │ ~0.5000      │ 0.10 ~ 0.25  │ < 0.05       │
+    │ total_loss   │ 0.0000       │ 15.0 ~ 35.0  │ 2.0 ~ 6.0    │ 0.30 ~ 0.80  │
+    └──────────────┴──────────────┴──────────────┴──────────────┴──────────────┘
+    """
+
     def __init__(self, model: nn.Module) -> None:
         self.device = next(model.parameters()).device
         self.stride = [8, 16, 32]
@@ -28,7 +44,20 @@ class YOLOLOSS:
     def __call__(
         self, predicts: RawPredicts, all_targets: list[torch.Tensor]
     ) -> tuple[torch.Tensor, dict]:
-        """计算总 loss 并返回每层的详细指标字典，返回 (总loss, {layer0: {...}, layer1: {...}, layer2: {...}})。"""
+        """计算总 loss 并返回每层的详细指标字典。
+
+        Returns:
+            (total_loss, detail):
+                total_loss: 加权后的总标量损失
+                detail: 各特征层 (layer0, layer1, layer2) 的指标字典：
+                    - loss_loc:    定位损失 (GIoU)，理想值 0.0
+                    - loss_conf:   置信度 Focal Loss，理想值 0.0
+                    - loss_cls:    分类 BCE 损失，理想值 0.0
+                    - center_diff: 中心点像素误差 (grid 单位)，理想值 0.0
+                    - wh_diff:     宽高误差 (grid 单位)，理想值 0.0
+                    - conf_diff:   置信度绝对误差，理想值 0.0
+                    - n_pos:       本层正样本物体数量
+        """
         total_loss = torch.zeros((), device=self.device)
         detail = {}
         for layer_idx, pred in enumerate(predicts):

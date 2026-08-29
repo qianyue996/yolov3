@@ -1,5 +1,11 @@
+"""YOLOv3 训练主脚本。
+
+支持自定义数据集、自动验证集 mAP 评估、断点续训与 TensorBoard 监控。
+"""
+
+from __future__ import annotations
+
 import argparse
-import os
 import time
 from pathlib import Path
 
@@ -12,10 +18,11 @@ from tqdm import tqdm
 from nets.yolov3 import YoloBody
 from utils import YOLOLOSS, load_classes, set_seed, worker_init_fn
 from utils.dataloader import CocoDataset, YOLODataset, yolo_collate_fn
+from utils.metrics import evaluate_dataset
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
 
-if __name__ == "__main__":
+def parse_args() -> argparse.Namespace:
+    """解析命令行参数。"""
     parser = argparse.ArgumentParser(description="YOLOv3 训练脚本")
     parser.add_argument(
         "--data",
@@ -35,9 +42,33 @@ if __name__ == "__main__":
         default="",
         help="图片根目录，与 --annotation 配合使用",
     )
-    parser.add_argument("--batch-size", type=int, default=2)
-    parser.add_argument("--epochs", type=int, default=120)
-    parser.add_argument("--lr", type=float, default=0.01)
+    parser.add_argument(
+        "--val-data",
+        type=str,
+        default="",
+        help="验证集文本标签文件路径（如 data/coco_val_10pct.txt）",
+    )
+    parser.add_argument(
+        "--val-annotation",
+        type=str,
+        default="",
+        help="直接使用 COCO JSON 验证集时的标注路径",
+    )
+    parser.add_argument(
+        "--val-image-root",
+        type=str,
+        default="",
+        help="验证集图片根目录，与 --val-annotation 配合使用",
+    )
+    parser.add_argument(
+        "--eval-every",
+        type=int,
+        default=1,
+        help="每隔多少个 epoch 执行一次完整的 mAP 评测（设为 0 关闭）",
+    )
+    parser.add_argument("--batch-size", type=int, default=2, help="训练 batch 大小")
+    parser.add_argument("--epochs", type=int, default=120, help="训练轮数")
+    parser.add_argument("--lr", type=float, default=0.01, help="SGD 学习率")
     parser.add_argument(
         "--checkpoint",
         type=str,
@@ -48,50 +79,56 @@ if __name__ == "__main__":
         "--save-epoch",
         type=int,
         default=1,
-        help="按 epoch 保存 checkpoint 的间隔（默认 1，每个 epoch 结束保存一次；设为 0 关闭）",
+        help="按 epoch 保存的间隔（默认 1；设为 0 关闭）",
     )
     parser.add_argument(
         "--save-every",
         type=int,
         default=None,
-        help="按 step 步数保存 checkpoint 的间隔（设置后将自动关闭按 epoch 保存）",
+        help="按 step 保存的间隔（设置后将自动关闭按 epoch 保存）",
     )
     parser.add_argument(
         "--weights-dir",
         type=str,
         default="weights",
-        help="checkpoint 输出目录（默认 weights）",
+        help="checkpoint 输出目录",
     )
     parser.add_argument(
         "--save-best",
         action="store_true",
-        help="额外保存 avg_loss 最低的模型到 <weights-dir>/best.pth",
+        help="额外保存最佳模型到 <weights-dir>/best.pth",
     )
     parser.add_argument(
         "--freeze-backbone",
         action="store_true",
-        help="冻结 Darknet-53 主干，只训练 FPN + 检测头（需先加载 backbone 预训练权重）",
+        help="冻结 Darknet-53 主干，只训练 FPN + 检测头",
     )
     parser.add_argument(
         "--num-workers",
         type=int,
         default=4,
-        help="DataLoader 工作进程数（默认 4，数据加载慢可调大）",
+        help="DataLoader 工作进程数",
     )
     parser.add_argument(
         "--log-every",
         type=int,
         default=10,
-        help="每隔多少步写一次 TensorBoard 标量（默认 10，降低主进程开销）",
+        help="TensorBoard 标量写入间隔（步）",
     )
-    args = parser.parse_args()
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     set_seed(seed=27)
     batch_size = args.batch_size
     epochs = args.epochs
     lr = args.lr
     save_path = Path(args.weights_dir)
-    os.makedirs(save_path, exist_ok=True)
+    save_path.mkdir(parents=True, exist_ok=True)
+
     class_names = load_classes("data/coco_names.yaml")
     anchors = [
         [10, 13],
@@ -106,16 +143,18 @@ if __name__ == "__main__":
     ]
     anchors_mask = [[0, 1, 2], [3, 4, 5], [6, 7, 8]]
 
-    # 根据参数选择数据集
+    # 1. 构建训练数据集
     if args.annotation:
         dataset = CocoDataset(
-            annotation_path=args.annotation, image_root=args.image_root
+            annotation_path=args.annotation,
+            image_root=args.image_root,
         )
     else:
         dataset = YOLODataset(labels_path=args.data)
 
     print(
-        f"Dataset: {len(dataset)} images (from {args.data if not args.annotation else args.annotation})"
+        f"Dataset: {len(dataset)} images "
+        f"(from {args.data if not args.annotation else args.annotation})"
     )
 
     dataloader = DataLoader(
@@ -128,17 +167,49 @@ if __name__ == "__main__":
         worker_init_fn=worker_init_fn,
         collate_fn=yolo_collate_fn,
     )
-    # model = YoloBody(
-    #     anchors=anchors, anchors_mask=anchors_mask, class_names=class_names
-    # ).to(device)
+
+    # 2. 构建验证数据集（若提供）
+    val_dataloader = None
+    if args.val_annotation:
+        val_dataset = CocoDataset(
+            annotation_path=args.val_annotation,
+            image_root=args.val_image_root,
+        )
+        val_dataloader = DataLoader(
+            dataset=val_dataset,
+            batch_size=batch_size,
+            shuffle=False,
+            num_workers=args.num_workers,
+            pin_memory=True,
+            collate_fn=yolo_collate_fn,
+        )
+        print(f"Val Dataset: {len(val_dataset)} images (from {args.val_annotation})")
+    elif args.val_data and Path(args.val_data).exists():
+        val_dataset = YOLODataset(labels_path=args.val_data)
+        val_dataloader = DataLoader(
+            dataset=val_dataset,
+            batch_size=batch_size,
+            shuffle=False,
+            num_workers=args.num_workers,
+            pin_memory=True,
+            collate_fn=yolo_collate_fn,
+        )
+        print(f"Val Dataset: {len(val_dataset)} images (from {args.val_data})")
+
+    # 3. 初始化或加载模型
     if args.checkpoint and args.checkpoint.lower() != "null":
         model = torch.load(
-            rf"{args.checkpoint}", map_location=device, weights_only=False
+            rf"{args.checkpoint}",
+            map_location=device,
+            weights_only=False,
         )
     else:
         model = YoloBody(
-            anchors=anchors, anchors_mask=anchors_mask, class_names=class_names
+            anchors=anchors,
+            anchors_mask=anchors_mask,
+            class_names=class_names,
         ).to(device)
+
     if args.freeze_backbone:
         for p in model.backbone.parameters():
             p.requires_grad = False
@@ -147,13 +218,13 @@ if __name__ == "__main__":
         for p in model.backbone.parameters():
             p.requires_grad = True
         print("Backbone 可训练")
+
     optimizer = optim.SGD(
         (p for p in model.parameters() if p.requires_grad),
         lr=lr,
         momentum=0.937,
         weight_decay=1e-4,
     )
-    # optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
     loss_fn = YOLOLOSS(model)
     writer_path = "runs"
     writer = SummaryWriter(
@@ -162,40 +233,21 @@ if __name__ == "__main__":
     start_epoch = 0
     global_step = 0
     best_loss = float("inf")
+    best_map = 0.0
 
-    # ── 数据流向速查 ─────────────────────────────────────────────────────
-    # 1. DataLoader 输出 TransformedBatch
-    #       batch_x : ModelInput         (B, 3, 416, 416) float32
-    #       batch_y : list[Tensor(N,5)]  xyxy 格式，归一化到 [0,1]（除以 416）
-    #
-    # 2. 模型前向 RawPredicts
-    #       outputs[i] : (B, 3, Hi, Wi, 5+C)  每个 cell 3 个 anchor 的原始 logit
-    #       其中 (H0,W0)=(13,13) stride=32 大尺度，(H2,W2)=(52,52) stride=8 小尺度
-    #
-    # 3. YOLOLOSS 内部
-    #       xyxy2xywh   : batch_y → FeatureTargets (cx,cy,w,h) 归一化到 grid
-    #       build_targets: FeatureTargets → TargetBuild (y_true, noobj_mask, box_loss_scale)
-    #       get_ignore  : RawPredicts → PredDecode (noobj_mask, pred_boxes grid单位)
-    #       box_giou    : PredDecode vs y_true → GIoU → loss_loc
-    #       各 BCE      : 计算 loss_conf / loss_cls
-    #
-    # 4. 返回
-    #       total_loss : scalar
-    #       detail     : {layer0: LayerMetrics, layer1: ..., layer2: ...}
-    # ─────────────────────────────────────────────────────────────────────
+    # 4. 训练主循环
     for epoch in range(start_epoch, epochs):
         model.train()
-        avg_loss = 0
+        avg_loss = 0.0
         total_samples = 0
-        total_loss = 0
+        total_loss = 0.0
 
         with tqdm(dataloader) as pbar:
             for _n_batch, item in enumerate(pbar):
                 batch_x, batch_y = item  # TransformedBatch
-                # pin_memory + non_blocking：H2D 拷贝异步化，不阻塞主进程
                 batch_x = batch_x.to(device, non_blocking=True)
                 batch_y = [i.to(device, non_blocking=True) for i in batch_y]
-                outputs = model(batch_x)  # RawPredicts
+                outputs = model(batch_x)
 
                 loss, detail = loss_fn(outputs, batch_y)
                 optimizer.zero_grad()
@@ -207,7 +259,8 @@ if __name__ == "__main__":
                 item_loss = loss.item()
                 total_loss += item_loss * batch_sz
                 total_samples += batch_sz
-                avg_loss = total_loss / total_samples
+                avg_loss = total_loss / max(1, total_samples)
+
                 pbar.set_postfix(
                     {
                         "epoch": epoch,
@@ -215,6 +268,7 @@ if __name__ == "__main__":
                         "avg_loss": f"{avg_loss:.6f}",
                     }
                 )
+
                 if global_step % args.log_every == 0:
                     writer.add_scalars(
                         "yolov3",
@@ -235,21 +289,75 @@ if __name__ == "__main__":
                             },
                             global_step,
                         )
+
                 global_step += 1
-                if args.save_best and avg_loss < best_loss:
-                    best_loss = avg_loss
-                    torch.save(model, ".checkpoint.pth")
-                    os.replace(".checkpoint.pth", save_path / "best.pth")
-                    print(f"  [best] avg_loss={avg_loss:.4f} → {save_path / 'best.pth'}")
+
+                # 按步数保存 checkpoint
                 if args.save_every and global_step % args.save_every == 0:
                     step_path = save_path / f"step{global_step}_{avg_loss:.4f}.pth"
                     torch.save(model, ".checkpoint.pth")
-                    os.replace(".checkpoint.pth", step_path)
+                    Path(".checkpoint.pth").replace(step_path)
                     print(f"  [step {global_step}] avg_loss={avg_loss:.4f} → {step_path}")
 
-        # 仅在未指定 --save-every 时按 epoch 周期保存
+        # 5. 每个 Epoch 结束后的验证与评估
+        if val_dataloader is not None:
+            model.eval()
+            val_total_loss = 0.0
+            val_samples = 0
+            with torch.no_grad():
+                for val_item in val_dataloader:
+                    v_bx, v_by = val_item
+                    v_bx = v_bx.to(device, non_blocking=True)
+                    v_by = [i.to(device, non_blocking=True) for i in v_by]
+                    v_out = model(v_bx)
+                    v_loss, _ = loss_fn(v_out, v_by)
+                    v_bs = v_bx.shape[0]
+                    val_total_loss += v_loss.item() * v_bs
+                    val_samples += v_bs
+
+            val_avg_loss = val_total_loss / max(1, val_samples)
+            writer.add_scalar("val/loss", val_avg_loss, epoch)
+
+            if args.eval_every > 0 and (epoch + 1) % args.eval_every == 0:
+                eval_res = evaluate_dataset(
+                    model=model,
+                    dataloader=val_dataloader,
+                    device=device,
+                    class_names=class_names,
+                )
+                writer.add_scalar("val/mAP@0.5", eval_res.map50, epoch)
+                writer.add_scalar("val/mAP@0.5:0.95", eval_res.map50_95, epoch)
+                writer.add_scalar("val/Precision", eval_res.mp, epoch)
+                writer.add_scalar("val/Recall", eval_res.mr, epoch)
+                print(
+                    f"\n[val epoch {epoch}] val_loss={val_avg_loss:.4f}, "
+                    f"P={eval_res.mp:.4f}, R={eval_res.mr:.4f}, "
+                    f"mAP@0.5={eval_res.map50:.4f}, mAP@0.5:0.95={eval_res.map50_95:.4f}"
+                )
+
+                if args.save_best and eval_res.map50 > best_map:
+                    best_map = eval_res.map50
+                    torch.save(model, ".checkpoint.pth")
+                    Path(".checkpoint.pth").replace(save_path / "best.pth")
+                    print(f"  [best] mAP@0.5={eval_res.map50:.4f} → {save_path / 'best.pth'}")
+            elif args.save_best and val_avg_loss < best_loss:
+                best_loss = val_avg_loss
+                torch.save(model, ".checkpoint.pth")
+                Path(".checkpoint.pth").replace(save_path / "best.pth")
+                print(f"  [best] val_loss={val_avg_loss:.4f} → {save_path / 'best.pth'}")
+        elif args.save_best and avg_loss < best_loss:
+            best_loss = avg_loss
+            torch.save(model, ".checkpoint.pth")
+            Path(".checkpoint.pth").replace(save_path / "best.pth")
+            print(f"  [best] avg_loss={avg_loss:.4f} → {save_path / 'best.pth'}")
+
+        # 6. 按 Epoch 周期保存 checkpoint
         if not args.save_every and args.save_epoch > 0 and (epoch + 1) % args.save_epoch == 0:
             epoch_path = save_path / f"epoch{epoch}_{avg_loss:.4f}.pth"
             torch.save(model, ".checkpoint.pth")
-            os.replace(".checkpoint.pth", epoch_path)
+            Path(".checkpoint.pth").replace(epoch_path)
             print(f"[epoch {epoch}] avg_loss={avg_loss:.4f} → {epoch_path}")
+
+
+if __name__ == "__main__":
+    main()

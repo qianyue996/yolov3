@@ -42,6 +42,7 @@ def _get_device() -> torch.device:
     return torch.device(device)
 
 
+@torch.inference_mode()
 def secend_stage(
     outputs: list[torch.Tensor], device: torch.device | None = None
 ) -> torch.Tensor:
@@ -74,6 +75,7 @@ def secend_stage(
     return torch.cat(_outputs, dim=1).squeeze()
 
 
+@torch.inference_mode()
 def detect(image: torch.Tensor) -> torch.Tensor:
     model = _get_model()
     out_device = next(model.parameters()).device

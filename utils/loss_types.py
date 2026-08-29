@@ -26,12 +26,12 @@ class PredDecode(NamedTuple):
 
 # ── Loss 标量指标 ───────────────────────────────────────────────────────────
 class LayerMetrics(NamedTuple):
-    """每层 loss 计算后产出的 6 个归一化指标。"""
+    """每层 loss 计算后产出的 7 个归一化指标与诊断信息。"""
 
-    loss_loc: float  # GIoU loss，仅正样本，范围 ≥ 0
-    loss_conf: float  # BCE(conf, obj_mask)，有效 cell，范围 ≥ 0
-    loss_cls: float  # BCE(cls, targ_cls)，仅正样本，范围 ≥ 0
-    center_diff: float  # 预测 vs GT 中心点误差（grid 单位），理想 0
-    wh_diff: float  # 预测 vs GT 宽高误差（anchor 单位），理想 0
-    conf_diff: float  # sigmoid(conf) vs obj_mask 的绝对误差，范围 [0,1]
-    n_pos: int  # 正样本数量
+    loss_loc: float  # 定位 GIoU 损失（理想值 0.0，初期 ~2.5，收敛 < 0.4）
+    loss_conf: float  # 置信度 Focal 损失（理想值 0.0，初期 ~3.5，收敛 < 0.08）
+    loss_cls: float  # 分类 BCE 损失（理想值 0.0，初期 ~0.8，收敛 < 0.05）
+    center_diff: float  # 中心点误差（grid 单位，理想 0.0，初期 20~30，收敛 < 0.8）
+    wh_diff: float  # 宽高误差（grid 单位，理想 0.0，初期 15~25，收敛 < 1.2）
+    conf_diff: float  # |sigmoid(conf) - target| 绝对误差（理想 0.0，初期 ~0.5，收敛 < 0.05）
+    n_pos: int  # 本层分配的正样本数量

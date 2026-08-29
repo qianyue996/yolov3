@@ -1,4 +1,5 @@
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -166,7 +167,18 @@ def main() -> None:
         default=None,
         help="模型权重文件路径（默认使用已有 checkpoint）",
     )
+    parser.add_argument(
+        "--threads",
+        type=int,
+        default=None,
+        help="CPU 推理线程数（默认自动使用全部物理核心数）",
+    )
     args = parser.parse_args()
+
+    # 配置 CPU 多核并行推理
+    num_threads = args.threads if args.threads is not None else (os.cpu_count() or 4)
+    torch.set_num_threads(num_threads)
+    logger.info(f"CPU 推理线程数已配置为: {torch.get_num_threads()} 核心")
 
     source = args.source
     if source.isdigit():

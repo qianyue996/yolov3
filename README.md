@@ -50,19 +50,27 @@ uv run train.py --data data/coco_train_1pct.txt --epochs 10 --batch-size 2 --che
 uv run train.py --data data/coco_train_10pct.txt --checkpoint 1000_0.2988.pth \
     --weights-dir weights/exp1
 
+# 带有验证集并在每个 epoch 自动计算 mAP 与保存最佳模型
+uv run train.py --data data/coco_train_10pct.txt --val-data data/coco_val_10pct.txt --save-best
+
 # 直接使用 COCO JSON（无需预生成文本文件）
 uv run train.py \
     --annotation /mnt/ai_models/coco2014/annotations/instances_train2014.json \
     --image-root /mnt/ai_models/coco2014/train2014 \
-    --epochs 120 --batch-size 2
+    --val-annotation /mnt/ai_models/coco2014/annotations/instances_val2014.json \
+    --val-image-root /mnt/ai_models/coco2014/val2014 \
+    --epochs 120 --batch-size 2 --save-best
 ```
 
 全部参数：
 
 | 参数 | 默认 | 说明 |
 |------|------|------|
-| `--data` | `coco_train.txt` | 文本标签文件 |
-| `--annotation` / `--image-root` | 空 | 直接读 COCO JSON，优先于 `--data` |
+| `--data` | `coco_train.txt` | 训练文本标签文件 |
+| `--annotation` / `--image-root` | 空 | 直接读 COCO JSON 训练集，优先于 `--data` |
+| `--val-data` | 空 | 验证集文本标签文件 |
+| `--val-annotation` / `--val-image-root` | 空 | 直接读 COCO JSON 验证集 |
+| `--eval-every` | `1` | 每隔多少个 epoch 执行一次 mAP 评测（设为 0 关闭） |
 | `--batch-size` | `2` | batch 大小 |
 | `--epochs` | `120` | 训练轮数 |
 | `--lr` | `0.01` | SGD 学习率 |
@@ -70,7 +78,7 @@ uv run train.py \
 | `--weights-dir` | `weights` | checkpoint 输出目录 |
 | `--save-epoch` | `1` | 按 epoch 保存的间隔（默认每个 epoch 保存一次，设为 0 关闭） |
 | `--save-every` | `None` | 按 step 步数保存的间隔（指定后自动关闭按 epoch 保存） |
-| `--save-best` | 关 | 额外保存 avg_loss 最低的 `best.pth` |
+| `--save-best` | 关 | 额外保存最佳模型到 `<weights-dir>/best.pth`（有验证集时按最高 mAP@0.5 判定） |
 | `--freeze-backbone` | 关 | 冻结 Darknet-53 主干，只训练 FPN + 检测头 |
 | `--num-workers` | `4` | DataLoader 工作进程数 |
 | `--log-every` | `10` | TensorBoard 标量写入间隔（步） |
@@ -82,7 +90,23 @@ uv run train.py \
 > 2. 置信度采用针对目标检测优化的标准 **Focal Loss**（$\alpha=0.75, \gamma=1.5$），引入 RetinaNet 先验偏置初始化（$b=-4.6$）与 `max(bs, num_pos)` 批次防护，从根本上解决置信度偏低与训练数值溢出（NaN）问题；
 > 3. 用旧代码训练的 checkpoints 与新代码不兼容，需重新训练。
 
-### 3. 目标检测（图片 / 摄像头自动识别）
+### 3. 独立模型评估（mAP@0.5 / mAP@0.5:0.95）
+
+使用标准 COCO / VOC 评测指标对模型权重进行多维度定量测试：
+
+```bash
+# 使用文本标签评估
+uv run evaluate.py --checkpoint weights/best.pth --data data/coco_val_10pct.txt
+
+# 使用 COCO JSON 评估
+uv run evaluate.py --checkpoint weights/best.pth \
+    --annotation /mnt/ai_models/coco2014/annotations/instances_val2014.json \
+    --image-root /mnt/ai_models/coco2014/val2014
+```
+
+控制台将输出格式化的指标报告（包含每类与全类别的 Targets, Precision, Recall, F1, mAP@0.5, mAP@0.5:0.95）。
+
+### 4. 目标检测（图片 / 摄像头自动识别）
 
 ```bash
 # 摄像头实时检测（默认读取 0 号摄像头）
@@ -110,6 +134,7 @@ uv run detect.py img/street.jpg --output result.png --checkpoint weights/best.pt
 
 ```
 detect.py                 统一目标检测入口（自动支持图片与摄像头视频流）
+evaluate.py               独立模型评估与 mAP 评测工具（标准 VOC / COCO 格式）
 nets/yolov3.py            YoloBody（Darknet-53 + FPN + 3 检测头，置信度先验偏置初始化）
 nets/yolov3_tiny.py       YOLOv3Tiny 轻量版（独立模块，未接入训练流程）
 nets/darknet.py           DarkNet-53 主干
@@ -117,6 +142,7 @@ utils/
 ├── config.py             常量：IMG_W/IMG_H、归一化 mean/std
 ├── decode.py             公共解码逻辑（decode_preds，供训练 loss 与推理后处理复用）
 ├── models.py             数据类型（RawTargets/TransformedBatch）+ xyxy2xywh 坐标转换
+├── metrics.py            评估指标计算（Precision, Recall, F1, mAP@0.5, mAP@0.5:0.95）
 ├── loss_types.py         loss 内部数据结构（TargetBuild/PredDecode/LayerMetrics）
 ├── transforms.py         图像归一化/变换（TransFormer、image_transform、image_show）
 ├── dataloader.py         YOLODataset / CocoDataset / yolo_collate_fn
