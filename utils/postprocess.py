@@ -25,6 +25,8 @@ def _load_model(
     global _model, anchors, anchors_mask, device
     if device_name is not None:
         device = device_name
+    if _model is not None:
+        return
     _model = torch.load(path, map_location=device, weights_only=False)
     anchors = torch.tensor(_model.anchors, device=device)
     anchors_mask = _model.anchors_mask
