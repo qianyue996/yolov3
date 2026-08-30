@@ -81,5 +81,5 @@ def detect(image: torch.Tensor) -> torch.Tensor:
     out_device = next(model.parameters()).device
     outputs = model(image.to(out_device))
     outputs = secend_stage(outputs, device=out_device)
-    results = non_max_suppression(outputs, conf_thres=0.1, iou_thres=0.45)
+    results = non_max_suppression(outputs, conf_thres=0.45, iou_thres=0.45)
     return results
