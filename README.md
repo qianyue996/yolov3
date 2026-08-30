@@ -106,23 +106,28 @@ uv run evaluate.py --checkpoint weights/best.pth \
 
 控制台将输出格式化的指标报告（包含每类与全类别的 Targets, Precision, Recall, F1, mAP@0.5, mAP@0.5:0.95）。
 
-### 4. 目标检测（图片 / 摄像头 / 屏幕实时截屏）
+### 4. 目标检测（图片 / 视频文件 / 摄像头 / 屏幕实时截屏）
 
 ```bash
-# 1. 屏幕实时截屏检测（持续截取屏幕中心 416x416 区域并用 OpenCV 窗口展示）
+# 1. 视频文件逐帧检测（自动读取、标注并保存新视频，附带进度条）
+uv run detect.py data/video.mp4
+uv run detect.py data/video.mp4 --output outputs/annotated.mp4 --checkpoint weights/best.pth
+uv run detect.py data/video.mp4 --show  # --show 参数开启实时窗口预览（按 q 可提前结束）
+
+# 2. 屏幕实时截屏检测（持续截取屏幕中心 416x416 区域并用 OpenCV 窗口展示）
 uv run detect.py screen
 uv run detect.py --screen --checkpoint weights/best.pth -v  # -v / --verbose 开启处理速度(FPS/ms)与目标统计日志
 
-# 2. 摄像头实时检测（默认读取 0 号摄像头）
+# 3. 摄像头实时检测（默认读取 0 号摄像头）
 uv run detect.py
 uv run detect.py 0 --checkpoint weights/best.pth -v
 
-# 3. 单张图片检测
+# 4. 单张图片检测
 uv run detect.py img/street.jpg
 uv run detect.py img/street.jpg --output result.png --checkpoint weights/best.pth -v
 ```
 
-图片检测结果默认保存至 `outputs/result_<原文件名>.png`。
+图片结果默认保存至 `outputs/result_<原文件名>.png`，视频结果默认保存至 `outputs/result_<原文件名>.mp4`。
 
 推理前需在项目根目录放置模型权重（默认读取 `1000_0.2988.pth`）。
 

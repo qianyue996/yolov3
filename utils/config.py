@@ -11,6 +11,31 @@ NORMALIZE_STD = (0.2378, 0.2329, 0.2361)
 # 默认类别配置文件路径
 DEFAULT_CLASSES_PATH = "data/coco_names.yaml"
 
+# 支持的媒体文件扩展名
+IMAGE_EXTENSIONS = {
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".bmp",
+    ".webp",
+    ".tiff",
+    ".tif",
+}
+
+VIDEO_EXTENSIONS = {
+    ".mp4",
+    ".avi",
+    ".mov",
+    ".mkv",
+    ".flv",
+    ".wmv",
+    ".webm",
+    ".m4v",
+    ".ts",
+    ".mpg",
+    ".mpeg",
+}
+
 # YOLOv3 默认 Anchor（9 个尺寸）与掩码（按特征图从粗到细：13x13, 26x26, 52x52）
 DEFAULT_ANCHORS = [
     [10, 13],
