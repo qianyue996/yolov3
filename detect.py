@@ -9,38 +9,91 @@ import cv2 as cv
 import numpy as np
 import torch
 from loguru import logger
-from PIL import Image, ImageDraw, ImageFont
 
 from utils import _get_model, _load_model, class_names, detect
-from utils.config import IMG_H, IMG_W
-from utils.transforms import image_transform
-
-try:
-    _font = ImageFont.truetype("arial.ttf", 20)
-except OSError:
-    _font = ImageFont.load_default()
+from utils.config import IMG_H, IMG_W, NORMALIZE_MEAN, NORMALIZE_STD
 
 output_dir = Path("outputs")
 output_dir.mkdir(exist_ok=True)
 
+# 预先分配好 GPU 归一化常量，避免在推理循环中反复创建
+_NORM_MEAN_TENSOR: torch.Tensor | None = None
+_NORM_STD_TENSOR: torch.Tensor | None = None
 
-def _format_detection_log(results: torch.Tensor, elapsed_s: float) -> str:
-    """格式化单帧检测性能与目标统计日志。
+
+def _get_norm_tensors(device: torch.device) -> tuple[torch.Tensor, torch.Tensor]:
+    global _NORM_MEAN_TENSOR, _NORM_STD_TENSOR
+    if (
+        _NORM_MEAN_TENSOR is None
+        or _NORM_STD_TENSOR is None
+        or _NORM_MEAN_TENSOR.device != device
+    ):
+        _NORM_MEAN_TENSOR = torch.tensor(
+            NORMALIZE_MEAN, device=device, dtype=torch.float32
+        ).view(1, 3, 1, 1)
+        _NORM_STD_TENSOR = torch.tensor(
+            NORMALIZE_STD, device=device, dtype=torch.float32
+        ).view(1, 3, 1, 1)
+    return _NORM_MEAN_TENSOR, _NORM_STD_TENSOR
+
+
+def image_to_tensor_gpu(
+    frame_bgr: np.ndarray,
+    target_w: int,
+    target_h: int,
+    device: torch.device,
+) -> torch.Tensor:
+    """高性能图像预处理：直接将图像送入目标设备（GPU）进行 float 转换与归一化。
+
+    消除了 CPU PIL/Transforms 重复拷贝与单核计算瓶颈。
 
     Args:
-        results: NMS 检测结果张量 (N, 6)
-        elapsed_s: 单帧端到端耗时（秒）
+        frame_bgr: BGR 格式的 numpy 图像 (H, W, 3)
+        target_w: 模型输入宽度（如 416）
+        target_h: 模型输入高度（如 416）
+        device: 计算设备（CUDA 或 CPU）
 
     Returns:
-        包含耗时、FPS 及目标数量和分类的统计字符串
+        归一化后的模型输入张量 (1, 3, target_h, target_w)
     """
+    if frame_bgr.shape[1] != target_w or frame_bgr.shape[0] != target_h:
+        resized_bgr = cv.resize(
+            frame_bgr, (target_w, target_h), interpolation=cv.INTER_LINEAR
+        )
+    else:
+        resized_bgr = frame_bgr
+
+    # OpenCV 快速色彩转换 (BGR -> RGB)
+    rgb = cv.cvtColor(resized_bgr, cv.COLOR_BGR2RGB)
+
+    # 异步推送到 GPU，并在 GPU 上执行向量化浮点除法与均值方差归一化
+    tensor = (
+        torch.from_numpy(rgb)
+        .permute(2, 0, 1)
+        .unsqueeze(0)
+        .to(device, non_blocking=True)
+        .float()
+    )
+    tensor.div_(255.0)
+
+    mean_t, std_t = _get_norm_tensors(device)
+    return (tensor - mean_t) / std_t
+
+
+def _format_detection_log(results: torch.Tensor | np.ndarray, elapsed_s: float) -> str:
+    """格式化单帧检测性能与目标统计日志。"""
     fps = 1.0 / elapsed_s if elapsed_s > 0 else float("inf")
     num_objects = len(results)
     if num_objects == 0:
         return f"耗时: {elapsed_s * 1000:.1f}ms ({fps:.1f} FPS) | 检测到 0 个目标"
 
+    if isinstance(results, torch.Tensor):
+        results_np = results.detach().cpu().numpy()
+    else:
+        results_np = results
+
     class_counts: dict[str, int] = {}
-    for res in results:
+    for res in results_np:
         cid = int(res[5])
         cname = class_names[cid] if cid < len(class_names) else str(cid)
         class_counts[cname] = class_counts.get(cname, 0) + 1
@@ -49,47 +102,69 @@ def _format_detection_log(results: torch.Tensor, elapsed_s: float) -> str:
     return f"耗时: {elapsed_s * 1000:.1f}ms ({fps:.1f} FPS) | 检测到 {num_objects} 个目标 [{details}]"
 
 
-def draw_detections(
-    pil_image: Image.Image,
-    results: torch.Tensor,
+def draw_detections_cv(
+    frame: np.ndarray,
+    results: torch.Tensor | np.ndarray,
     scale_x: float = 1.0,
     scale_y: float = 1.0,
-) -> Image.Image:
-    """在图片上绘制检测框、类别名与置信度。
+) -> np.ndarray:
+    """直接使用 OpenCV 在 BGR 图像上绘制检测框与标签（单批次转移，零 CPU 阻塞）。
 
     Args:
-        pil_image: 待绘制的 PIL 图像
-        results: NMS 输出的检测结果张量 (N, 6)，每行 [x1, y1, x2, y2, score, class_id]
-        scale_x: x 方向从 416 映射回原图的缩放比例
-        scale_y: y 方向从 416 映射回原图的缩放比例
+        frame: BGR 图像 (H, W, 3)
+        results: 检测结果 (N, 6)，[x1, y1, x2, y2, score, class_id]
+        scale_x: x 坐标缩放映射比例
+        scale_y: y 坐标缩放映射比例
 
     Returns:
-        绘制完成的 PIL 图像
+        绘制完成的 BGR 图像
     """
-    img_w, img_h = pil_image.size
-    drawer = ImageDraw.ImageDraw(pil_image)
+    if isinstance(results, torch.Tensor):
+        results_np = results.detach().cpu().numpy()
+    else:
+        results_np = results
 
-    for result in results:
-        score = float(result[4])
-        class_id = int(result[5])
+    if len(results_np) == 0:
+        return frame
+
+    img_h, img_w = frame.shape[:2]
+
+    for row in results_np:
+        x_min, y_min, x_max, y_max, score, class_id = row
+        class_id = int(class_id)
         class_name = class_names[class_id] if class_id < len(class_names) else str(class_id)
-        label_text = f"{class_name} {score:.2f}"
+        label = f"{class_name} {score:.2f}"
 
-        x_min, y_min, x_max, y_max = map(float, result[:4])
-        x_min = max(0, min(int(x_min * scale_x), img_w))
-        y_min = max(0, min(int(y_min * scale_y), img_h))
-        x_max = max(0, min(int(x_max * scale_x), img_w))
-        y_max = max(0, min(int(y_max * scale_y), img_h))
+        x1 = max(0, min(int(x_min * scale_x), img_w - 1))
+        y1 = max(0, min(int(y_min * scale_y), img_h - 1))
+        x2 = max(0, min(int(x_max * scale_x), img_w - 1))
+        y2 = max(0, min(int(y_max * scale_y), img_h - 1))
 
-        drawer.rectangle(((x_min, y_min), (x_max, y_max)), outline="red", width=2)
+        # 绘制红色检测框
+        cv.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
 
-        text_x = x_min
-        text_y = y_min - 20 if y_min >= 20 else y_min + 2
-        text_bbox = drawer.textbbox((text_x, text_y), label_text, font=_font)
-        drawer.rectangle(text_bbox, fill="red")
-        drawer.text((text_x, text_y), label_text, fill="white", font=_font)
+        # 绘制文本背景框与标签
+        (tw, th), baseline = cv.getTextSize(label, cv.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+        ty = max(y1, th + 4)
+        cv.rectangle(
+            frame,
+            (x1, ty - th - 4),
+            (x1 + tw + 4, ty + baseline - 2),
+            (0, 0, 255),
+            -1,
+        )
+        cv.putText(
+            frame,
+            label,
+            (x1 + 2, ty - 2),
+            cv.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            (255, 255, 255),
+            1,
+            cv.LINE_AA,
+        )
 
-    return pil_image
+    return frame
 
 
 def image_detect(
@@ -107,17 +182,21 @@ def image_detect(
 
     out_device = next(_get_model().parameters()).device
     t0 = time.perf_counter()
-    pil_image = Image.open(image_path).convert("RGB")
-    original_size = pil_image.size
 
-    _, input_tensor = image_transform(pil_image)
-    input_tensor = input_tensor.unsqueeze(0).to(out_device)
+    frame_bgr = cv.imread(image_path)
+    if frame_bgr is None:
+        from PIL import Image
+        pil_img = Image.open(image_path).convert("RGB")
+        frame_bgr = cv.cvtColor(np.array(pil_img), cv.COLOR_RGB2BGR)
+
+    orig_h, orig_w = frame_bgr.shape[:2]
+    input_tensor = image_to_tensor_gpu(frame_bgr, IMG_W, IMG_H, out_device)
 
     results = detect(input_tensor)
 
-    scale_x = original_size[0] / IMG_W
-    scale_y = original_size[1] / IMG_H
-    draw_detections(pil_image, results, scale_x=scale_x, scale_y=scale_y)
+    scale_x = orig_w / IMG_W
+    scale_y = orig_h / IMG_H
+    draw_detections_cv(frame_bgr, results, scale_x=scale_x, scale_y=scale_y)
 
     out = (
         Path(output_path)
@@ -125,7 +204,7 @@ def image_detect(
         else output_dir / f"result_{Path(image_path).stem}.png"
     )
     out.parent.mkdir(parents=True, exist_ok=True)
-    pil_image.save(out)
+    cv.imwrite(str(out), frame_bgr)
     elapsed_s = time.perf_counter() - t0
 
     if verbose:
@@ -185,16 +264,15 @@ def screen_detect(
         while True:
             t0 = time.perf_counter()
             sct_img = sct.grab(bbox)
-            pil_image = Image.frombytes("RGB", sct_img.size, sct_img.bgra, "raw", "BGRX")
+            # 直接从内存 buffer 转换为 numpy BGR 图像（零 PIL 转换）
+            frame_bgra = np.asarray(sct_img)
+            frame_bgr = frame_bgra[:, :, :3].copy()
 
-            _, input_tensor = image_transform(pil_image)
-            input_tensor = input_tensor.unsqueeze(0).to(out_device)
-
+            input_tensor = image_to_tensor_gpu(frame_bgr, IMG_W, IMG_H, out_device)
             results = detect(input_tensor)
-            draw_detections(pil_image, results, scale_x=1.0, scale_y=1.0)
 
-            annotated_frame = cv.cvtColor(np.array(pil_image), cv.COLOR_RGB2BGR)
-            cv.imshow("YOLOv3 Screen Detection", annotated_frame)
+            draw_detections_cv(frame_bgr, results, scale_x=1.0, scale_y=1.0)
+            cv.imshow("YOLOv3 Screen Detection", frame_bgr)
 
             elapsed_s = time.perf_counter() - t0
             if verbose:
@@ -239,26 +317,22 @@ def camera_detect(
 
     while True:
         t0 = time.perf_counter()
-        ret, frame = cap.read()
+        ret, frame_bgr = cap.read()
         if not ret:
             logger.error("无法获取视频帧！")
             break
 
-        pil_image = Image.fromarray(cv.cvtColor(frame, cv.COLOR_BGR2RGB))
-        original_size = pil_image.size
-
-        _, input_tensor = image_transform(pil_image)
-        input_tensor = input_tensor.unsqueeze(0).to(out_device)
+        orig_h, orig_w = frame_bgr.shape[:2]
+        input_tensor = image_to_tensor_gpu(frame_bgr, IMG_W, IMG_H, out_device)
 
         results = detect(input_tensor)
 
-        scale_x = original_size[0] / IMG_W
-        scale_y = original_size[1] / IMG_H
-        draw_detections(pil_image, results, scale_x=scale_x, scale_y=scale_y)
+        scale_x = orig_w / IMG_W
+        scale_y = orig_h / IMG_H
+        draw_detections_cv(frame_bgr, results, scale_x=scale_x, scale_y=scale_y)
 
-        annotated_frame = cv.cvtColor(np.array(pil_image), cv.COLOR_RGB2BGR)
         cv.namedWindow("YOLOv3 Detection", cv.WINDOW_NORMAL)
-        cv.imshow("YOLOv3 Detection", annotated_frame)
+        cv.imshow("YOLOv3 Detection", frame_bgr)
 
         elapsed_s = time.perf_counter() - t0
         if verbose:
@@ -327,7 +401,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    # 设备选择与 CPU 多核配置逻辑
+    # 设备选择与 CPU 线程配置
     if args.device:
         target_device = args.device.lower()
     else:
@@ -335,6 +409,8 @@ def main() -> None:
 
     if target_device.startswith("cuda") and torch.cuda.is_available():
         device_name = "cuda"
+        # GPU 推理时将 CPU 辅助线程数限制为轻量数量，避免 OpenMP 线程争抢打满 CPU
+        torch.set_num_threads(min(4, os.cpu_count() or 4))
         logger.info(f"使用 GPU 进行推理加速: {torch.cuda.get_device_name(0)}")
     else:
         device_name = "cpu"

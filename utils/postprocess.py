@@ -37,11 +37,12 @@ def _load_model(
     if _model is not None:
         return
 
+    dev = torch.device(device)
     target_path = path or "1000_0.2988.pth"
     if Path(target_path).exists():
-        _model = torch.load(target_path, map_location=device, weights_only=False)
+        _model = torch.load(target_path, map_location=dev, weights_only=False)
     elif path is None and Path("weights/best.pth").exists():
-        _model = torch.load("weights/best.pth", map_location=device, weights_only=False)
+        _model = torch.load("weights/best.pth", map_location=dev, weights_only=False)
     else:
         logger.warning(
             f"未找到权重文件 ({target_path})，使用随机初始化的 YoloBody 模型"
@@ -50,9 +51,10 @@ def _load_model(
             DEFAULT_ANCHORS,
             DEFAULT_ANCHORS_MASK,
             class_names if class_names else [f"cls_{i}" for i in range(80)],
-        ).to(device)
+        )
 
-    anchors = torch.tensor(_model.anchors, device=device)
+    _model = _model.to(dev)
+    anchors = torch.tensor(_model.anchors, device=dev, dtype=torch.float32)
     anchors_mask = _model.anchors_mask
     _model.eval()
 
@@ -104,10 +106,15 @@ def secend_stage(
 
 
 @torch.inference_mode()
-def detect(image: torch.Tensor) -> torch.Tensor:
+def detect(
+    image: torch.Tensor,
+    conf_thres: float = 0.45,
+    iou_thres: float = 0.45,
+) -> torch.Tensor:
+    """运行前向推理、多尺度解码及 GPU 优化的 Batched NMS。"""
     model = _get_model()
     out_device = next(model.parameters()).device
-    outputs = model(image.to(out_device))
+    outputs = model(image.to(out_device, non_blocking=True))
     outputs = secend_stage(outputs, device=out_device)
-    results = non_max_suppression(outputs, conf_thres=0.45, iou_thres=0.45)
+    results = non_max_suppression(outputs, conf_thres=conf_thres, iou_thres=iou_thres)
     return results
