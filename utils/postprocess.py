@@ -19,10 +19,12 @@ anchors_mask: list[list[int]] = []
 _model = None
 
 
-def _load_model(path: str = "1000_0.2988.pth") -> None:
-    global _model, anchors, anchors_mask
-    if _model is not None:
-        return
+def _load_model(
+    path: str = "1000_0.2988.pth", device_name: str | None = None
+) -> None:
+    global _model, anchors, anchors_mask, device
+    if device_name is not None:
+        device = device_name
     _model = torch.load(path, map_location=device, weights_only=False)
     anchors = torch.tensor(_model.anchors, device=device)
     anchors_mask = _model.anchors_mask

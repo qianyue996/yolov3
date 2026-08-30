@@ -69,12 +69,13 @@ def image_detect(
     image_path: str,
     output_path: str | None = None,
     checkpoint: str | None = None,
+    device_name: str | None = None,
 ) -> None:
     """单张图片目标检测并保存结果。"""
     if checkpoint:
-        _load_model(checkpoint)
+        _load_model(checkpoint, device_name=device_name)
     else:
-        _load_model()
+        _load_model(device_name=device_name)
 
     out_device = next(_get_model().parameters()).device
     pil_image = Image.open(image_path).convert("RGB")
@@ -102,12 +103,13 @@ def image_detect(
 def camera_detect(
     camera_id: int = 0,
     checkpoint: str | None = None,
+    device_name: str | None = None,
 ) -> None:
     """摄像头实时视频流目标检测。"""
     if checkpoint:
-        _load_model(checkpoint)
+        _load_model(checkpoint, device_name=device_name)
     else:
-        _load_model()
+        _load_model(device_name=device_name)
 
     out_device = next(_get_model().parameters()).device
     cap = cv.VideoCapture(camera_id)
@@ -168,32 +170,65 @@ def main() -> None:
         help="模型权重文件路径（默认使用已有 checkpoint）",
     )
     parser.add_argument(
+        "--device",
+        type=str,
+        default=None,
+        help="计算设备（默认自动检测：优先使用 GPU，不可用时回退到 CPU 多核）",
+    )
+    parser.add_argument(
         "--threads",
         type=int,
         default=None,
-        help="CPU 推理线程数（默认自动使用全部物理核心数）",
+        help="CPU 推理线程数（仅在 CPU 推理时生效，默认自动使用全部物理核心数）",
     )
     args = parser.parse_args()
 
-    # 配置 CPU 多核并行推理
-    num_threads = args.threads if args.threads is not None else (os.cpu_count() or 4)
-    torch.set_num_threads(num_threads)
-    logger.info(f"CPU 推理线程数已配置为: {torch.get_num_threads()} 核心")
+    # 设备选择与 CPU 多核配置逻辑
+    if args.device:
+        target_device = args.device.lower()
+    else:
+        target_device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    if target_device.startswith("cuda") and torch.cuda.is_available():
+        device_name = "cuda"
+        logger.info(f"使用 GPU 进行推理加速: {torch.cuda.get_device_name(0)}")
+    else:
+        device_name = "cpu"
+        num_threads = args.threads if args.threads is not None else (os.cpu_count() or 4)
+        torch.set_num_threads(num_threads)
+        torch.set_num_interop_threads(num_threads)
+        logger.info(
+            f"使用 CPU 进行多核心推理加速（线程数: {torch.get_num_threads()} 核心）"
+        )
 
     source = args.source
     if source.isdigit():
-        camera_detect(camera_id=int(source), checkpoint=args.checkpoint)
+        camera_detect(
+            camera_id=int(source),
+            checkpoint=args.checkpoint,
+            device_name=device_name,
+        )
     elif Path(source).exists() or any(
-        source.lower().endswith(ext) for ext in [".jpg", ".jpeg", ".png", ".bmp", ".webp"]
+        source.lower().endswith(ext)
+        for ext in [".jpg", ".jpeg", ".png", ".bmp", ".webp"]
     ):
         if not Path(source).exists():
             logger.error(f"错误: 图片文件不存在: {source}")
             sys.exit(1)
-        image_detect(image_path=source, output_path=args.output, checkpoint=args.checkpoint)
+        image_detect(
+            image_path=source,
+            output_path=args.output,
+            checkpoint=args.checkpoint,
+            device_name=device_name,
+        )
     else:
         try:
             cam_id = int(source)
-            camera_detect(camera_id=cam_id, checkpoint=args.checkpoint)
+            camera_detect(
+                camera_id=cam_id,
+                checkpoint=args.checkpoint,
+                device_name=device_name,
+            )
         except ValueError:
             logger.error(f"无法识别的输入源: {source}（必须是摄像头编号或有效图片路径）")
             sys.exit(1)
