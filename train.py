@@ -69,6 +69,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--batch-size", type=int, default=2, help="训练 batch 大小")
     parser.add_argument("--epochs", type=int, default=120, help="训练轮数")
+    parser.add_argument("--start-epoch", type=int, default=0, help="开始训练轮数")
     parser.add_argument("--lr", type=float, default=0.01, help="SGD 学习率")
     parser.add_argument(
         "--checkpoint",
@@ -248,7 +249,7 @@ def main() -> None:
     writer = SummaryWriter(
         f"{writer_path}/{time.strftime('%Y-%m-%d-%H-%M-%S', time.localtime())}"
     )
-    start_epoch = 0
+    start_epoch = args.start_epoch
     global_step = 0
     best_loss = float("inf")
     best_map = 0.0
