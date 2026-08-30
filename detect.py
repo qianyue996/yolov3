@@ -1,4 +1,5 @@
 import argparse
+import contextlib
 import os
 import sys
 from pathlib import Path
@@ -100,6 +101,75 @@ def image_detect(
     logger.info(f"图片检测完成，检测到 {len(results)} 个目标，结果已保存至: {out}")
 
 
+def screen_detect(
+    monitor_id: int = 1,
+    checkpoint: str | None = None,
+    device_name: str | None = None,
+) -> None:
+    """持续截图屏幕中间 416x416 正方形区域进行实时目标检测并显示。
+
+    Args:
+        monitor_id: 目标显示器编号（1 为主显示器，0 为全屏跨屏）
+        checkpoint: 模型权重文件路径
+        device_name: 运算设备 ('cuda' 或 'cpu')
+    """
+    if checkpoint:
+        _load_model(checkpoint, device_name=device_name)
+    else:
+        _load_model(device_name=device_name)
+
+    out_device = next(_get_model().parameters()).device
+
+    import mss
+
+    try:
+        sct = mss.mss()
+    except Exception as e:
+        logger.error(f"无法初始化屏幕截图 (mss): {e}")
+        return
+
+    monitors = sct.monitors
+    if monitor_id >= len(monitors):
+        logger.warning(
+            f"指定的显示器编号 {monitor_id} 超出范围 (共 {len(monitors)} 个)，自动选择主显示器"
+        )
+        monitor_id = 1 if len(monitors) > 1 else 0
+
+    mon = monitors[monitor_id]
+    left = mon["left"] + max(0, (mon["width"] - IMG_W) // 2)
+    top = mon["top"] + max(0, (mon["height"] - IMG_H) // 2)
+    bbox = {"left": int(left), "top": int(top), "width": IMG_W, "height": IMG_H}
+
+    logger.info(
+        f"屏幕截屏检测已启动 (显示器 {monitor_id}, 区域: left={left}, top={top}, size={IMG_W}x{IMG_H})，按 'q' 键退出..."
+    )
+
+    cv.namedWindow("YOLOv3 Screen Detection", cv.WINDOW_NORMAL)
+
+    try:
+        while True:
+            sct_img = sct.grab(bbox)
+            pil_image = Image.frombytes("RGB", sct_img.size, sct_img.bgra, "raw", "BGRX")
+
+            _, input_tensor = image_transform(pil_image)
+            input_tensor = input_tensor.unsqueeze(0).to(out_device)
+
+            results = detect(input_tensor)
+            draw_detections(pil_image, results, scale_x=1.0, scale_y=1.0)
+
+            annotated_frame = cv.cvtColor(np.array(pil_image), cv.COLOR_RGB2BGR)
+            cv.imshow("YOLOv3 Screen Detection", annotated_frame)
+
+            if cv.waitKey(1) & 0xFF == ord("q"):
+                break
+    except Exception as e:
+        logger.error(f"屏幕截图检测运行异常: {e}")
+    finally:
+        sct.close()
+        cv.destroyAllWindows()
+        logger.info("屏幕截屏检测已结束。")
+
+
 def camera_detect(
     camera_id: int = 0,
     checkpoint: str | None = None,
@@ -150,12 +220,25 @@ def camera_detect(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="YOLOv3 目标检测工具（自动支持图片与摄像头）")
+    parser = argparse.ArgumentParser(
+        description="YOLOv3 目标检测工具（支持图片、摄像头与屏幕截屏）"
+    )
     parser.add_argument(
         "source",
         nargs="?",
         default="0",
-        help="检测输入源：摄像头索引（如 0）或图片文件路径（如 img/test.jpg），默认 0（摄像头）",
+        help="检测输入源：摄像头索引（如 0）、屏幕截屏（screen）、或图片路径（如 img/test.jpg），默认 0",
+    )
+    parser.add_argument(
+        "--screen",
+        action="store_true",
+        help="直接开启屏幕截屏检测（持续截取屏幕中心 416x416 正方形区域）",
+    )
+    parser.add_argument(
+        "--monitor",
+        type=int,
+        default=1,
+        help="屏幕截屏时使用的显示器编号（默认 1 为主显示器）",
     )
     parser.add_argument(
         "--output",
@@ -202,7 +285,17 @@ def main() -> None:
         )
 
     source = args.source
-    if source.isdigit():
+    if args.screen or source.lower().startswith("screen"):
+        monitor_id = args.monitor
+        if ":" in source:
+            with contextlib.suppress(ValueError):
+                monitor_id = int(source.split(":", 1)[1])
+        screen_detect(
+            monitor_id=monitor_id,
+            checkpoint=args.checkpoint,
+            device_name=device_name,
+        )
+    elif source.isdigit():
         camera_detect(
             camera_id=int(source),
             checkpoint=args.checkpoint,
@@ -230,7 +323,7 @@ def main() -> None:
                 device_name=device_name,
             )
         except ValueError:
-            logger.error(f"无法识别的输入源: {source}（必须是摄像头编号或有效图片路径）")
+            logger.error(f"无法识别的输入源: {source}（支持 0/摄像头编号、screen、或图片路径）")
             sys.exit(1)
 
 

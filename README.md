@@ -106,14 +106,18 @@ uv run evaluate.py --checkpoint weights/best.pth \
 
 控制台将输出格式化的指标报告（包含每类与全类别的 Targets, Precision, Recall, F1, mAP@0.5, mAP@0.5:0.95）。
 
-### 4. 目标检测（图片 / 摄像头自动识别）
+### 4. 目标检测（图片 / 摄像头 / 屏幕实时截屏）
 
 ```bash
-# 摄像头实时检测（默认读取 0 号摄像头）
+# 1. 屏幕实时截屏检测（持续截取屏幕中心 416x416 区域并用 OpenCV 窗口展示）
+uv run detect.py screen
+uv run detect.py --screen --checkpoint weights/best.pth
+
+# 2. 摄像头实时检测（默认读取 0 号摄像头）
 uv run detect.py
 uv run detect.py 0 --checkpoint weights/best.pth
 
-# 单张图片检测
+# 3. 单张图片检测
 uv run detect.py img/street.jpg
 uv run detect.py img/street.jpg --output result.png --checkpoint weights/best.pth
 ```
