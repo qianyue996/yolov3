@@ -6,11 +6,17 @@ import torch
 import torchvision.transforms as transforms
 from PIL import Image, ImageDraw, ImageFont
 
-from utils.config import IMG_H, IMG_W, NORMALIZE_MEAN, NORMALIZE_STD
+from utils.config import (
+    DEFAULT_CLASSES_PATH,
+    IMG_H,
+    IMG_W,
+    NORMALIZE_MEAN,
+    NORMALIZE_STD,
+)
 from utils.models import RawTargets, TransformedBatch
 
 try:
-    with open("data/coco_names.yaml") as _f:
+    with open(DEFAULT_CLASSES_PATH) as _f:
         import yaml
 
         class_names = yaml.safe_load(_f)

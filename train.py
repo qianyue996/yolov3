@@ -18,6 +18,13 @@ from tqdm import tqdm
 from nets.yolov3 import YoloBody
 from nets.yolov3_tiny import YOLOv3Tiny
 from utils import YOLOLOSS, load_classes, set_seed, worker_init_fn
+from utils.config import (
+    DEFAULT_ANCHORS,
+    DEFAULT_ANCHORS_MASK,
+    DEFAULT_CLASSES_PATH,
+    TINY_ANCHORS,
+    TINY_ANCHORS_MASK,
+)
 from utils.dataloader import CocoDataset, YOLODataset, yolo_collate_fn
 from utils.metrics import evaluate_dataset
 
@@ -136,30 +143,13 @@ def main() -> None:
     save_path = Path(args.weights_dir)
     save_path.mkdir(parents=True, exist_ok=True)
 
-    class_names = load_classes("data/coco_names.yaml")
+    class_names = load_classes(DEFAULT_CLASSES_PATH)
     if args.tiny:
-        anchors = [
-            [10, 14],
-            [23, 27],
-            [37, 58],
-            [81, 82],
-            [135, 169],
-            [344, 319],
-        ]
-        anchors_mask = [[3, 4, 5], [0, 1, 2]]
+        anchors = TINY_ANCHORS
+        anchors_mask = TINY_ANCHORS_MASK
     else:
-        anchors = [
-            [10, 13],
-            [16, 30],
-            [33, 23],
-            [30, 61],
-            [62, 45],
-            [59, 119],
-            [116, 90],
-            [156, 198],
-            [373, 326],
-        ]
-        anchors_mask = [[0, 1, 2], [3, 4, 5], [6, 7, 8]]
+        anchors = DEFAULT_ANCHORS
+        anchors_mask = DEFAULT_ANCHORS_MASK
 
     # 1. 构建训练数据集
     if args.annotation:

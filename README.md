@@ -111,15 +111,15 @@ uv run evaluate.py --checkpoint weights/best.pth \
 ```bash
 # 1. 屏幕实时截屏检测（持续截取屏幕中心 416x416 区域并用 OpenCV 窗口展示）
 uv run detect.py screen
-uv run detect.py --screen --checkpoint weights/best.pth
+uv run detect.py --screen --checkpoint weights/best.pth -v  # -v / --verbose 开启处理速度(FPS/ms)与目标统计日志
 
 # 2. 摄像头实时检测（默认读取 0 号摄像头）
 uv run detect.py
-uv run detect.py 0 --checkpoint weights/best.pth
+uv run detect.py 0 --checkpoint weights/best.pth -v
 
 # 3. 单张图片检测
 uv run detect.py img/street.jpg
-uv run detect.py img/street.jpg --output result.png --checkpoint weights/best.pth
+uv run detect.py img/street.jpg --output result.png --checkpoint weights/best.pth -v
 ```
 
 图片检测结果默认保存至 `outputs/result_<原文件名>.png`。

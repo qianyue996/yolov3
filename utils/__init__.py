@@ -4,6 +4,17 @@ import numpy as np
 import torch
 import yaml
 
+from .config import (
+    DEFAULT_ANCHORS,
+    DEFAULT_ANCHORS_MASK,
+    DEFAULT_CLASSES_PATH,
+    IMG_H,
+    IMG_W,
+    NORMALIZE_MEAN,
+    NORMALIZE_STD,
+    TINY_ANCHORS,
+    TINY_ANCHORS_MASK,
+)
 from .dataloader import yolo_collate_fn
 from .loss import YOLOLOSS
 from .nms import non_max_suppression
@@ -18,10 +29,10 @@ from .postprocess import (
     device,
     secend_stage,
 )
-from .transforms import IMG_H, IMG_W, transform
+from .transforms import transform
 
 
-def load_classes(conf_path: str) -> list:
+def load_classes(conf_path: str = DEFAULT_CLASSES_PATH) -> list:
     with open(conf_path) as f:
         return yaml.safe_load(f)
 
@@ -50,9 +61,17 @@ __all__ = [
     "worker_init_fn",
     "YOLOLOSS",
     "non_max_suppression",
-    # transforms
+    # config
     "IMG_W",
     "IMG_H",
+    "NORMALIZE_MEAN",
+    "NORMALIZE_STD",
+    "DEFAULT_CLASSES_PATH",
+    "DEFAULT_ANCHORS",
+    "DEFAULT_ANCHORS_MASK",
+    "TINY_ANCHORS",
+    "TINY_ANCHORS_MASK",
+    # transforms
     "transform",
     "yolo_collate_fn",
     # postprocess

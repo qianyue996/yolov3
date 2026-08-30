@@ -6,13 +6,14 @@ import torch
 from PIL import Image
 from torch.utils.data.dataset import Dataset
 
+from utils.config import DEFAULT_CLASSES_PATH
 from utils.models import RawTargets, TransformedBatch
 from utils.transforms import transform
 
 try:
     import yaml
 
-    with open("data/coco_names.yaml") as _f:
+    with open(DEFAULT_CLASSES_PATH) as _f:
         class_names = yaml.safe_load(_f)
 except Exception:
     class_names = []

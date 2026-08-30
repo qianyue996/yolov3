@@ -184,11 +184,13 @@ class YOLOv3Tiny(nn.Module):
 
 
 if __name__ == "__main__":
-    anchors = [[10, 14], [23, 27], [37, 58], [81, 82], [135, 169], [344, 319]]
-    anchors_mask = [[3, 4, 5], [0, 1, 2]]
+    from utils.config import IMG_H, IMG_W, TINY_ANCHORS, TINY_ANCHORS_MASK
+
+    anchors = TINY_ANCHORS
+    anchors_mask = TINY_ANCHORS_MASK
     class_names = ["person", "dog"]
 
-    x = torch.randn(2, 3, 416, 416)
+    x = torch.randn(2, 3, IMG_H, IMG_W)
     model = YOLOv3Tiny(
         anchors=anchors, anchors_mask=anchors_mask, class_names=class_names
     )

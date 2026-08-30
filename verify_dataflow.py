@@ -7,24 +7,15 @@ import torch
 
 from nets.yolov3 import YoloBody
 from utils import YOLOLOSS, load_classes
+from utils.config import DEFAULT_ANCHORS, DEFAULT_ANCHORS_MASK, DEFAULT_CLASSES_PATH
 from utils.dataloader import YOLODataset, yolo_collate_fn
 
 LABEL_FILE = "data/coco_train_1pct.txt"
-CLASS_NAMES_FILE = "data/coco_names.yaml"
+CLASS_NAMES_FILE = DEFAULT_CLASSES_PATH
 DEVICE = "cpu"
 
-anchors = [
-    [10, 13],
-    [16, 30],
-    [33, 23],
-    [30, 61],
-    [62, 45],
-    [59, 119],
-    [116, 90],
-    [156, 198],
-    [373, 326],
-]
-anchors_mask = [[0, 1, 2], [3, 4, 5], [6, 7, 8]]
+anchors = DEFAULT_ANCHORS
+anchors_mask = DEFAULT_ANCHORS_MASK
 class_names = load_classes(CLASS_NAMES_FILE)
 
 

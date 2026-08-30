@@ -2,6 +2,7 @@ import argparse
 import contextlib
 import os
 import sys
+import time
 from pathlib import Path
 
 import cv2 as cv
@@ -21,6 +22,31 @@ except OSError:
 
 output_dir = Path("outputs")
 output_dir.mkdir(exist_ok=True)
+
+
+def _format_detection_log(results: torch.Tensor, elapsed_s: float) -> str:
+    """格式化单帧检测性能与目标统计日志。
+
+    Args:
+        results: NMS 检测结果张量 (N, 6)
+        elapsed_s: 单帧端到端耗时（秒）
+
+    Returns:
+        包含耗时、FPS 及目标数量和分类的统计字符串
+    """
+    fps = 1.0 / elapsed_s if elapsed_s > 0 else float("inf")
+    num_objects = len(results)
+    if num_objects == 0:
+        return f"耗时: {elapsed_s * 1000:.1f}ms ({fps:.1f} FPS) | 检测到 0 个目标"
+
+    class_counts: dict[str, int] = {}
+    for res in results:
+        cid = int(res[5])
+        cname = class_names[cid] if cid < len(class_names) else str(cid)
+        class_counts[cname] = class_counts.get(cname, 0) + 1
+
+    details = ", ".join(f"{name}: {cnt}" for name, cnt in class_counts.items())
+    return f"耗时: {elapsed_s * 1000:.1f}ms ({fps:.1f} FPS) | 检测到 {num_objects} 个目标 [{details}]"
 
 
 def draw_detections(
@@ -71,6 +97,7 @@ def image_detect(
     output_path: str | None = None,
     checkpoint: str | None = None,
     device_name: str | None = None,
+    verbose: bool = False,
 ) -> None:
     """单张图片目标检测并保存结果。"""
     if checkpoint:
@@ -79,6 +106,7 @@ def image_detect(
         _load_model(device_name=device_name)
 
     out_device = next(_get_model().parameters()).device
+    t0 = time.perf_counter()
     pil_image = Image.open(image_path).convert("RGB")
     original_size = pil_image.size
 
@@ -98,13 +126,19 @@ def image_detect(
     )
     out.parent.mkdir(parents=True, exist_ok=True)
     pil_image.save(out)
-    logger.info(f"图片检测完成，检测到 {len(results)} 个目标，结果已保存至: {out}")
+    elapsed_s = time.perf_counter() - t0
+
+    if verbose:
+        logger.info(f"[图片检测] {_format_detection_log(results, elapsed_s)}")
+    else:
+        logger.info(f"图片检测完成，检测到 {len(results)} 个目标，结果已保存至: {out}")
 
 
 def screen_detect(
     monitor_id: int = 1,
     checkpoint: str | None = None,
     device_name: str | None = None,
+    verbose: bool = False,
 ) -> None:
     """持续截图屏幕中间 416x416 正方形区域进行实时目标检测并显示。
 
@@ -112,6 +146,7 @@ def screen_detect(
         monitor_id: 目标显示器编号（1 为主显示器，0 为全屏跨屏）
         checkpoint: 模型权重文件路径
         device_name: 运算设备 ('cuda' 或 'cpu')
+        verbose: 是否持续打印速度与目标统计日志
     """
     if checkpoint:
         _load_model(checkpoint, device_name=device_name)
@@ -148,6 +183,7 @@ def screen_detect(
 
     try:
         while True:
+            t0 = time.perf_counter()
             sct_img = sct.grab(bbox)
             pil_image = Image.frombytes("RGB", sct_img.size, sct_img.bgra, "raw", "BGRX")
 
@@ -159,6 +195,10 @@ def screen_detect(
 
             annotated_frame = cv.cvtColor(np.array(pil_image), cv.COLOR_RGB2BGR)
             cv.imshow("YOLOv3 Screen Detection", annotated_frame)
+
+            elapsed_s = time.perf_counter() - t0
+            if verbose:
+                logger.info(f"[屏幕检测] {_format_detection_log(results, elapsed_s)}")
 
             if cv.waitKey(1) & 0xFF == ord("q"):
                 break
@@ -174,8 +214,16 @@ def camera_detect(
     camera_id: int = 0,
     checkpoint: str | None = None,
     device_name: str | None = None,
+    verbose: bool = False,
 ) -> None:
-    """摄像头实时视频流目标检测。"""
+    """摄像头实时视频流目标检测。
+
+    Args:
+        camera_id: 摄像头设备 ID
+        checkpoint: 模型权重文件路径
+        device_name: 运算设备 ('cuda' 或 'cpu')
+        verbose: 是否持续打印速度与目标统计日志
+    """
     if checkpoint:
         _load_model(checkpoint, device_name=device_name)
     else:
@@ -190,6 +238,7 @@ def camera_detect(
     logger.info(f"摄像头检测已启动 (ID: {camera_id})，按 'q' 键退出...")
 
     while True:
+        t0 = time.perf_counter()
         ret, frame = cap.read()
         if not ret:
             logger.error("无法获取视频帧！")
@@ -210,6 +259,10 @@ def camera_detect(
         annotated_frame = cv.cvtColor(np.array(pil_image), cv.COLOR_RGB2BGR)
         cv.namedWindow("YOLOv3 Detection", cv.WINDOW_NORMAL)
         cv.imshow("YOLOv3 Detection", annotated_frame)
+
+        elapsed_s = time.perf_counter() - t0
+        if verbose:
+            logger.info(f"[摄像头检测] {_format_detection_log(results, elapsed_s)}")
 
         if cv.waitKey(1) & 0xFF == ord("q"):
             break
@@ -239,6 +292,14 @@ def main() -> None:
         type=int,
         default=1,
         help="屏幕截屏时使用的显示器编号（默认 1 为主显示器）",
+    )
+    parser.add_argument(
+        "--verbose",
+        "-v",
+        "--log",
+        action="store_true",
+        dest="verbose",
+        help="持续打印日志：输出处理耗时 (ms)、FPS 及检测到的目标类别与数量",
     )
     parser.add_argument(
         "--output",
@@ -294,12 +355,14 @@ def main() -> None:
             monitor_id=monitor_id,
             checkpoint=args.checkpoint,
             device_name=device_name,
+            verbose=args.verbose,
         )
     elif source.isdigit():
         camera_detect(
             camera_id=int(source),
             checkpoint=args.checkpoint,
             device_name=device_name,
+            verbose=args.verbose,
         )
     elif Path(source).exists() or any(
         source.lower().endswith(ext)
@@ -313,6 +376,7 @@ def main() -> None:
             output_path=args.output,
             checkpoint=args.checkpoint,
             device_name=device_name,
+            verbose=args.verbose,
         )
     else:
         try:
@@ -321,6 +385,7 @@ def main() -> None:
                 camera_id=cam_id,
                 checkpoint=args.checkpoint,
                 device_name=device_name,
+                verbose=args.verbose,
             )
         except ValueError:
             logger.error(f"无法识别的输入源: {source}（支持 0/摄像头编号、screen、或图片路径）")

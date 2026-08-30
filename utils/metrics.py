@@ -10,6 +10,7 @@ import torchvision.ops as ops
 from torch.utils.data.dataloader import DataLoader
 from tqdm import tqdm
 
+from utils.config import IMG_W
 from utils.decode import decode_preds
 from utils.nms import non_max_suppression
 
@@ -195,7 +196,7 @@ def evaluate_batch(
             continue
 
         # 将 gt 从 [0, 1] 放大到 416 像素尺度
-        gt_boxes = gt[:, :4].to(pred.device) * 416.0
+        gt_boxes = gt[:, :4].to(pred.device) * float(IMG_W)
         gt_classes = gt[:, 4].long().to(pred.device)
 
         # 匹配每个类别的预测与 GT
@@ -264,7 +265,7 @@ def evaluate_dataset(
         decoded_layers = []
         for i, output in enumerate(outputs):
             _, _, feat_h, feat_w, _ = output.shape
-            stride = 416.0 / feat_h
+            stride = float(IMG_W) / feat_h
             scaled_anchors = anchors[anchors_mask[i]] / stride
             cx, cy, w, h, _, _ = decode_preds(
                 output, scaled_anchors, feat_h, feat_w, device
