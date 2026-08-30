@@ -1,6 +1,8 @@
 import argparse
 import contextlib
 import os
+import shutil
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -354,6 +356,47 @@ def camera_detect(
     logger.info("摄像头检测已结束。")
 
 
+def _merge_audio(temp_video_path: Path, source_video_path: str, output_path: Path) -> None:
+    """将原视频的音频流与检测标注后的视频画面合流，保留原声音轨。"""
+    ffmpeg_exe = shutil.which("ffmpeg")
+    if not ffmpeg_exe:
+        logger.warning("未检测到系统 ffmpeg 工具，视频将输出无声音版本。")
+        if temp_video_path != output_path:
+            temp_video_path.replace(output_path)
+        return
+
+    cmd = [
+        ffmpeg_exe,
+        "-y",
+        "-loglevel",
+        "error",
+        "-i",
+        str(temp_video_path),
+        "-i",
+        str(source_video_path),
+        "-c:v",
+        "copy",
+        "-c:a",
+        "aac",
+        "-map",
+        "0:v:0",
+        "-map",
+        "1:a:0?",
+        "-shortest",
+        str(output_path),
+    ]
+    try:
+        subprocess.run(cmd, check=True, capture_output=True)  # noqa: S603
+        if temp_video_path.exists():
+            temp_video_path.unlink()
+    except subprocess.CalledProcessError as e:
+        logger.warning(
+            f"音频合流失败 ({e.stderr.decode().strip()})，保留无声音版本视频。"
+        )
+        if temp_video_path != output_path:
+            temp_video_path.replace(output_path)
+
+
 def video_detect(
     video_path: str,
     output_path: str | None = None,
@@ -362,7 +405,7 @@ def video_detect(
     verbose: bool = False,
     show: bool = False,
 ) -> None:
-    """对输入视频文件进行逐帧目标检测，并生成保存标注后的新视频。
+    """对输入视频文件进行逐帧目标检测，并生成保存标注后的新视频（保留原始声音）。
 
     Args:
         video_path: 输入视频文件路径 (如 input.mp4)
@@ -396,9 +439,10 @@ def video_detect(
         else output_dir / f"result_{Path(video_path).stem}.mp4"
     )
     out.parent.mkdir(parents=True, exist_ok=True)
+    temp_video = out.parent / f".temp_{out.stem}_{int(time.time() * 1000)}.mp4"
 
     fourcc = cv.VideoWriter.fourcc(*"mp4v")
-    writer = cv.VideoWriter(str(out), fourcc, fps, (orig_w, orig_h))
+    writer = cv.VideoWriter(str(temp_video), fourcc, fps, (orig_w, orig_h))
 
     logger.info(
         f"开始处理视频: {video_path} (分辨率: {orig_w}x{orig_h}, FPS: {fps:.1f}, 总帧数: {total_frames}) -> {out}"
@@ -452,6 +496,10 @@ def video_detect(
 
     total_time = time.perf_counter() - t_start
     avg_fps = frame_idx / total_time if total_time > 0 else 0
+
+    # 将原视频的音频流合入新生成的视频中
+    _merge_audio(temp_video, video_path, out)
+
     logger.info(
         f"视频处理完成！共处理 {frame_idx} 帧，耗时 {total_time:.2f}s (平均 {avg_fps:.1f} FPS)，结果已保存至: {out}"
     )
