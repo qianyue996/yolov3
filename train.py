@@ -16,6 +16,7 @@ from torch.utils.tensorboard.writer import SummaryWriter
 from tqdm import tqdm
 
 from nets.yolov3 import YoloBody
+from nets.yolov3_tiny import YOLOv3Tiny
 from utils import YOLOLOSS, load_classes, set_seed, worker_init_fn
 from utils.dataloader import CocoDataset, YOLODataset, yolo_collate_fn
 from utils.metrics import evaluate_dataset
@@ -104,6 +105,11 @@ def parse_args() -> argparse.Namespace:
         help="冻结 Darknet-53 主干，只训练 FPN + 检测头",
     )
     parser.add_argument(
+        "--tiny",
+        action="store_true",
+        help="使用 YOLOv3-Tiny 轻量模型结构（2 个检测尺度）",
+    )
+    parser.add_argument(
         "--num-workers",
         type=int,
         default=4,
@@ -130,18 +136,29 @@ def main() -> None:
     save_path.mkdir(parents=True, exist_ok=True)
 
     class_names = load_classes("data/coco_names.yaml")
-    anchors = [
-        [10, 13],
-        [16, 30],
-        [33, 23],
-        [30, 61],
-        [62, 45],
-        [59, 119],
-        [116, 90],
-        [156, 198],
-        [373, 326],
-    ]
-    anchors_mask = [[0, 1, 2], [3, 4, 5], [6, 7, 8]]
+    if args.tiny:
+        anchors = [
+            [10, 14],
+            [23, 27],
+            [37, 58],
+            [81, 82],
+            [135, 169],
+            [344, 319],
+        ]
+        anchors_mask = [[3, 4, 5], [0, 1, 2]]
+    else:
+        anchors = [
+            [10, 13],
+            [16, 30],
+            [33, 23],
+            [30, 61],
+            [62, 45],
+            [59, 119],
+            [116, 90],
+            [156, 198],
+            [373, 326],
+        ]
+        anchors_mask = [[0, 1, 2], [3, 4, 5], [6, 7, 8]]
 
     # 1. 构建训练数据集
     if args.annotation:
@@ -204,7 +221,8 @@ def main() -> None:
             weights_only=False,
         )
     else:
-        model = YoloBody(
+        model_cls = YOLOv3Tiny if args.tiny else YoloBody
+        model = model_cls(
             anchors=anchors,
             anchors_mask=anchors_mask,
             class_names=class_names,
