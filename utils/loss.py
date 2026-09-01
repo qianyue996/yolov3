@@ -94,7 +94,7 @@ class YOLOLOSS:
 
                 pred_cls = pred[..., 5:][obj_mask]
                 targ_cls = y_true[..., 5:][obj_mask]
-                loss_cls = nn.BCEWithLogitsLoss(reduction="mean")(pred_cls, targ_cls)
+                loss_cls = nn.BCEWithLogitsLoss(reduction="sum")(pred_cls, targ_cls) / max(bs, n)
             else:
                 loss_loc = torch.tensor(0.0, device=self.device)
                 center_diff = torch.tensor(0.0, device=self.device)
@@ -110,7 +110,6 @@ class YOLOLOSS:
                 alpha=0.75,
                 gamma=1.5,
                 num_pos=int(n),
-                bs=bs,
             )
             conf_diff = (pred_conf_flat.sigmoid() - conf_target).abs().mean()
 
@@ -347,7 +346,6 @@ def focal_loss(
     gamma: float = 1.5,
     reduction: str = "mean",
     num_pos: int | None = None,
-    bs: int = 1,
 ) -> torch.Tensor:
     """Focal Loss：在 BCE 基础上乘以调制因子降低易分类样本权重，pred/targ 为 logits 和 0/1 标签。"""
     loss = nn.BCEWithLogitsLoss(reduction="none")(pred, targ)
@@ -358,7 +356,7 @@ def focal_loss(
     loss = loss * alpha_factor * modulating_factor
 
     if num_pos is not None:
-        return loss.sum() / max(bs, num_pos)
+        return loss.sum() / max(1, num_pos)
     if reduction == "mean":
         return loss.mean()
     elif reduction == "sum":
