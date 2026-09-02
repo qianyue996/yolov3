@@ -138,7 +138,9 @@ class YOLOv3Tiny(nn.Module):
         self.head = YOLOv3Head(
             num_classes=self.num_classes,
             num_anchors_large=len(anchors_mask[0]),
-            num_anchors_small=len(anchors_mask[1]) if len(anchors_mask) > 1 else len(anchors_mask[0]),
+            num_anchors_small=len(anchors_mask[1])
+            if len(anchors_mask) > 1
+            else len(anchors_mask[0]),
         )
 
         # Focal Loss 专属初始先验偏置 (RetinaNet 论文第 4.1 节)：
@@ -148,9 +150,7 @@ class YOLOv3Tiny(nn.Module):
                 b = layer.bias.view(-1, self.num_classes + 5)
                 b.data[:, 4] = -4.6
 
-    def forward(
-        self, x: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         x_small, x_large = self.backbone(x)
         x_large, x_small = self.neck(x_small, x_large)
         out_large, out_small = self.head(x_large, x_small)
@@ -173,7 +173,9 @@ class YOLOv3Tiny(nn.Module):
                 -1,
                 out_small.size(2),
                 out_small.size(3),
-                len(self.anchors_mask[1]) if len(self.anchors_mask) > 1 else len(self.anchors_mask[0]),
+                len(self.anchors_mask[1])
+                if len(self.anchors_mask) > 1
+                else len(self.anchors_mask[0]),
                 self.num_classes + 5,
             )
             .permute(0, 3, 1, 2, 4)

@@ -41,7 +41,7 @@ def print_metrics_table(result: EvalResult) -> None:
     # 打印所有类别的平均汇总
     print(
         f"{'all':<16} {total_targets:<8d} {result.mp:<10.4f} "
-        f"{result.mr:<8.4f} {2*result.mp*result.mr/(result.mp+result.mr+1e-16):<8.4f} "
+        f"{result.mr:<8.4f} {2 * result.mp * result.mr / (result.mp + result.mr + 1e-16):<8.4f} "
         f"{result.map50:<10.4f} {result.map50_95:<12.4f}"
     )
     print(separator + "\n")

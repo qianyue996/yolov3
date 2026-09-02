@@ -142,7 +142,9 @@ def draw_detections_cv(
     for row in results_np:
         x_min, y_min, x_max, y_max, score, class_id = row
         class_id = int(class_id)
-        class_name = class_names[class_id] if class_id < len(class_names) else str(class_id)
+        class_name = (
+            class_names[class_id] if class_id < len(class_names) else str(class_id)
+        )
         label = f"{class_name} {score:.2f}"
 
         x1 = max(0, min(int(x_min * scale_x), img_w - 1))
@@ -196,6 +198,7 @@ def image_detect(
     frame_bgr = cv.imread(image_path)
     if frame_bgr is None:
         from PIL import Image
+
         pil_img = Image.open(image_path).convert("RGB")
         frame_bgr = cv.cvtColor(np.array(pil_img), cv.COLOR_RGB2BGR)
 
@@ -356,7 +359,9 @@ def camera_detect(
     logger.info("摄像头检测已结束。")
 
 
-def _merge_audio(temp_video_path: Path, source_video_path: str, output_path: Path) -> None:
+def _merge_audio(
+    temp_video_path: Path, source_video_path: str, output_path: Path
+) -> None:
     """将原视频的音频流与检测标注后的视频画面合流，保留原声音轨。"""
     ffmpeg_exe = shutil.which("ffmpeg")
     if not ffmpeg_exe:
@@ -578,7 +583,9 @@ def main() -> None:
         logger.info(f"使用 GPU 进行推理加速: {torch.cuda.get_device_name(0)}")
     else:
         device_name = "cpu"
-        num_threads = args.threads if args.threads is not None else (os.cpu_count() or 4)
+        num_threads = (
+            args.threads if args.threads is not None else (os.cpu_count() or 4)
+        )
         torch.set_num_threads(num_threads)
         torch.set_num_interop_threads(num_threads)
         logger.info(
@@ -600,7 +607,9 @@ def main() -> None:
             verbose=args.verbose,
         )
     elif source_path.suffix.lower() in VIDEO_EXTENSIONS or (
-        source_path.exists() and source_path.is_file() and source_path.suffix.lower() not in IMAGE_EXTENSIONS
+        source_path.exists()
+        and source_path.is_file()
+        and source_path.suffix.lower() not in IMAGE_EXTENSIONS
     ):
         if not source_path.exists():
             logger.error(f"错误: 视频文件不存在: {source}")
@@ -643,7 +652,9 @@ def main() -> None:
                 verbose=args.verbose,
             )
         except ValueError:
-            logger.error(f"无法识别的输入源: {source}（支持 摄像头编号、视频文件、图片文件或 screen）")
+            logger.error(
+                f"无法识别的输入源: {source}（支持 摄像头编号、视频文件、图片文件或 screen）"
+            )
             sys.exit(1)
 
 

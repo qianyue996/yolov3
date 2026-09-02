@@ -33,5 +33,7 @@ class LayerMetrics(NamedTuple):
     loss_cls: float  # 分类 BCE 损失（理想值 0.0，初期 ~0.8，收敛 < 0.05）
     center_diff: float  # 中心点误差（grid 单位，理想 0.0，初期 20~30，收敛 < 0.8）
     wh_diff: float  # 宽高误差（grid 单位，理想 0.0，初期 15~25，收敛 < 1.2）
-    conf_diff: float  # |sigmoid(conf) - target| 绝对误差（理想 0.0，初期 ~0.5，收敛 < 0.05）
+    conf_diff: (
+        float  # |sigmoid(conf) - target| 绝对误差（理想 0.0，初期 ~0.5，收敛 < 0.05）
+    )
     n_pos: int  # 本层分配的正样本数量

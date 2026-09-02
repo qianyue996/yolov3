@@ -28,9 +28,7 @@ anchors_mask: list[list[int]] = []
 _model = None
 
 
-def _load_model(
-    path: str | None = None, device_name: str | None = None
-) -> None:
+def _load_model(path: str | None = None, device_name: str | None = None) -> None:
     global _model, anchors, anchors_mask, device
     if device_name is not None:
         device = device_name
