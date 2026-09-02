@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import time
+from functools import partial
 from pathlib import Path
 
 import torch
@@ -124,6 +125,17 @@ def parse_args() -> argparse.Namespace:
         help="DataLoader 工作进程数",
     )
     parser.add_argument(
+        "--img-sizes",
+        type=str,
+        default="416,448,480,512,544,576",
+        help="训练输入多尺度列表（以逗号分隔，如 416,448,480；若只传一个尺寸如 416 则固定尺寸）",
+    )
+    parser.add_argument(
+        "--no-augment",
+        action="store_true",
+        help="关闭训练数据增强",
+    )
+    parser.add_argument(
         "--log-every",
         type=int,
         default=10,
@@ -151,6 +163,25 @@ def main() -> None:
         anchors = DEFAULT_ANCHORS
         anchors_mask = DEFAULT_ANCHORS_MASK
 
+    try:
+        train_sizes = [int(s.strip()) for s in args.img_sizes.split(",") if s.strip()]
+    except ValueError:
+        train_sizes = [416]
+    if not train_sizes:
+        train_sizes = [416]
+
+    augment_enabled = not args.no_augment
+    train_collate = partial(
+        yolo_collate_fn,
+        augment=augment_enabled,
+        sizes=train_sizes,
+    )
+    val_collate = partial(
+        yolo_collate_fn,
+        augment=False,
+        sizes=[416],
+    )
+
     # 1. 构建训练数据集
     if args.annotation:
         dataset = CocoDataset(
@@ -163,6 +194,7 @@ def main() -> None:
     print(
         f"Dataset: {len(dataset)} images "
         f"(from {args.data if not args.annotation else args.annotation})"
+        f" | Augment: {augment_enabled} | Scales: {train_sizes}"
     )
 
     dataloader = DataLoader(
@@ -173,7 +205,7 @@ def main() -> None:
         persistent_workers=args.num_workers > 0,
         pin_memory=True,
         worker_init_fn=worker_init_fn,
-        collate_fn=yolo_collate_fn,
+        collate_fn=train_collate,
     )
 
     # 2. 构建验证数据集（若提供）
@@ -189,7 +221,7 @@ def main() -> None:
             shuffle=False,
             num_workers=args.num_workers,
             pin_memory=True,
-            collate_fn=yolo_collate_fn,
+            collate_fn=val_collate,
         )
         print(f"Val Dataset: {len(val_dataset)} images (from {args.val_annotation})")
     elif args.val_data and Path(args.val_data).exists():
@@ -200,7 +232,7 @@ def main() -> None:
             shuffle=False,
             num_workers=args.num_workers,
             pin_memory=True,
-            collate_fn=yolo_collate_fn,
+            collate_fn=val_collate,
         )
         print(f"Val Dataset: {len(val_dataset)} images (from {args.val_data})")
 
@@ -306,7 +338,9 @@ def main() -> None:
                     step_path = save_path / f"step{global_step}_{avg_loss:.4f}.pth"
                     torch.save(model, ".checkpoint.pth")
                     Path(".checkpoint.pth").replace(step_path)
-                    tqdm.write(f"  [step {global_step}] avg_loss={avg_loss:.4f} → {step_path}")
+                    tqdm.write(
+                        f"  [step {global_step}] avg_loss={avg_loss:.4f} → {step_path}"
+                    )
 
         # 5. 每个 Epoch 结束后的验证与评估
         if val_dataloader is not None:
@@ -361,12 +395,16 @@ def main() -> None:
                     best_map = eval_res.map50
                     torch.save(model, ".checkpoint.pth")
                     Path(".checkpoint.pth").replace(save_path / "best.pth")
-                    tqdm.write(f"  [best] mAP@0.5={eval_res.map50:.4f} → {save_path / 'best.pth'}")
+                    tqdm.write(
+                        f"  [best] mAP@0.5={eval_res.map50:.4f} → {save_path / 'best.pth'}"
+                    )
             elif args.save_best and val_avg_loss < best_loss:
                 best_loss = val_avg_loss
                 torch.save(model, ".checkpoint.pth")
                 Path(".checkpoint.pth").replace(save_path / "best.pth")
-                tqdm.write(f"  [best] avg_eval={val_avg_loss:.4f} → {save_path / 'best.pth'}")
+                tqdm.write(
+                    f"  [best] avg_eval={val_avg_loss:.4f} → {save_path / 'best.pth'}"
+                )
         elif args.save_best and avg_loss < best_loss:
             best_loss = avg_loss
             torch.save(model, ".checkpoint.pth")
@@ -374,7 +412,11 @@ def main() -> None:
             tqdm.write(f"  [best] avg_loss={avg_loss:.4f} → {save_path / 'best.pth'}")
 
         # 6. 按 Epoch 周期保存 checkpoint
-        if not args.save_every and args.save_epoch > 0 and (epoch + 1) % args.save_epoch == 0:
+        if (
+            not args.save_every
+            and args.save_epoch > 0
+            and (epoch + 1) % args.save_epoch == 0
+        ):
             epoch_path = save_path / f"epoch{epoch}_{avg_loss:.4f}.pth"
             torch.save(model, ".checkpoint.pth")
             Path(".checkpoint.pth").replace(epoch_path)
