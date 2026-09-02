@@ -11,6 +11,7 @@
 uv run train.py          # train (batch=2, 120 epochs, SGD lr=0.01)
 uv run detect.py         # webcam inference (default entrypoint)
 ruff check .             # lint
+make format              # format & lint fix (ruff check --fix + ruff format)
 ```
 
 ## Architecture
