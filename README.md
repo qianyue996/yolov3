@@ -1,6 +1,6 @@
 # YOLOv3 (PyTorch)
 
-纯手写复现，Darknet-53 主干 + FPN + 三路 YOLO 检测头。
+纯手写复现，Darknet-53 主干 + FPN + 三路 YOLO 检测头。支持数据增强、多尺度动态训练、主干分类预训练与统一推理评估。
 
 ## 环境
 
@@ -40,14 +40,33 @@ uv run utils/stratified_sampler.py \
 /path/to/img.jpg x_min,y_min,x_max,y_max,class_id x_min,y_min,...
 ```
 
-### 2. 训练
+### 2. Darknet-53 主干分类预训练（Mini-ImageNet 100）
+
+在 Mini-ImageNet 100 数据集上预训练 Darknet-53 Backbone，产出纯净权重以加速检测网络收敛：
 
 ```bash
-# 从随机权重开始训练（小数据集快速验证）
+# 默认启动训练（Mini-ImageNet 100, 60000 张图, 100 个 Epoch）
+uv run python train_backbone.py
+
+# 自定义参数启动
+uv run python train_backbone.py \
+    --data-dir /mnt/ai_models/mini_imagenet100 \
+    --batch-size 64 \
+    --epochs 100 \
+    --lr 0.05 \
+    --num-workers 8
+```
+
+训练过程中验证集 Top-1 准确率创新高时，会自动导出纯净 Backbone 权重至 `model_data/darknet53_backbone_weights.pth`，可直接由 `YoloBody(pretrained=True)` 无缝加载。
+
+### 3. YOLOv3 目标检测训练
+
+```bash
+# 从随机权重开始训练（多尺度 Letterbox + 全量数据增强）
 uv run train.py --data data/coco_train_1pct.txt --epochs 10 --batch-size 2 --checkpoint null
 
-# 使用预训练权重继续训练，checkpoint 存到自定义目录，每个 epoch 都保存
-uv run train.py --data data/coco_train_10pct.txt --checkpoint 1000_0.2988.pth \
+# 使用预训练权重继续训练，并开启多尺度训练（默认尺度: 416, 448, 480, 512, 544, 576）
+uv run train.py --data data/coco_train_10pct.txt --checkpoint weights/best.pth \
     --weights-dir weights/exp1
 
 # 带有验证集并在每个 epoch 自动计算 mAP 与保存最佳模型
@@ -71,6 +90,8 @@ uv run train.py \
 | `--val-data` | 空 | 验证集文本标签文件 |
 | `--val-annotation` / `--val-image-root` | 空 | 直接读 COCO JSON 验证集 |
 | `--eval-every` | `0` | 每隔多少个 epoch 执行一次 mAP 评测（默认 0 关闭；设为 1 或 N 开启） |
+| `--img-sizes` | `416,448,480,512,544,576` | 训练输入多尺度列表（传单一尺寸如 `416` 则固定尺寸） |
+| `--no-augment` | 关 | 关闭训练数据增强（翻转、90°旋转、随机裁剪、色彩抖动） |
 | `--batch-size` | `2` | batch 大小 |
 | `--epochs` | `120` | 训练轮数 |
 | `--lr` | `0.01` | SGD 学习率 |
@@ -85,12 +106,13 @@ uv run train.py \
 
 训练日志 → `runs/<timestamp>/`（TensorBoard）
 
-> **重要**：损失函数已完成全面升级：
-> 1. 修复坐标转置与 Anchor 宽高对齐 IoU Bug，实现全局 9-Anchor 跨尺度精准匹配；
-> 2. 置信度采用针对目标检测优化的标准 **Focal Loss**（$\alpha=0.75, \gamma=1.5$），引入 RetinaNet 先验偏置初始化（$b=-4.6$）与 `max(bs, num_pos)` 批次防护，从根本上解决置信度偏低与训练数值溢出（NaN）问题；
-> 3. 用旧代码训练的 checkpoints 与新代码不兼容，需重新训练。
+> **训练机制升级**：
+> 1. **Letterbox 缩放与填充**：移除拉伸 Resize，采用保真缩放最长边 + 短边居中填充 114 灰边，几何标注框精确同步映射；
+> 2. **数据增强链**：内置随机水平/垂直翻转、90° 整数倍旋转（面积守恒）、面积 50%~100% 随机裁剪与色彩抖动；
+> 3. **多尺度训练自适应**：损失函数与评估端彻底解耦固定 416 分辨率，按 Batch 动态推导特征图步长并自适应缩放 Anchor；
+> 4. **Focal Loss + 先验偏置初始化**：置信度采用 Focal Loss（$\alpha=0.75, \gamma=1.5$）与 RetinaNet 偏置初始化（$b=-4.6$），杜绝数值溢出与梯度爆炸。
 
-### 3. 独立模型评估（mAP@0.5 / mAP@0.5:0.95）
+### 4. 独立模型评估（mAP@0.5 / mAP@0.5:0.95）
 
 使用标准 COCO / VOC 评测指标对模型权重进行多维度定量测试：
 
@@ -106,7 +128,7 @@ uv run evaluate.py --checkpoint weights/best.pth \
 
 控制台将输出格式化的指标报告（包含每类与全类别的 Targets, Precision, Recall, F1, mAP@0.5, mAP@0.5:0.95）。
 
-### 4. 目标检测（图片 / 视频文件 / 摄像头 / 屏幕实时截屏）
+### 5. 目标检测（图片 / 视频文件 / 摄像头 / 屏幕实时截屏）
 
 ```bash
 # 1. 视频文件逐帧检测（自动读取、标注并保存新视频，附带进度条）
@@ -131,6 +153,13 @@ uv run detect.py img/street.jpg --output result.png --checkpoint weights/best.pt
 
 推理前需在项目根目录放置模型权重（默认读取 `1000_0.2988.pth`）。
 
+## 代码格式化与规范
+
+```bash
+make format      # 自动执行 ruff check --fix 与 ruff format
+ruff check .     # 代码风格与类型注解规范检查
+```
+
 ## 数据集格式
 
 | 文件 | 说明 |
@@ -142,37 +171,30 @@ uv run detect.py img/street.jpg --output result.png --checkpoint weights/best.pt
 ## 架构
 
 ```
-detect.py                 统一目标检测入口（自动支持图片与摄像头视频流）
+train.py                  YOLOv3 目标检测训练主脚本（支持多尺度与验证评估）
+train_backbone.py         Darknet-53 主干网络分类预训练脚本（Mini-ImageNet100）
+detect.py                 统一目标检测入口（自动支持图片与摄像头/视频流/屏幕截图）
 evaluate.py               独立模型评估与 mAP 评测工具（标准 VOC / COCO 格式）
-nets/yolov3.py            YoloBody（Darknet-53 + FPN + 3 检测头，置信度先验偏置初始化）
-nets/yolov3_tiny.py       YOLOv3Tiny 轻量版（独立模块，未接入训练流程）
-nets/darknet.py           DarkNet-53 主干
+nets/
+├── yolov3.py             YoloBody（Darknet-53 + FPN + 3 检测头，置信度先验偏置初始化）
+├── yolov3_tiny.py        YOLOv3Tiny 轻量版结构
+└── darknet.py            DarkNet-53 主干网络
 utils/
-├── config.py             常量：IMG_W/IMG_H、归一化 mean/std
+├── augment.py            数据增强模块（翻转、旋转、随机裁剪、色彩抖动）
+├── transforms.py         Letterbox 灰边缩放与图像归一化管道
+├── dataloader.py         YOLODataset / CocoDataset / yolo_collate_fn 多尺度组批
+├── config.py             全局常量配置（IMG_W/IMG_H、归一化 mean/std、Anchor 设定）
 ├── decode.py             公共解码逻辑（decode_preds，供训练 loss 与推理后处理复用）
-├── models.py             数据类型（RawTargets/TransformedBatch）+ xyxy2xywh 坐标转换
+├── models.py             核心数据结构（RawTargets/TransformedBatch）与坐标转换
 ├── metrics.py            评估指标计算（Precision, Recall, F1, mAP@0.5, mAP@0.5:0.95）
-├── loss_types.py         loss 内部数据结构（TargetBuild/PredDecode/LayerMetrics）
-├── transforms.py         图像归一化/变换（TransFormer、image_transform、image_show）
-├── dataloader.py         YOLODataset / CocoDataset / yolo_collate_fn
-├── loss.py               YOLOLOSS（GIoU + 稳定版 Focal Loss + BCE 分类，全局 9-Anchor 分配）
+├── loss.py               YOLOLOSS（GIoU + 稳定版 Focal Loss + BCE 分类，多尺度自适应）
 ├── postprocess.py        推理后处理（模型加载、secend_stage 解码、detect 流程）
-├── nms.py                non_max_suppression（非极大值抑制）
+├── nms.py                non_max_suppression（GPU 加速非极大值抑制）
 ├── stratified_sampler.py COCO 分层采样工具
 └── __init__.py           统一导出（load_classes / set_seed / worker_init_fn 等）
 ```
 
-数据流向：
-
-```
-图片+标注 → RawTargets(像素 xyxy)
-    → yolo_collate_fn/TransFormer 归一化到 416×416 → TransformedBatch([0,1] xyxy)
-    → YoloBody 前向 → 三层 (B,3,H,W,5+C) logit
-    → YOLOLOSS：xyxy2xywh 到各层 grid → build_targets (全局 9-Anchor)/get_ignore → GIoU+FocalLoss+BCE
-推理：YoloBody → decode_preds/secend_stage 解码到像素 → non_max_suppression → 绘图输出
-```
-
-## 性能调优（GPU 训练时 CPU 单核吃满）
+## 性能调优
 
 ```bash
 # worker 不够就加大
@@ -182,19 +204,9 @@ uv run train.py --num-workers 8
 uv run train.py --batch-size 16
 ```
 
-已内置优化：`pin_memory` + `non_blocking` 异步传输、worker 线程上限
-（防止 N 个 worker × 全核 OpenMP 争抢）、TensorBoard 写入降频。
-
-定位方法：
-
-```bash
-nvidia-smi -l 1   # GPU 利用率低 = 瓶颈在 CPU 侧
-htop              # worker 进程满 → 加 num-workers；主进程满 → 加大 batch-size
-```
+已内置优化：`pin_memory` + `non_blocking` 异步传输、worker 线程上限（防止 N 个 worker × 全核 OpenMP 争抢）、TensorBoard 写入降频。
 
 ## 注意事项
 
 - 图片归一化 mean/std（`0.4711, 0.4475, 0.4080` / `0.2378, 0.2329, 0.2361`）为训练集统计值，不可更改
-- 模型权重（`.pth`）不入库；训练输出在 `--weights-dir`（默认 `weights/`），推理用的根目录权重需手动放置
-- `evaluation.py` 引用了不存在的外部包，暂不可用
-- 数据增强尚未实现，小数据集易过拟合，建议尽快补充验证集与增广
+- 模型权重（`.pth`）不入库；训练输出在 `--weights-dir`（默认 `weights/`）
