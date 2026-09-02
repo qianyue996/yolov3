@@ -60,6 +60,9 @@ class YOLOLOSS:
         """
         total_loss = torch.zeros((), device=self.device)
         detail = {}
+        # 最粗特征层（最后一行）stride 恒为 32，由此推算当前 batch 的输入分辨率
+        img_size = int(predicts[-1].shape[2] * 32)
+
         for layer_idx, pred in enumerate(predicts):
             bs = pred.shape[0]
             feat_h = pred.shape[2]
@@ -68,7 +71,7 @@ class YOLOLOSS:
             anchors_mask = self.anchors_mask[layer_idx]
 
             y_true, noobj_mask, box_loss_scale = self.build_targets(
-                bs, feat_h, feat_w, anchors_mask, pred, targets
+                bs, feat_h, feat_w, anchors_mask, pred, targets, img_size
             )
             noobj_mask, pred_boxes, grid_x, grid_y = self.get_ignore(
                 bs, feat_h, feat_w, anchors_mask, pred, targets, noobj_mask
@@ -94,7 +97,9 @@ class YOLOLOSS:
 
                 pred_cls = pred[..., 5:][obj_mask]
                 targ_cls = y_true[..., 5:][obj_mask]
-                loss_cls = nn.BCEWithLogitsLoss(reduction="sum")(pred_cls, targ_cls) / max(bs, n)
+                loss_cls = nn.BCEWithLogitsLoss(reduction="sum")(
+                    pred_cls, targ_cls
+                ) / max(1, n)
             else:
                 loss_loc = torch.tensor(0.0, device=self.device)
                 center_diff = torch.tensor(0.0, device=self.device)
@@ -140,6 +145,7 @@ class YOLOLOSS:
         anchors_mask: list[int],
         predict: torch.Tensor,
         targets: list[torch.Tensor],
+        img_size: int = IMG_W,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """为每个检测层构建 ground truth 张量 y_true，返回 (y_true, noobj_mask, box_loss_scale)。
 
@@ -153,14 +159,17 @@ class YOLOLOSS:
         box_loss_scale = torch.zeros(
             bs, len(anchors_mask), feat_h, feat_w, device=self.device
         )
-        stride = IMG_W / feat_h
+        stride = img_size / feat_h
+
+        # 将 416 尺度的预设 anchor 缩放到当前输入图像尺寸 img_size
+        anchors_scaled = self.anchors * (img_size / IMG_W)
 
         for b, target in enumerate(targets):
             if len(target) == 0:
                 continue
-            # target[:, 2:4] 在 grid 单位，乘 stride 转换到 416 像素尺度与全部 9 个 anchor 匹配
+            # target[:, 2:4] 在 grid 单位，乘 stride 转换到 img_size 像素尺度与全部 9 个 anchor 匹配
             target_wh_pixels = target[:, 2:4] * stride
-            iou_all = compute_iou_with_anchors(target_wh_pixels, self.anchors)
+            iou_all = compute_iou_with_anchors(target_wh_pixels, anchors_scaled)
             best_anchor_all = torch.argmax(iou_all, dim=-1)
 
             for t, best_a in enumerate(best_anchor_all):

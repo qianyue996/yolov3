@@ -1,4 +1,5 @@
 import json
+import random
 from typing import Any
 
 import numpy as np
@@ -105,12 +106,33 @@ class CocoDataset(Dataset):
         return image, RawTargets(torch.from_numpy(np_targets))
 
 
-def yolo_collate_fn(batches: list[Any]) -> TransformedBatch:
+def yolo_collate_fn(
+    batches: list[Any],
+    augment: bool = False,
+    sizes: tuple[int, ...] | list[int] = (416,),
+) -> TransformedBatch:
+    """YOLO DataLoader collate 函数，支持多尺度随机选择与数据增强。
+
+    Args:
+        batches: list of (image, raw_targets)
+        augment: 是否开启数据增强（翻转、旋转、裁剪、色彩抖动）
+        sizes: 可选输入尺度列表（如 [416, 448, 480, 512]）。
+               若 augment=True 且 len(sizes) > 1，则本 batch 随机抽取一个尺寸；
+               否则固定使用 sizes[0]。
+
+    Returns:
+        TransformedBatch(images: (B, 3, S, S), targets: list of (Ni, 5))
+    """
+    if augment and len(sizes) > 1:
+        current_size = random.choice(sizes)  # noqa: S311
+    else:
+        current_size = sizes[0] if len(sizes) > 0 else 416
+
     images = []
     targets_list = []
     for batch in batches:
         image, raw = batch
-        tb = transform(image, raw)
+        tb = transform(image, raw, size=current_size, augment=augment)
         images.append(tb.images)
         targets_list.extend(tb.targets)
 
