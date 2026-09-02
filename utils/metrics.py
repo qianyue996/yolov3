@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import NamedTuple
+from typing import NamedTuple, cast
 
 import numpy as np
 import torch
@@ -38,21 +38,41 @@ class EvalResult(NamedTuple):
     class_metrics: list[ClassMetric]
 
 
-def compute_ap(recall: np.ndarray, precision: np.ndarray) -> float:
-    """使用全点插值法（COCO/VOC2012 标准）计算 Precision-Recall 曲线下面积 (AP)。
+def compute_ap(recall: np.ndarray, precision: np.ndarray) -> float | np.ndarray:
+    """计算单个或多个 IoU 阈值下的 AP（Precision-Recall 曲线下面积）。
 
     Args:
-        recall: 召回率数组 (N,)
-        precision: 精确率数组 (N,)
+        recall: 召回率数组 (N, M) 或 (N,)
+        precision: 精确率数组 (N, M) 或 (N,)
 
     Returns:
-        AP 标量浮点数
+        AP 数组 (M,) 或标量浮点数
     """
-    mrec = np.concatenate(([0.0], recall, [1.0]))
-    mpre = np.concatenate(([1.0], precision, [0.0]))
-    mpre = np.flip(np.maximum.accumulate(np.flip(mpre)))
-    indices = np.where(mrec[1:] != mrec[:-1])[0]
-    return float(np.sum((mrec[indices + 1] - mrec[indices]) * mpre[indices + 1]))
+    is_1d = recall.ndim == 1
+    if is_1d:
+        recall = recall[:, None]
+        precision = precision[:, None]
+
+    mrec = np.pad(
+        recall,
+        ((1, 1), (0, 0)),
+        mode="constant",
+        constant_values=((0.0, 1.0), (0, 0)),
+    )
+    mpre = np.pad(
+        precision,
+        ((1, 1), (0, 0)),
+        mode="constant",
+        constant_values=((1.0, 0.0), (0, 0)),
+    )
+    mpre = np.flip(np.maximum.accumulate(np.flip(mpre, axis=0), axis=0), axis=0)
+
+    ap = np.zeros(recall.shape[1], dtype=np.float32)
+    for i in range(recall.shape[1]):
+        indices = np.where(mrec[1:, i] != mrec[:-1, i])[0]
+        ap[i] = np.sum((mrec[indices + 1, i] - mrec[indices, i]) * mpre[indices + 1, i])
+
+    return float(ap[0]) if is_1d else ap
 
 
 def ap_per_class(
@@ -126,12 +146,9 @@ def ap_per_class(
         r = float(recall_curve[-1, 0])
         f1 = float(2 * p * r / (p + r + 1e-16))
 
-        # 计算 10 个 IoU 阈值下的 AP
-        ap_10 = []
-        for iou_idx in range(tp.shape[1]):
-            ap_10.append(compute_ap(recall_curve[:, iou_idx], precision_curve[:, iou_idx]))
-
-        ap50 = ap_10[0]
+        # 向量化批量计算 10 个 IoU 阈值下的 AP
+        ap_10 = cast(np.ndarray, compute_ap(recall_curve, precision_curve))
+        ap50 = float(ap_10[0])
         ap50_95 = float(np.mean(ap_10))
 
         class_metrics.append(
@@ -169,69 +186,88 @@ def evaluate_batch(
     predictions: list[torch.Tensor],
     targets_list: list[torch.Tensor],
     iou_thresholds: torch.Tensor,
+    img_size: int = IMG_W,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """计算单个 Batch 中预测框与真实框在 10 个 IoU 阈值下的匹配情况。"""
     batch_tp: list[np.ndarray] = []
-    batch_conf: list[float] = []
-    batch_pred_cls: list[int] = []
-    batch_target_cls: list[int] = []
+    batch_conf: list[np.ndarray] = []
+    batch_pred_cls: list[np.ndarray] = []
+    batch_target_cls: list[np.ndarray] = []
 
     for b, pred in enumerate(predictions):
         gt = targets_list[b]  # (N_gt, 5) xyxy, class_id (归一化到 [0,1])
-        if len(gt) > 0:
-            batch_target_cls.extend(gt[:, 4].long().cpu().tolist())
+        n_gt = len(gt)
+        if n_gt > 0:
+            batch_target_cls.append(gt[:, 4].long().cpu().numpy())
 
-        if len(pred) == 0:
+        n_pred = len(pred)
+        if n_pred == 0:
             continue
 
-        pred_boxes = pred[:, :4]  # (N_pred, 4) xyxy (归一化到 [0, 416])
-        pred_scores = pred[:, 4].cpu().tolist()
-        pred_classes = pred[:, 5].long().cpu().tolist()
+        pred_boxes = pred[:, :4]  # (N_pred, 4) xyxy (像素尺度)
+        pred_scores = pred[:, 4]
+        pred_classes = pred[:, 5].long()
 
-        batch_conf.extend(pred_scores)
-        batch_pred_cls.extend(pred_classes)
+        batch_conf.append(pred_scores.cpu().numpy())
+        batch_pred_cls.append(pred_classes.cpu().numpy())
 
-        if len(gt) == 0:
-            batch_tp.append(np.zeros((len(pred), len(iou_thresholds)), dtype=np.uint8))
+        if n_gt == 0:
+            batch_tp.append(np.zeros((n_pred, len(iou_thresholds)), dtype=np.uint8))
             continue
 
-        # 将 gt 从 [0, 1] 放大到 416 像素尺度
-        gt_boxes = gt[:, :4].to(pred.device) * float(IMG_W)
+        # 将 gt 从 [0, 1] 放大到 img_size 像素尺度
+        gt_boxes = gt[:, :4].to(pred.device) * float(img_size)
         gt_classes = gt[:, 4].long().to(pred.device)
 
-        # 匹配每个类别的预测与 GT
-        tp_matrix = torch.zeros(
-            (len(pred), len(iou_thresholds)), dtype=torch.uint8, device=pred.device
-        )
+        # 向量化 IoU 与类别匹配
         ious = ops.box_iou(pred_boxes, gt_boxes)  # (N_pred, N_gt)
+        cls_match = pred_classes[:, None] == gt_classes[None, :]
+        ious_valid = ious * cls_match
 
+        tp_matrix = torch.zeros(
+            (n_pred, len(iou_thresholds)), dtype=torch.uint8, device=pred.device
+        )
         for iou_idx, iou_thresh in enumerate(iou_thresholds):
-            matched_gt = set()
-            for p_idx in range(len(pred)):
-                p_cls = pred_classes[p_idx]
-                best_iou = float(iou_thresh)
-                best_gt_idx = -1
+            mask = ious_valid >= iou_thresh
+            if not mask.any():
+                continue
+            p_indices, g_indices = torch.where(mask)
+            match_ious = ious_valid[p_indices, g_indices]
+            sort_order = torch.argsort(match_ious, descending=True)
+            p_sorted = p_indices[sort_order].cpu().tolist()
+            g_sorted = g_indices[sort_order].cpu().tolist()
 
-                for g_idx in range(len(gt)):
-                    if g_idx in matched_gt or gt_classes[g_idx] != p_cls:
-                        continue
-                    if ious[p_idx, g_idx] > best_iou:
-                        best_iou = float(ious[p_idx, g_idx])
-                        best_gt_idx = g_idx
-
-                if best_gt_idx >= 0:
-                    matched_gt.add(best_gt_idx)
-                    tp_matrix[p_idx, iou_idx] = 1
+            seen_p: set[int] = set()
+            seen_g: set[int] = set()
+            for p, g in zip(p_sorted, g_sorted, strict=False):
+                if p not in seen_p and g not in seen_g:
+                    seen_p.add(p)
+                    seen_g.add(g)
+                    tp_matrix[p, iou_idx] = 1
 
         batch_tp.append(tp_matrix.cpu().numpy())
 
-    tp_arr = np.concatenate(batch_tp, axis=0) if batch_tp else np.empty((0, len(iou_thresholds)), dtype=np.uint8)
-    return (
-        tp_arr,
-        np.array(batch_conf, dtype=np.float32),
-        np.array(batch_pred_cls, dtype=np.int64),
-        np.array(batch_target_cls, dtype=np.int64),
+    tp_arr = (
+        np.concatenate(batch_tp, axis=0)
+        if batch_tp
+        else np.empty((0, len(iou_thresholds)), dtype=np.uint8)
     )
+    conf_arr = (
+        np.concatenate(batch_conf, axis=0)
+        if batch_conf
+        else np.empty(0, dtype=np.float32)
+    )
+    pred_cls_arr = (
+        np.concatenate(batch_pred_cls, axis=0)
+        if batch_pred_cls
+        else np.empty(0, dtype=np.int64)
+    )
+    target_cls_arr = (
+        np.concatenate(batch_target_cls, axis=0)
+        if batch_target_cls
+        else np.empty(0, dtype=np.int64)
+    )
+    return tp_arr, conf_arr, pred_cls_arr, target_cls_arr
 
 
 @torch.inference_mode()
@@ -259,18 +295,19 @@ def evaluate_dataset(
     for batch in tqdm(dataloader, desc=desc, leave=False):
         images, targets = batch  # TransformedBatch
         images = images.to(device, non_blocking=True)
+        img_size = int(images.shape[-1])
         outputs = model(images)
 
         # 解码每一层的预测框
         decoded_layers = []
         for i, output in enumerate(outputs):
             _, _, feat_h, feat_w, _ = output.shape
-            stride = float(IMG_W) / feat_h
-            scaled_anchors = anchors[anchors_mask[i]] / stride
+            stride = float(img_size) / feat_h
+            scaled_anchors = anchors[anchors_mask[i]] * (feat_h / float(IMG_W))
             cx, cy, w, h, _, _ = decode_preds(
                 output, scaled_anchors, feat_h, feat_w, device
             )
-            # 缩放到 416 像素尺度
+            # 缩放到当前输入像素尺度
             x = cx.unsqueeze(-1) * stride
             y = cy.unsqueeze(-1) * stride
             bw = w.unsqueeze(-1) * stride
@@ -293,7 +330,7 @@ def evaluate_dataset(
             batch_nms_results.append(pred_b)
 
         tp, conf, pred_cls, target_cls = evaluate_batch(
-            batch_nms_results, targets, iou_thresholds
+            batch_nms_results, targets, iou_thresholds, img_size=img_size
         )
 
         if len(tp) > 0:
@@ -306,9 +343,19 @@ def evaluate_dataset(
     if not all_target_cls:
         return EvalResult(0.0, 0.0, 0.0, 0.0, [])
 
-    tp_all = np.concatenate(all_tp, axis=0) if all_tp else np.empty((0, 10), dtype=np.uint8)
-    conf_all = np.concatenate(all_conf, axis=0) if all_conf else np.empty(0, dtype=np.float32)
-    pred_cls_all = np.concatenate(all_pred_cls, axis=0) if all_pred_cls else np.empty(0, dtype=np.int64)
+    tp_all = (
+        np.concatenate(all_tp, axis=0) if all_tp else np.empty((0, 10), dtype=np.uint8)
+    )
+    conf_all = (
+        np.concatenate(all_conf, axis=0) if all_conf else np.empty(0, dtype=np.float32)
+    )
+    pred_cls_all = (
+        np.concatenate(all_pred_cls, axis=0)
+        if all_pred_cls
+        else np.empty(0, dtype=np.int64)
+    )
     target_cls_all = np.concatenate(all_target_cls, axis=0)
 
-    return ap_per_class(tp_all, conf_all, pred_cls_all, target_cls_all, class_names=class_names)
+    return ap_per_class(
+        tp_all, conf_all, pred_cls_all, target_cls_all, class_names=class_names
+    )
