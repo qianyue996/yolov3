@@ -18,6 +18,14 @@ from .config import (
     VIDEO_EXTENSIONS,
 )
 from .dataloader import yolo_collate_fn
+from .inference import (
+    camera_detect,
+    draw_detections_cv,
+    image_detect,
+    image_to_tensor_gpu,
+    screen_detect,
+    video_detect,
+)
 from .loss import YOLOLOSS
 from .nms import non_max_suppression
 from .postprocess import (
@@ -88,4 +96,11 @@ __all__ = [
     "_get_device",
     "secend_stage",
     "detect",
+    # inference
+    "image_to_tensor_gpu",
+    "draw_detections_cv",
+    "image_detect",
+    "video_detect",
+    "camera_detect",
+    "screen_detect",
 ]

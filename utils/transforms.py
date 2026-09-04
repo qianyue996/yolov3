@@ -1,32 +1,17 @@
 from typing import cast
 
-import cv2 as cv
 import numpy as np
 import torch
 import torchvision.transforms as transforms
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image
 
 from utils.augment import apply_augment
 from utils.config import (
-    DEFAULT_CLASSES_PATH,
     IMG_W,
     NORMALIZE_MEAN,
     NORMALIZE_STD,
 )
 from utils.models import RawTargets, TransformedBatch
-
-try:
-    with open(DEFAULT_CLASSES_PATH) as _f:
-        import yaml
-
-        class_names = yaml.safe_load(_f)
-except Exception:
-    class_names = []
-
-try:
-    font = ImageFont.truetype("arial.ttf", 15)
-except OSError:
-    font = ImageFont.load_default()
 
 _transform_pipeline = transforms.Compose(
     [
@@ -128,36 +113,3 @@ class TransFormer:
 
 
 transform = TransFormer()
-
-
-def image_show(image: Image.Image, targets: np.ndarray) -> None:
-    image_handler = ImageDraw.ImageDraw(image)
-
-    for label in targets:
-        class_id = int(label[4])
-        label_text = f"{class_names[class_id]} {class_id}"
-        x_min, y_min, x_max, y_max = list(map(int, label[:4]))
-        text_x = x_min
-        text_y = y_min - 15
-        image_handler.rectangle(((x_min, y_min), (x_max, y_max)), outline="red")
-        image_handler.text((text_x, text_y), label_text, fill="green", font=font)
-
-    img_np_rgb = np.array(image)
-    img_np_bgr = cv.cvtColor(img_np_rgb, cv.COLOR_RGB2BGR)
-    cv.namedWindow("Image from OpenCV", cv.WINDOW_NORMAL)
-    cv.imshow("Image from OpenCV", img_np_bgr)
-
-    cv.waitKey(0)
-    cv.destroyAllWindows()
-
-    print("Script continued after closing OpenCV window.")
-
-
-def image_transform(
-    image: Image.Image, size: int = IMG_W
-) -> tuple[Image.Image, torch.Tensor]:
-    """对单张图片进行 letterbox 填充+归一化，返回 (letterbox_pil_image, tensor_image)。"""
-    empty_boxes = np.empty((0, 5), dtype=np.float32)
-    canvas, _ = letterbox(image, empty_boxes, target_size=size)
-    to_tensor_image = _preprocess(canvas)
-    return canvas, to_tensor_image

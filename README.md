@@ -46,10 +46,10 @@ uv run utils/stratified_sampler.py \
 
 ```bash
 # 默认启动训练（Mini-ImageNet 100, 60000 张图, 100 个 Epoch）
-uv run python train_backbone.py
+uv run train.py --mode backbone
 
 # 自定义参数启动
-uv run python train_backbone.py \
+uv run train.py --mode backbone \
     --data-dir /mnt/ai_models/mini_imagenet100 \
     --batch-size 64 \
     --epochs 100 \
@@ -69,7 +69,7 @@ uv run train.py --data data/coco_train_1pct.txt --epochs 10 --batch-size 2 --che
 uv run train.py --data data/coco_train_10pct.txt --checkpoint weights/best.pth \
     --weights-dir weights/exp1
 
-# 带有验证集并在每个 epoch 自动计算 mAP 与保存最佳模型
+# 带有验证集并在每个 epoch 快速计算验证损失与保存最佳模型
 uv run train.py --data data/coco_train_10pct.txt --val-data data/coco_val_10pct.txt --save-best
 
 # 直接使用 COCO JSON（无需预生成文本文件）
@@ -85,22 +85,22 @@ uv run train.py \
 
 | 参数 | 默认 | 说明 |
 |------|------|------|
-| `--data` | `coco_train.txt` | 训练文本标签文件 |
-| `--annotation` / `--image-root` | 空 | 直接读 COCO JSON 训练集，优先于 `--data` |
-| `--val-data` | 空 | 验证集文本标签文件 |
-| `--val-annotation` / `--val-image-root` | 空 | 直接读 COCO JSON 验证集 |
-| `--eval-every` | `0` | 每隔多少个 epoch 执行一次 mAP 评测（默认 0 关闭；设为 1 或 N 开启） |
-| `--img-sizes` | `416,448,480,512,544,576` | 训练输入多尺度列表（传单一尺寸如 `416` 则固定尺寸） |
+| `--mode` | `detect` | 训练模式：`detect`（YOLO 检测）或 `backbone`（主干预训练） |
+| `--data` | `coco_train.txt` | [detect] 训练文本标签文件 |
+| `--annotation` / `--image-root` | 空 | [detect] 直接读 COCO JSON 训练集，优先于 `--data` |
+| `--val-data` | 空 | [detect] 验证集文本标签文件 |
+| `--val-annotation` / `--val-image-root` | 空 | [detect] 直接读 COCO JSON 验证集 |
+| `--img-sizes` | `416,448,480,512,544,576` | [detect] 训练输入多尺度列表（传单一尺寸如 `416` 则固定尺寸） |
 | `--no-augment` | 关 | 关闭训练数据增强（翻转、90°旋转、随机裁剪、色彩抖动） |
-| `--batch-size` | `2` | batch 大小 |
-| `--epochs` | `120` | 训练轮数 |
-| `--lr` | `0.01` | SGD 学习率 |
+| `--batch-size` | `2` (detect) / `64` (backbone) | batch 大小 |
+| `--epochs` | `120` (detect) / `100` (backbone) | 训练轮数 |
+| `--lr` | `0.01` (detect) / `0.05` (backbone) | SGD 学习率 |
 | `--checkpoint` | `None` | 预训练权重路径；传 `null` 从随机权重开始 |
-| `--weights-dir` | `weights` | checkpoint 输出目录 |
-| `--save-epoch` | `1` | 按 epoch 保存的间隔（默认每个 epoch 保存一次，设为 0 关闭） |
-| `--save-every` | `None` | 按 step 步数保存的间隔（指定后自动关闭按 epoch 保存） |
-| `--save-best` | 关 | 额外保存最佳模型到 `<weights-dir>/best.pth`（有验证集时按最高 mAP@0.5 判定） |
-| `--freeze-backbone` | 关 | 冻结 Darknet-53 主干，只训练 FPN + 检测头 |
+| `--weights-dir` | `weights` / `weights/backbone` | checkpoint 输出目录 |
+| `--save-epoch` | `1` | [detect] 按 epoch 保存的间隔（默认每个 epoch 保存一次，设为 0 关闭） |
+| `--save-every` | `None` | [detect] 按 step 步数保存的间隔（指定后自动关闭按 epoch 保存） |
+| `--save-best` | 关 | [detect] 额外保存最佳模型到 `<weights-dir>/best.pth`（按最低验证损失判定） |
+| `--freeze-backbone` | 关 | [detect] 冻结 Darknet-53 主干，只训练 FPN + 检测头 |
 | `--num-workers` | `4` | DataLoader 工作进程数 |
 | `--log-every` | `10` | TensorBoard 标量写入间隔（步） |
 
@@ -171,9 +171,8 @@ ruff check .     # 代码风格与类型注解规范检查
 ## 架构
 
 ```
-train.py                  YOLOv3 目标检测训练主脚本（支持多尺度与验证评估）
-train_backbone.py         Darknet-53 主干网络分类预训练脚本（Mini-ImageNet100）
-detect.py                 统一目标检测入口（自动支持图片与摄像头/视频流/屏幕截图）
+train.py                  训练主入口（支持 detect 目标检测训练与 backbone 主干分类预训练）
+detect.py                 统一目标检测入口（自动支持图片/摄像头/视频流/屏幕截图）
 evaluate.py               独立模型评估与 mAP 评测工具（标准 VOC / COCO 格式）
 nets/
 ├── yolov3.py             YoloBody（Darknet-53 + FPN + 3 检测头，置信度先验偏置初始化）
@@ -189,6 +188,7 @@ utils/
 ├── metrics.py            评估指标计算（Precision, Recall, F1, mAP@0.5, mAP@0.5:0.95）
 ├── loss.py               YOLOLOSS（GIoU + 稳定版 Focal Loss + BCE 分类，多尺度自适应）
 ├── postprocess.py        推理后处理（模型加载、secend_stage 解码、detect 流程）
+├── inference.py          推理与可视化执行（图片/视频/摄像头/屏幕截屏检测与 OpenCV 绘制）
 ├── nms.py                non_max_suppression（GPU 加速非极大值抑制）
 ├── stratified_sampler.py COCO 分层采样工具
 └── __init__.py           统一导出（load_classes / set_seed / worker_init_fn 等）

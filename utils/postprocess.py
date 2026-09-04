@@ -4,7 +4,6 @@ import torch
 from loguru import logger
 
 from nets.yolov3 import YoloBody
-from utils import non_max_suppression
 from utils.config import (
     DEFAULT_ANCHORS,
     DEFAULT_ANCHORS_MASK,
@@ -12,6 +11,7 @@ from utils.config import (
     IMG_W,
 )
 from utils.decode import decode_preds
+from utils.nms import non_max_suppression
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 

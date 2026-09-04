@@ -22,9 +22,10 @@ make format              # format & lint fix (ruff check --fix + ruff format)
 - `utils/loss.py` — `YOLOLOSS` (GIoU + Focal Loss + global 9-anchor matching)
 - `utils/nms.py` — `non_max_suppression`
 - `utils/postprocess.py` — `secend_stage()` post-processes raw model output into pixel coordinates
-- `detect.py` — Unified detection entrypoint (auto-detects webcam index vs image file path)
+- `utils/inference.py` — High-performance inference pipelines (image, video, screen, camera)
+- `train.py` — Unified training entrypoint (`--mode detect` or `--mode backbone`)
+- `detect.py` — Unified detection entrypoint (auto-detects webcam index vs image/video/screen)
 - `evaluate.py` — Standalone model evaluation CLI (computes mAP@0.5 and mAP@0.5:0.95)
-- `label_util/` — COCO/VOC annotation-to-text converters
 
 ## Dataset Format
 Text file, one line per image:
